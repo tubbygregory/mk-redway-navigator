@@ -4,12 +4,21 @@ A proof-of-concept walking and cycling router for the Milton Keynes Redway netwo
 
 The prototype deliberately prefers traffic-free shared paths and allows the user to choose how strongly ordinary roads should be penalised.
 
+## v0.3 — iPhone 16 display optimisation
+
+- iPhone 16 portrait layout tuned for its 393×852 CSS-pixel viewport
+- Dynamic Island and Home Indicator safe-area handling
+- map-first mobile layout with a scrollable, collapsible control sheet
+- 44px+ touch targets and 16px search fields to avoid iOS input zoom
+- iOS Safari visual-viewport resizing support for the keyboard/address bar
+- Apple Home Screen metadata, 180px touch icon and iPhone 16 launch image
+
 ## Features
 
 - Interactive Milton Keynes map
 - Cycling and walking modes
 - Maximum / Balanced / Fastest Redway preference
-- Start/destination selection by tapping the map
+- Start/destination selection by address, postcode or tapping the map
 - Current-location start over HTTPS
 - Redway-biased A* routing in the browser
 - Distance, estimated time and percentage of route on traffic-free paths
@@ -73,4 +82,9 @@ The three cycling profiles roughly mean:
 
 ## Next steps
 
-For a production version, move routing to a dedicated Valhalla/GraphHopper backend or bundle a verified MK graph, add destination search and turn-by-turn navigation, and validate the Redway classification against official GIS data.
+For a production version, move routing to a dedicated Valhalla/GraphHopper backend or bundle a verified MK graph, add turn-by-turn navigation, and validate the Redway classification against official GIS data.
+
+
+## Geocoding
+
+The proof of concept uses the public OpenStreetMap Nominatim search API only when the user explicitly submits an address or postcode. Searches are restricted to Milton Keynes and client-side requests are rate-limited to no more than about one per second. For a production-scale service, use a dedicated/self-hosted geocoder or a provider with suitable capacity and terms.

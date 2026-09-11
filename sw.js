@@ -1,5 +1,16 @@
-const CACHE = 'mk-redway-shell-v1';
-const SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
+const CACHE = 'mk-redway-shell-v3';
+const SHELL = [
+  './',
+  './index.html',
+  './styles.css',
+  './app.js',
+  './manifest.webmanifest',
+  './icons/app-logo.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/apple-touch-icon.png',
+  './icons/iphone16-splash.png'
+];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

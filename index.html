@@ -4,18 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#b3261e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MK Redway" />
+  <meta name="format-detection" content="telephone=no" />
   <meta name="description" content="Proof-of-concept Redway-first walking and cycling navigation for Milton Keynes." />
   <title>MK Redway Navigator</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
-  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
+  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
 <header>
-  <div class="mark" aria-hidden="true">R</div>
+  <img class="mark" src="./icons/app-logo.svg" width="42" height="42" alt="" aria-hidden="true" />
   <div class="title">
     <strong>MK Redway Navigator</strong>
     <span>Redway-first routing proof of concept</span>
@@ -23,7 +29,11 @@
   <span class="badge">PWA</span>
 </header>
 <main>
-  <aside class="sidebar" aria-label="Route controls">
+  <aside class="sidebar" id="routeSheet" aria-label="Route controls">
+    <div class="mobile-sheet-bar">
+      <span class="sheet-grabber" aria-hidden="true"></span>
+      <button id="sheetToggle" class="sheet-toggle" type="button" aria-expanded="true" aria-controls="routeSheet">Minimise controls</button>
+    </div>
     <div class="compact-grid">
       <section class="section">
         <div class="label">Travel mode</div>
@@ -42,16 +52,39 @@
       </section>
     </div>
 
-    <section class="section">
+    <section class="section route-section">
       <div class="label">Route</div>
-      <div class="point active" id="startPoint" role="button" tabindex="0" aria-label="Choose start point">
-        <span class="dot start"></span>
-        <div><b>Start</b><small id="startText">Tap the map to set</small></div>
+
+      <div class="location-block">
+        <div class="point active" id="startPoint" role="button" tabindex="0" aria-label="Choose start point on map">
+          <span class="dot start"></span>
+          <div><b>Start</b><small id="startText">Search or tap the map</small></div>
+        </div>
+        <form class="location-search" id="startSearchForm" data-kind="start">
+          <label class="sr-only" for="startSearch">Starting address or postcode</label>
+          <div class="search-row">
+            <input id="startSearch" type="search" autocomplete="street-address" inputmode="search" enterkeyhint="search" autocapitalize="words" spellcheck="false" placeholder="Address or postcode" />
+            <button class="search-button" type="submit">Search</button>
+          </div>
+          <div class="search-results" id="startResults" hidden></div>
+        </form>
       </div>
-      <div class="point" id="endPoint" role="button" tabindex="0" aria-label="Choose destination">
-        <span class="dot end"></span>
-        <div><b>Destination</b><small id="endText">Tap the map to set</small></div>
+
+      <div class="location-block">
+        <div class="point" id="endPoint" role="button" tabindex="0" aria-label="Choose destination on map">
+          <span class="dot end"></span>
+          <div><b>Destination</b><small id="endText">Search or tap the map</small></div>
+        </div>
+        <form class="location-search" id="endSearchForm" data-kind="end">
+          <label class="sr-only" for="endSearch">Destination address or postcode</label>
+          <div class="search-row">
+            <input id="endSearch" type="search" autocomplete="street-address" inputmode="search" enterkeyhint="search" autocapitalize="words" spellcheck="false" placeholder="Address or postcode" />
+            <button class="search-button" type="submit">Search</button>
+          </div>
+          <div class="search-results" id="endResults" hidden></div>
+        </form>
       </div>
+
       <button id="locateBtn" class="secondary" type="button">Use my location as start</button>
       <div class="spacer"></div>
       <button id="routeBtn" class="primary" type="button" disabled>Find Redway route</button>
@@ -78,7 +111,7 @@
 
     <section class="section help">
       <div class="small">
-        Proof-of-concept classification: OpenStreetMap paths tagged for designated walking and cycling are treated as Redway candidates. Road links remain available but are penalised according to the selected preference.
+        Address and postcode search uses OpenStreetMap Nominatim and is limited to Milton Keynes. Route classification is a proof of concept: designated walking/cycling paths are treated as Redway candidates; road links remain available with a preference penalty.
       </div>
     </section>
   </aside>
