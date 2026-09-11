@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build the static Milton Keynes walking/cycling routing network for GitHub Pages.
 
-The browser normally routes entirely from data/network.json. This script runs during
-GitHub Pages deployment so end users do not depend on a public Overpass instance.
+The browser routes from data/network.json so end users do not depend on a public
+Overpass instance. The build also adds best-effort Milton Keynes route classes:
+Super Redway, Redway, leisure route and other shared paths.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import time
 import urllib.parse
@@ -22,9 +24,9 @@ HIGHWAYS = (
     "secondary_link|primary|primary_link"
 )
 ENDPOINTS = [
+    "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://overpass.osm.jp/api/interpreter",
 ]
 KEEP_TAGS = {
     "highway", "bicycle", "foot", "access", "oneway", "oneway:bicycle",
@@ -36,18 +38,12 @@ OUT = ROOT / "data" / "network.json"
 TMP = ROOT / "data" / "network.json.tmp"
 
 
-def request_tile(s: float, w: float, n: float, e: float, tile_no: int) -> dict:
-    query = (
-        f'[out:json][timeout:120];'
-        f'way["highway"~"^({HIGHWAYS})$"]({s},{w},{n},{e});'
-        f'(._;>;);out body;'
-    )
+def request_overpass(query: str, label: str, rotate: int = 0, attempts: int = 2) -> dict:
     payload = urllib.parse.urlencode({"data": query}).encode("utf-8")
     last_error: Exception | None = None
-    # Rotate the first endpoint so four tile requests are not all concentrated on one host.
-    ordered = ENDPOINTS[tile_no % len(ENDPOINTS):] + ENDPOINTS[:tile_no % len(ENDPOINTS)]
+    ordered = ENDPOINTS[rotate % len(ENDPOINTS):] + ENDPOINTS[: rotate % len(ENDPOINTS)]
     for endpoint in ordered:
-        for attempt in range(2):
+        for attempt in range(attempts):
             try:
                 req = urllib.request.Request(
                     endpoint,
@@ -55,7 +51,7 @@ def request_tile(s: float, w: float, n: float, e: float, tile_no: int) -> dict:
                     headers={
                         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
                         "Accept": "application/json",
-                        "User-Agent": "MKRedwayNavigator-PoC/0.7 GitHub-Pages-build",
+                        "User-Agent": "MKRedwayNavigator-PoC/0.9 GitHub-Pages-build",
                     },
                     method="POST",
                 )
@@ -63,12 +59,67 @@ def request_tile(s: float, w: float, n: float, e: float, tile_no: int) -> dict:
                     if response.status != 200:
                         raise RuntimeError(f"HTTP {response.status}")
                     return json.load(response)
-            except Exception as exc:  # noqa: BLE001 - deployment fallback is intentional
+            except Exception as exc:  # noqa: BLE001 - resilient public-service fallback
                 last_error = exc
-                wait = 3 + attempt * 5
-                print(f"Tile {tile_no + 1}: {endpoint} attempt {attempt + 1} failed: {exc}; retrying in {wait}s", flush=True)
+                wait = 2 + attempt * 4
+                print(f"{label}: {endpoint} attempt {attempt + 1} failed: {exc}; retrying in {wait}s", flush=True)
                 time.sleep(wait)
-    raise RuntimeError(f"All Overpass endpoints failed for tile {tile_no + 1}: {last_error}")
+    raise RuntimeError(f"All Overpass endpoints failed for {label}: {last_error}")
+
+
+def request_tile(s: float, w: float, n: float, e: float, tile_no: int) -> dict:
+    query = (
+        f'[out:json][timeout:120];'
+        f'way["highway"~"^({HIGHWAYS})$"]({s},{w},{n},{e});'
+        f'(._;>;);out body;'
+    )
+    return request_overpass(query, f"Tile {tile_no + 1}", rotate=tile_no)
+
+
+def request_cycle_relations() -> dict:
+    # Relation-only response is small; member way IDs let us distinguish OSM-mapped
+    # Super Redways and named leisure/cultural routes without another geometry dump.
+    query = (
+        f'[out:json][timeout:90];'
+        f'relation["route"="bicycle"]({SOUTH},{WEST},{NORTH},{EAST});'
+        f'out body;'
+    )
+    return request_overpass(query, "Cycle-route metadata", rotate=1, attempts=1)
+
+
+def relation_classes(data: dict) -> tuple[dict[int, str], dict[int, str]]:
+    classes: dict[int, str] = {}
+    names: dict[int, str] = {}
+    leisure_terms = (
+        "millennium", "cultural", "blue route", "yellow route", "green route",
+        "iron route", "cornflower", "railway walk", "leisure", "heritage",
+    )
+    for element in data.get("elements", []):
+        if element.get("type") != "relation":
+            continue
+        tags = element.get("tags") or {}
+        name = str(tags.get("name") or tags.get("ref") or "").strip()
+        descriptor = " ".join(str(tags.get(k) or "") for k in ("name", "ref", "description")).lower()
+        cls = None
+        if re.search(r"(?:super\s*redway|redway\s*super|super\s*route)", descriptor):
+            cls = "super_redway"
+        elif any(term in descriptor for term in leisure_terms) or str(tags.get("roundtrip", "")).lower() == "yes":
+            cls = "leisure"
+        if not cls:
+            continue
+        for member in element.get("members", []):
+            if member.get("type") != "way":
+                continue
+            ref = member.get("ref")
+            if ref is None:
+                continue
+            way_id = int(ref)
+            # Super Redway always wins if a way participates in more than one route.
+            if cls == "super_redway" or classes.get(way_id) != "super_redway":
+                classes[way_id] = cls
+                if name:
+                    names[way_id] = name
+    return classes, names
 
 
 def existing_network_is_valid() -> bool:
@@ -78,13 +129,12 @@ def existing_network_is_valid() -> bool:
         with OUT.open("r", encoding="utf-8") as f:
             data = json.load(f)
         return (
-            data.get("format") == "mk-redway-network-v1"
+            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2"}
             and len(data.get("nodes", [])) > 1000
             and len(data.get("ways", [])) > 100
         )
     except Exception:
         return False
-
 
 
 def existing_network_age_days() -> float | None:
@@ -103,12 +153,14 @@ def existing_network_age_days() -> float | None:
     except Exception:
         return None
 
+
 def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     age = existing_network_age_days()
     if existing_network_is_valid() and age is not None and age < 7 and os.environ.get("FORCE_NETWORK_REFRESH") != "1":
         print(f"Reusing cached routing network generated {age:.1f} days ago.", flush=True)
         return 0
+
     lat_mid = (SOUTH + NORTH) / 2
     lon_mid = (WEST + EAST) / 2
     overlap = 0.002
@@ -139,12 +191,22 @@ def main() -> int:
             return 0
         return 2
 
-    referenced = set()
+    route_classes: dict[int, str] = {}
+    route_names: dict[int, str] = {}
+    try:
+        print("Fetching Super Redway / leisure route metadata…", flush=True)
+        route_classes, route_names = relation_classes(request_cycle_relations())
+        super_count = sum(1 for x in route_classes.values() if x == "super_redway")
+        leisure_count = sum(1 for x in route_classes.values() if x == "leisure")
+        print(f"Classified {super_count:,} Super Redway way memberships and {leisure_count:,} leisure-route memberships.", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Route-class metadata unavailable; continuing with Redway tag classification: {exc}", flush=True)
+
+    referenced: set[int] = set()
     for node_ids, _ in ways_by_osm.values():
         referenced.update(node_ids)
     referenced.intersection_update(nodes_by_osm.keys())
 
-    # Replace long OSM node ids with dense integer ids. This materially reduces download size.
     remap = {osm_id: idx for idx, osm_id in enumerate(sorted(referenced))}
     compact_nodes = [
         [remap[osm_id], round(nodes_by_osm[osm_id][0], 6), round(nodes_by_osm[osm_id][1], 6)]
@@ -153,13 +215,19 @@ def main() -> int:
     compact_ways = []
     for way_id, (node_ids, tags) in ways_by_osm.items():
         compact = [remap[x] for x in node_ids if x in remap]
-        if len(compact) > 1:
-            compact_ways.append([way_id, compact, tags])
+        if len(compact) <= 1:
+            continue
+        if way_id in route_classes:
+            tags["_mk_class"] = route_classes[way_id]
+            if route_names.get(way_id):
+                tags["_mk_route_name"] = route_names[way_id]
+        compact_ways.append([way_id, compact, tags])
 
     payload = {
-        "format": "mk-redway-network-v1",
+        "format": "mk-redway-network-v2",
         "generated_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         "bbox": [SOUTH, WEST, NORTH, EAST],
+        "classification": "OSM Redway access tags + best-effort bicycle-route relations",
         "nodes": compact_nodes,
         "ways": compact_ways,
     }

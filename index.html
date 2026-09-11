@@ -35,6 +35,16 @@
       </form>
     </section>
 
+    <button id="savedPlacesBtn" class="saved-fab" type="button" aria-label="Open saved places">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4Z"></path></svg>
+      <span>Saved</span>
+    </button>
+
+    <button id="installAppBtn" class="install-fab" type="button" hidden aria-label="Install MK Redway as an app">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"></path><path d="m8 10 4 4 4-4"></path><path d="M5 15v4h14v-4"></path></svg>
+      <span>Install app</span>
+    </button>
+
     <!-- Route planner shown after Directions. -->
     <section id="plannerUI" class="top-overlay planner-card" aria-label="Route planner" hidden>
       <button id="plannerBack" class="icon-button planner-back" type="button" aria-label="Back">
@@ -82,10 +92,16 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
         </button>
       </div>
-      <button id="directionsBtn" class="primary-action" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 11l8 10 8-10-8-8Z"></path><path d="M9 12h6M13 9l3 3-3 3"></path></svg>
-        Directions
-      </button>
+      <div class="place-actions">
+        <button id="directionsBtn" class="primary-action" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 11l8 10 8-10-8-8Z"></path><path d="M9 12h6M13 9l3 3-3 3"></path></svg>
+          Directions
+        </button>
+        <button id="saveFavouriteBtn" class="secondary-action save-place-action" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4Z"></path></svg>
+          Save
+        </button>
+      </div>
     </section>
 
     <!-- Compact route preview. -->
@@ -119,7 +135,7 @@
         <div class="route-meta">
           <span id="distanceStat">—</span>
           <span class="meta-separator">•</span>
-          <span><b id="redwayStat">—</b> traffic-free</span>
+          <span><b id="redwayStat">—</b> Redway</span>
         </div>
       </div>
       <div id="routeStatus" class="route-status" aria-live="polite">Choose a start and destination.</div>
@@ -160,11 +176,74 @@
       <button id="exitNavBtn" class="exit-button" type="button">Exit</button>
     </section>
 
+    <section id="savedSheet" class="bottom-sheet saved-sheet" aria-label="Saved places and offline maps" hidden>
+      <div class="grabber" aria-hidden="true"></div>
+      <div class="sheet-heading">
+        <strong>Saved places</strong>
+        <button id="closeSaved" class="icon-button small-icon" type="button" aria-label="Close saved places">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+        </button>
+      </div>
+
+      <div class="saved-specials">
+        <button id="homeSavedRow" class="saved-row" type="button">
+          <span class="saved-kind-icon" aria-hidden="true">⌂</span>
+          <span class="saved-row-copy"><strong>Home</strong><small id="homeSavedLabel">Not set</small></span>
+          <span class="saved-chevron" aria-hidden="true">›</span>
+        </button>
+        <button id="workSavedRow" class="saved-row" type="button">
+          <span class="saved-kind-icon" aria-hidden="true">▣</span>
+          <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Not set</small></span>
+          <span class="saved-chevron" aria-hidden="true">›</span>
+        </button>
+      </div>
+      <div class="saved-set-actions">
+        <button id="setHomeBtn" class="compact-action" type="button">Set Home</button>
+        <button id="setWorkBtn" class="compact-action" type="button">Set Work</button>
+      </div>
+
+      <div class="saved-section-heading">
+        <strong>Favourites</strong>
+        <button id="addFavouriteBtn" class="text-action" type="button">+ Add</button>
+      </div>
+      <div id="favouritesList" class="favourites-list"></div>
+
+      <div class="offline-card">
+        <div class="offline-copy">
+          <strong>Offline Milton Keynes</strong>
+          <span id="offlineStatus">Checking map package…</span>
+        </div>
+        <button id="offlineDownloadBtn" class="compact-action offline-button" type="button">Download</button>
+      </div>
+      <div class="offline-note">Address/place search still needs an internet connection; saved places, map browsing and routing work offline.</div>
+
+      <div class="map-key" aria-label="Map key">
+        <span><i class="key-super"></i>Super Redway</span>
+        <span><i class="key-redway"></i>Redway</span>
+        <span><i class="key-leisure"></i>Leisure route</span>
+        <span><i class="key-shared"></i>Shared path</span>
+      </div>
+    </section>
+
+    <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
+      <div class="grabber" aria-hidden="true"></div>
+      <div class="install-heading">
+        <img src="./icons/apple-touch-icon.png" width="64" height="64" alt="" aria-hidden="true" />
+        <div><strong>Install MK Redway</strong><span>Keep it on your Home Screen like an app.</span></div>
+        <button id="closeInstall" class="icon-button small-icon" type="button" aria-label="Close install instructions">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+        </button>
+      </div>
+      <ol id="installSteps" class="install-steps"></ol>
+      <button id="installActionBtn" class="primary-action install-action" type="button" hidden>Install</button>
+    </section>
+
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js"></script>
+  <script src="https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

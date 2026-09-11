@@ -316,8 +316,13 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
 
 /* Map styling */
 .leaflet-control-attribution { font-size: 8px; max-width: 180px; line-height: 1.2; }
-.leaflet-pane .redway-casing { stroke: #fff; stroke-width: 5; opacity: .72; }
-.leaflet-pane .redway-line { stroke: var(--red); stroke-width: 2.2; opacity: .8; }
+.leaflet-pane .superredway-casing,
+.leaflet-pane .redway-casing,
+.leaflet-pane .leisure-casing { stroke: #fff; stroke-width: 5.5; opacity: .78; }
+.leaflet-pane .superredway-line { stroke: #6f1d7a; stroke-width: 3.4; opacity: .95; }
+.leaflet-pane .redway-line { stroke: var(--red); stroke-width: 2.5; opacity: .86; }
+.leaflet-pane .leisure-line { stroke: #23864a; stroke-width: 2.3; stroke-dasharray: 6 4; opacity: .82; }
+.leaflet-pane .shared-line { stroke: #73777c; stroke-width: 1.4; stroke-dasharray: 3 5; opacity: .34; }
 .leaflet-pane .route-casing { stroke: #fff; stroke-width: 11; opacity: .94; }
 .leaflet-pane .route-line { stroke: var(--blue); stroke-width: 7; opacity: .98; }
 .user-pulse {
@@ -789,4 +794,123 @@ html.ios-standalone .nav-bottom,
 html.ios-standalone .map-controls,
 html.ios-standalone .toast {
   z-index: 1200;
+}
+
+
+/* Install affordance ----------------------------------------------------- */
+.install-fab {
+  position: absolute;
+  z-index: 1180;
+  right: max(12px, calc(env(safe-area-inset-right, 0px) + 8px));
+  bottom: max(14px, calc(env(safe-area-inset-bottom, 0px) + 10px));
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 46px;
+  padding: 0 15px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,.96);
+  color: var(--text);
+  box-shadow: 0 5px 18px rgba(0,0,0,.18);
+  font-weight: 700;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.install-fab svg { width: 20px; height: 20px; }
+.install-sheet { z-index: 1450; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); }
+.install-heading { display: grid; grid-template-columns: 56px minmax(0,1fr) 40px; gap: 11px; align-items: center; }
+.install-heading img { width: 56px; height: 56px; border-radius: 13px; }
+.install-heading strong { display: block; font-size: 19px; line-height: 1.15; }
+.install-heading span { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.3; }
+.install-steps { margin: 13px 0 4px; padding-left: 25px; color: var(--text); }
+.install-steps li { margin: 8px 0; padding-left: 4px; font-size: 14px; line-height: 1.35; }
+.install-action { width: 100%; margin-top: 10px; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .install-fab { bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) + 6px)); }
+  .install-sheet { left: max(12px, env(safe-area-inset-left, 0px)); right: auto; width: min(420px, 48vw); }
+}
+@media (max-width: 350px) {
+  .install-fab span { display: none; }
+  .install-fab { width: 46px; padding: 0; justify-content: center; }
+}
+
+
+/* v0.9 saved places, route classes and offline maps --------------------- */
+.saved-fab {
+  position: absolute;
+  z-index: 1185;
+  right: max(12px, calc(env(safe-area-inset-right, 0px) + 8px));
+  top: max(82px, calc(env(safe-area-inset-top, 0px) + 74px));
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,.96);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(0,0,0,.16);
+  font-weight: 700;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.saved-fab svg { width: 19px; height: 19px; }
+.place-actions { display: flex; gap: 9px; align-items: stretch; }
+.place-actions .primary-action { flex: 1; }
+.save-place-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding-inline: 18px; }
+.save-place-action svg { width: 18px; height: 18px; }
+.saved-sheet { z-index: 1450; max-height: min(76dvh, 650px); overflow: auto; -webkit-overflow-scrolling: touch; }
+.saved-specials { border-top: 1px solid var(--border); margin-top: 4px; }
+.saved-row, .saved-favourite-open {
+  width: 100%; border: 0; background: transparent; color: var(--text); text-align: left;
+  display: grid; grid-template-columns: 40px minmax(0,1fr) 20px; gap: 9px; align-items: center;
+  min-height: 62px; padding: 8px 2px; border-bottom: 1px solid var(--border);
+}
+.saved-kind-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--soft); color: var(--red); font-size: 20px; }
+.saved-row-copy { min-width: 0; }
+.saved-row-copy strong { display: block; font-size: 15px; line-height: 1.25; }
+.saved-row-copy small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-chevron { color: var(--muted); font-size: 24px; text-align: center; }
+.saved-set-actions { display: flex; gap: 8px; padding: 10px 0 4px; }
+.compact-action, .text-action {
+  min-height: 40px; border: 0; border-radius: 20px; padding: 0 14px; background: var(--soft); color: var(--text); font-weight: 700;
+}
+.saved-set-actions .compact-action { flex: 1; }
+.saved-section-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 7px 2px; }
+.saved-section-heading strong { font-size: 16px; }
+.text-action { background: transparent; color: var(--red); padding-inline: 10px; }
+.saved-favourite-row { display: grid; grid-template-columns: minmax(0,1fr) 42px; align-items: center; border-top: 1px solid var(--border); }
+.saved-favourite-open { grid-template-columns: 40px minmax(0,1fr); border-bottom: 0; }
+.saved-remove { width: 38px; height: 38px; border: 0; border-radius: 50%; background: var(--soft); color: var(--muted); font-size: 24px; line-height: 1; }
+.saved-empty { padding: 12px 3px; color: var(--muted); font-size: 13px; }
+.offline-card { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; margin-top: 14px; padding: 12px; border-radius: 16px; background: var(--soft); }
+.offline-copy { min-width: 0; }
+.offline-copy strong { display: block; font-size: 15px; }
+.offline-copy span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.offline-button { background: #fff; border: 1px solid var(--border); }
+.offline-note { margin: 7px 3px 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.map-key { display: flex; flex-wrap: wrap; gap: 7px 12px; margin-top: 13px; padding: 10px 2px 2px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+.map-key span { display: inline-flex; align-items: center; gap: 5px; }
+.map-key i { width: 20px; height: 4px; border-radius: 2px; display: inline-block; }
+.key-super { background: #6f1d7a; }
+.key-redway { background: var(--red); }
+.key-leisure { background: #23864a; }
+.key-shared { background: #73777c; }
+
+@media (max-width: 350px) {
+  .saved-fab span { display: none; }
+  .saved-fab { width: 44px; padding: 0; justify-content: center; }
+  .place-actions { gap: 6px; }
+  .save-place-action { padding-inline: 12px; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1100px) {
+  .saved-fab {
+    top: auto;
+    bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) + 6px));
+    right: max(10px, calc(env(safe-area-inset-right, 0px) + 6px));
+  }
+  .saved-sheet { left: max(8px, calc(env(safe-area-inset-left, 0px) + 6px)); right: auto; width: min(430px, 48vw); max-height: calc(100dvh - 10px); }
 }

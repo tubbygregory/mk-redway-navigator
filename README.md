@@ -1,123 +1,68 @@
-# MK Redway Navigator
+# MK Redway Navigator v0.9.0
 
-## v0.7.1 — faster, reliable local routing
+Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
 
-v0.7 changes the routing architecture so normal route calculation no longer depends on a live public Overpass request. During GitHub Pages deployment, `scripts/build_network.py` downloads and compacts the Milton Keynes walking/cycling network into `data/network.json`. The browser downloads that same-origin file once, the PWA cache keeps it locally, and route searches then run entirely on-device.
+## Core features
 
-Routing reliability is also improved by **multi-point endpoint snapping**. Instead of attaching the start and destination to one nearest OSM node, the router considers several nearby network nodes. This avoids common failures where the geometrically nearest node is an isolated car park, driveway or incomplete mapping fragment while a connected Redway is nearby.
+- Search by place, address or postcode.
+- Walking and cycling route profiles.
+- Maximum Redway / Balanced / Fastest preferences.
+- Locally hosted MK routing graph generated during deployment.
+- Multi-point network snapping to avoid isolated-path routing failures.
+- Live GPS navigation, heading-up map, spoken turn instructions and automatic rerouting.
+- Responsive portrait/landscape PWA interface.
+- Home Screen / PWA installation helper.
 
-The deployment workflow restores the last successful network file from the GitHub Actions cache before trying to refresh it. If the refresh service is temporarily unavailable, the previous working graph can still be deployed. If no bundled graph exists at all, the app retains a bounded live-query fallback.
+## New in v0.9.0
 
-### Important deployment change
+### Saved places
 
-For v0.7, update **the whole repository**, especially these new/changed files:
+Home, Work and up to 30 favourites are stored locally in the browser using `localStorage`; no account or server is involved. Open **Saved** from the main map. Home/Work can be set by search or by tapping a point on the map; selected destinations can be saved directly as favourites.
 
-- `.github/workflows/pages.yml`
-- `scripts/build_network.py`
-- `app.js`
-- `sw.js`
-- `VERSION`
+### Better MK route classification
 
-After committing to `main`, the Pages action will have an extra **Build current MK routing network** step. A successful run will report that `data/network.json` is present before the site is deployed. The first deployment may therefore take longer than previous versions, but route calculations in the published app should be much quicker and more dependable afterwards.
+The deployment build distinguishes:
 
-A proof-of-concept walking and cycling navigator for the Milton Keynes Redway network.
+- **Super Redway** — best-effort from OSM bicycle-route relations explicitly identifying Super Redways/Super Routes.
+- **Redway** — shared paths mapped with `foot=designated` and `bicycle=designated`, consistent with MK OSM mapping practice.
+- **Leisure route** — best-effort from named local leisure/cultural bicycle-route relations.
+- **Shared path** — other usable traffic-free/shared paths.
+- ordinary/quiet/major roads remain separate routing classes.
 
-## v0.6.1 — iOS safe-area fix + search/camera polish
+Super Redways receive the strongest preference for cycling, followed by Redways, leisure routes and other shared paths. The map overlay uses different styling for the classified path types.
 
-- Extends the app/map underneath the iOS home-indicator safe area to remove the persistent bottom strip seen in standalone mode.
-- Shortens/resizes the home search field so its prompt fits on current phone widths.
-- Re-centres the navigation camera after the rotated map has completed layout, so sat-nav starts on the current position rather than an inherited offset.
+### Offline Milton Keynes map + routing
 
-## v0.6 — full-viewport mobile shell + broad smartphone support
+GitHub Actions attempts to create `data/mk-basemap.pmtiles` from a recent Protomaps daily OpenStreetMap-derived vector basemap. The app normally displays that same-origin PMTiles map when available.
 
-The interface now uses a map-first flow familiar from modern navigation apps rather than a permanent control panel:
+In **Saved → Offline Milton Keynes**, choose **Download** to keep the complete MK basemap, routing graph and app dependencies in browser storage. Once downloaded, map browsing, saved-place selection, route calculation and live navigation can work without a data connection.
 
-**Search → place → Directions → route preview → Start → navigation**
+Address/place search still uses Nominatim and therefore needs an internet connection. When offline, use a saved destination or tap the map.
 
-Highlights:
+The app does **not** bulk-download tiles from `tile.openstreetmap.org`; OSM's public raster tile service does not permit offline-prefetch features.
 
-- compact floating destination search over the map
-- searches addresses, postcodes and place names within Milton Keynes
-- route planner with searchable start and destination fields
-- current-location start
-- compact route preview with Cycle / Walk and Redway preference controls
-- dedicated full-screen navigation mode
-- heading-up navigation: the map rotates so your direction of travel stays at the top
-- GPS heading with movement/route-direction fallback and smoothing
-- adaptive portrait and landscape layouts across modern iPhone and Android screen sizes
-- full dynamic-viewport shell with safe-area handling for notches, Dynamic Island and home/navigation indicators
-- turn-by-turn manoeuvre banner
-- spoken guidance using the browser speech engine
-- live GPS progress, ETA and remaining distance
-- automatic rerouting after moving materially off route
-- recenter and voice controls
-- iOS/Android safe-area and Home Screen/PWA support
+## Deploy
 
-The visual language is original to MK Redway Navigator; it uses the same general interaction model as established map apps rather than copying another app pixel-for-pixel.
+1. Upload the contents of this project to the root of your GitHub repository.
+2. In **Settings → Pages**, set **Source** to **GitHub Actions**.
+3. Commit to `main`.
+4. Open **Actions → Deploy to GitHub Pages**.
+5. The first v0.9 deployment has two data-build steps:
+   - `Build current MK routing network`
+   - `Build offline Milton Keynes basemap`
+6. Both data steps are resilient: if a refresh fails and a previous cached file exists, the previous file is kept. If the PMTiles build fails on the very first deployment, online mapping still works and the Offline button reports that the package is unavailable.
 
-## Routing features
+The PMTiles extract may add several minutes to a cold deployment. GitHub Actions caches it and the build script refreshes it roughly monthly.
 
-- **Cycle / Walk** modes
-- **Maximum Redway / Balanced / Fastest** cycling preferences
-- Redway-biased A* routing in the browser
-- distance, estimated time and percentage of route on traffic-free paths
-- turn instructions generated from route geometry and OpenStreetMap way names
-- GPS route-progress matching and off-route detection
-- automatic rerouting using the already-loaded local route graph where possible
+## Data and attribution
 
-## Data and services
+Routing and basemap data are derived from OpenStreetMap. Keep the visible **© OpenStreetMap contributors** attribution in the app. The Protomaps basemap is distributed as an ODbL Produced Work and is suitable for a self-hosted/offline extract with attribution.
 
-- Base map: OpenStreetMap
-- Path/road data: OpenStreetMap, compiled into `data/network.json` during the GitHub Pages deployment (public Overpass is only a runtime fallback)
-- Address/place search: OpenStreetMap Nominatim
-- Map renderer: Leaflet 1.9.4 + leaflet-rotate 0.2.4
-
-Nominatim searches are only made when a user submits a search and the app rate-limits searches to roughly one request per second. Public OSM services are suitable for this small proof of concept, not a high-volume production service.
-
-## Publish with GitHub Pages
-
-1. Upload all files in this folder to the **root** of your GitHub repository.
-2. Keep `.github/workflows/pages.yml`.
-3. Commit the files to `main`.
-4. In **Settings → Pages**, set the source to **GitHub Actions**.
-5. Open **Actions → Deploy to GitHub Pages** and wait for the green tick.
-6. Reload the Pages site. If an older version remains cached on iPhone, fully close/reopen it; if necessary remove and re-add the Home Screen app.
-
-Typical URL:
-
-`https://YOUR-USERNAME.github.io/mk-redway-navigator/`
-
-## iPhone installation
-
-Open the GitHub Pages URL in Safari and choose **Share → Add to Home Screen**. The installed PWA removes most Safari chrome and is the intended iPhone presentation.
-
-Live navigation requires location permission. Voice guidance uses the browser's speech-synthesis support.
-
-## Run locally
-
-```bash
-python3 -m http.server 8080
-```
-
-Then open `http://localhost:8080`. Browsers treat localhost as a secure context for development, but the deployed GitHub Pages HTTPS site is the better test for iPhone GPS behaviour.
+See `DATA-LICENCE.md`.
 
 ## Proof-of-concept limitations
 
-- Public Overpass/Nominatim servers can occasionally be slow or unavailable.
-- Redway classification is inferred from OpenStreetMap tagging rather than an authoritative MK Council routing dataset.
-- Turn instructions are derived from route geometry, not a production-grade manoeuvre engine such as Valhalla. Complex multi-branch Redway junctions therefore still need real-world testing.
-- Browser/PWA background-location behaviour on iOS is more limited than a native iOS app, particularly with the screen locked.
-- Temporary closures and hazards are not represented reliably.
-
-For production, the next architectural step would be a verified Milton Keynes network plus a dedicated routing engine/backend such as Valhalla or GraphHopper.
-
-## Mobile viewport compatibility (v0.6)
-
-v0.6 removes the previous JavaScript root-height override that could leave a grey strip under the app in iOS standalone mode. The map shell now fills the CSS dynamic viewport (`100dvh`) while `visualViewport` is used only to keep search-result panels usable when an on-screen keyboard is open.
-
-The responsive rules are designed around modern phone classes rather than one exact handset: roughly 320–600 CSS px portrait widths and phone landscape views up to 1100 px wide / 600 px high. Safe-area insets are honoured where exposed by iOS/Android browsers, and collapse to zero on devices without cut-outs.
-
-
-## iOS 26 Home Screen bottom-area note
-
-iOS 26.x has a WebKit standalone-PWA viewport issue on some iPhones where the web layer is shorter than the physical display. v0.7.1 removes legacy `height:100%` root sizing, prefers the largest viewport unit, and uses a white system canvas plus a subtle map-edge blend when running as an installed iOS app. This prevents the previous grey chin from appearing even on affected WebKit builds.
+- Saved places are device/browser-local and do not sync between devices.
+- Super Redway and leisure-route classification depends on what has been mapped in OpenStreetMap route relations; the normal Redway classification remains available even where relation metadata is incomplete.
+- Browser/PWA background GPS on iOS remains more restricted than a native iOS navigation app.
+- Nominatim place/address search is online-only.

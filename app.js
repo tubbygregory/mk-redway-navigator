@@ -1,14 +1,17 @@
 (() => {
   'use strict';
 
-  const isIOSStandalone = (window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches)
-    && /iP(?:hone|ad|od)/.test(navigator.userAgent);
-  document.documentElement.classList.toggle('ios-standalone', Boolean(isIOSStandalone));
+  const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+  const isIOS = /iP(?:hone|ad|od)/.test(navigator.userAgent);
+  const isIOSStandalone = Boolean(isStandalone && isIOS);
+  document.documentElement.classList.toggle('ios-standalone', isIOSStandalone);
+  let appInstalled = Boolean(isStandalone);
+  let deferredInstallPrompt = null;
 
   const MK = { south: 51.955, west: -0.905, north: 52.155, east: -0.615 };
   const OVERPASS = [
     'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
+    'https://overpass.private.coffee/api/interpreter'
   ];
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 
@@ -23,10 +26,14 @@
     touchRotate: false,
     rotateControl: false
   }).setView([52.0406, -0.7594], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
     attribution: '© OpenStreetMap contributors'
   }).addTo(map);
+  let offlineVectorLayer = null;
+  const OFFLINE_MAP_URL = './data/mk-basemap.pmtiles';
+  const OFFLINE_CACHE = 'mk-redway-offline-v1';
+  const SAVED_KEY = 'mk-redway-saved-v1';
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
@@ -68,7 +75,13 @@
     routingNetwork: null,
     routingNetworkPromise: null,
     graphCache: new Map(),
-    networkSource: 'loading'
+    networkSource: 'loading',
+    saved: { home: null, work: null, favourites: [] },
+    pendingSaveKind: null,
+    offlineMapAvailable: false,
+    offlineMapDownloaded: false,
+    offlineMapBytes: 0,
+    offlineDownloadBusy: false
   };
 
   function syncViewport() {
@@ -80,7 +93,10 @@
     }
     const search = el('homeSearch');
     if (search) {
-      search.placeholder = window.innerWidth <= 370
+      if (state.pendingSaveKind === 'home') search.placeholder = 'Search for Home';
+      else if (state.pendingSaveKind === 'work') search.placeholder = 'Search for Work';
+      else if (state.pendingSaveKind === 'favourite') search.placeholder = 'Search for a favourite';
+      else search.placeholder = window.innerWidth <= 370
         ? 'Search place or postcode'
         : 'Search place, address or postcode';
     }
@@ -113,6 +129,10 @@
     el('navBottom').hidden = !nav;
     el('mapControls').hidden = !nav;
     if (stage !== 'search-results') el('resultsSheet').hidden = true;
+    if (stage !== 'explore') el('installSheet').hidden = true;
+    if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
+    el('savedPlacesBtn').hidden = !['explore', 'place'].includes(stage);
+    updateInstallButtonVisibility();
     setTimeout(syncViewport, 40);
   }
 
@@ -135,6 +155,109 @@
   }
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  function loadSavedPlaces() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SAVED_KEY) || '{}');
+      state.saved = {
+        home: raw.home || null,
+        work: raw.work || null,
+        favourites: Array.isArray(raw.favourites) ? raw.favourites.slice(0, 30) : []
+      };
+    } catch (_) {
+      state.saved = { home: null, work: null, favourites: [] };
+    }
+  }
+
+  function persistSavedPlaces() {
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(state.saved)); } catch (_) {}
+    renderSavedPlaces();
+  }
+
+  function savedPlaceFromResult(result) {
+    const lat = Number(result.lat);
+    const lng = Number(result.lon);
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: conciseResultName(result),
+      address: resultSecondary(result, conciseResultName(result)),
+      lat, lng
+    };
+  }
+
+  function savedPlaceFromCurrentEnd() {
+    if (!state.end) return null;
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: state.endLabel || 'Saved place',
+      address: state.endAddress || fmtCoord(state.end),
+      lat: state.end.lat,
+      lng: state.end.lng
+    };
+  }
+
+  function openSavedPlace(place) {
+    if (!place) return;
+    setPoint('end', L.latLng(place.lat, place.lng), place.name, place.address || '');
+    el('homeSearch').value = place.name;
+    el('savedSheet').hidden = true;
+    showPlaceSheet();
+    map.setView([place.lat, place.lng], 16);
+  }
+
+  function renderSavedPlaces() {
+    const home = state.saved.home;
+    const work = state.saved.work;
+    el('homeSavedLabel').textContent = home ? home.name : 'Not set';
+    el('workSavedLabel').textContent = work ? work.name : 'Not set';
+    const list = el('favouritesList');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!state.saved.favourites.length) {
+      const empty = document.createElement('div');
+      empty.className = 'saved-empty';
+      empty.textContent = 'No favourites yet.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const place of state.saved.favourites) {
+      const row = document.createElement('div');
+      row.className = 'saved-favourite-row';
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'saved-favourite-open';
+      open.innerHTML = '<span class="saved-kind-icon" aria-hidden="true">★</span><span class="saved-row-copy"><strong></strong><small></small></span>';
+      open.querySelector('strong').textContent = place.name;
+      open.querySelector('small').textContent = place.address || '';
+      open.addEventListener('click', () => openSavedPlace(place));
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'saved-remove';
+      remove.setAttribute('aria-label', `Remove ${place.name}`);
+      remove.textContent = '×';
+      remove.addEventListener('click', () => {
+        state.saved.favourites = state.saved.favourites.filter(x => x.id !== place.id);
+        persistSavedPlaces();
+      });
+      row.append(open, remove);
+      list.appendChild(row);
+    }
+  }
+
+  function beginSavedSearch(kind) {
+    state.pendingSaveKind = kind;
+    el('savedSheet').hidden = true;
+    setStage('explore');
+    el('homeSearch').value = '';
+    el('homeSearch').placeholder = kind === 'home' ? 'Search for Home' : kind === 'work' ? 'Search for Work' : 'Search for a favourite';
+    el('homeSearch').focus();
+  }
+
+  function finishSavedSearch() {
+    state.pendingSaveKind = null;
+    el('homeSearch').value = '';
+    el('homeSearch').placeholder = window.innerWidth <= 370 ? 'Search place or postcode' : 'Search place, address or postcode';
+  }
 
   function setPoint(which, latlng, label = '', address = '') {
     state[which] = L.latLng(latlng.lat, latlng.lng);
@@ -270,6 +393,21 @@
     const secondary = resultSecondary(result, primary);
     el('resultsSheet').hidden = true;
 
+    if (context === 'save-home' || context === 'save-work' || context === 'save-favourite') {
+      const place = savedPlaceFromResult(result);
+      if (context === 'save-home') state.saved.home = place;
+      else if (context === 'save-work') state.saved.work = place;
+      else {
+        const duplicate = state.saved.favourites.some(x => Math.abs(x.lat - place.lat) < 0.00002 && Math.abs(x.lng - place.lng) < 0.00002);
+        if (!duplicate) state.saved.favourites.unshift(place);
+      }
+      persistSavedPlaces();
+      finishSavedSearch();
+      el('savedSheet').hidden = false;
+      toast(context === 'save-home' ? 'Home saved' : context === 'save-work' ? 'Work saved' : 'Favourite saved');
+      return;
+    }
+
     if (context === 'destination') {
       setPoint('end', L.latLng(lat, lng), primary, secondary);
       el('homeSearch').value = primary;
@@ -296,7 +434,8 @@
 
   el('homeSearchForm').addEventListener('submit', e => {
     e.preventDefault();
-    runSearch('destination', el('homeSearch'));
+    const context = state.pendingSaveKind ? `save-${state.pendingSaveKind}` : 'destination';
+    runSearch(context, el('homeSearch'));
   });
   el('startSearchForm').addEventListener('submit', e => {
     e.preventDefault();
@@ -306,7 +445,10 @@
     e.preventDefault();
     runSearch('end', el('endSearch'));
   });
-  el('closeResults').addEventListener('click', () => { el('resultsSheet').hidden = true; });
+  el('closeResults').addEventListener('click', () => {
+    el('resultsSheet').hidden = true;
+    if (state.pendingSaveKind) { finishSavedSearch(); renderSavedPlaces(); el('savedSheet').hidden = false; }
+  });
   el('closePlace').addEventListener('click', () => {
     state.end = null; state.endLabel = ''; state.endAddress = '';
     redrawMarkers();
@@ -314,8 +456,37 @@
     setStage('explore');
   });
 
+  el('savedPlacesBtn').addEventListener('click', () => {
+    if (state.pendingSaveKind) finishSavedSearch();
+    renderSavedPlaces();
+    el('savedSheet').hidden = false;
+    probeOfflineMap().catch(() => {});
+  });
+  el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
+  el('setHomeBtn').addEventListener('click', () => beginSavedSearch('home'));
+  el('setWorkBtn').addEventListener('click', () => beginSavedSearch('work'));
+  el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
+  el('homeSavedRow').addEventListener('click', () => state.saved.home ? openSavedPlace(state.saved.home) : beginSavedSearch('home'));
+  el('workSavedRow').addEventListener('click', () => state.saved.work ? openSavedPlace(state.saved.work) : beginSavedSearch('work'));
+  el('saveFavouriteBtn').addEventListener('click', () => {
+    const place = savedPlaceFromCurrentEnd();
+    if (!place) return;
+    const duplicate = state.saved.favourites.some(x => Math.abs(x.lat - place.lat) < 0.00002 && Math.abs(x.lng - place.lng) < 0.00002);
+    if (!duplicate) state.saved.favourites.unshift(place);
+    persistSavedPlaces();
+    toast(duplicate ? 'Already saved' : 'Favourite saved');
+  });
+
   map.on('click', e => {
     if (state.navigating) return;
+    if (state.pendingSaveKind) {
+      const place = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: 'Dropped pin', address: fmtCoord(e.latlng), lat: e.latlng.lat, lng: e.latlng.lng };
+      if (state.pendingSaveKind === 'home') state.saved.home = place;
+      else if (state.pendingSaveKind === 'work') state.saved.work = place;
+      else state.saved.favourites.unshift(place);
+      persistSavedPlaces(); finishSavedSearch(); el('savedSheet').hidden = false;
+      return;
+    }
     if (state.stage === 'explore' || state.stage === 'place') {
       setPoint('end', e.latlng, 'Dropped pin', fmtCoord(e.latlng));
       showPlaceSheet();
@@ -426,7 +597,7 @@
   }
 
   function parseBundledNetwork(data) {
-    if (!data || data.format !== 'mk-redway-network-v1' || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
+    if (!data || !['mk-redway-network-v1', 'mk-redway-network-v2'].includes(data.format) || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
       throw new Error('Bundled routing network has an unsupported format');
     }
     const nodes = new Map();
@@ -477,17 +648,23 @@
 
   function drawRedwaysFromParsed(parsed) {
     redwayLayer.clearLayers();
-    const lines = [];
+    const groups = { superredway: [], redway: [], leisure: [], shared: [] };
     for (const w of parsed.ways) {
-      if (!isRedway(w.tags || {})) continue;
+      const cls = edgeClass(w.tags || {});
+      if (!groups[cls]) continue;
       const pts = w.nodes.map(id => parsed.nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon]);
-      if (pts.length >= 2) lines.push(pts);
+      if (pts.length >= 2) groups[cls].push(pts);
     }
-    if (lines.length) {
-      L.polyline(lines, { className: 'redway-casing', interactive: false }).addTo(redwayLayer);
-      L.polyline(lines, { className: 'redway-line', interactive: false }).addTo(redwayLayer);
-    }
-    state.redwayReady = lines.length > 0;
+    const add = (lines, cls) => {
+      if (!lines.length) return;
+      if (cls !== 'shared') L.polyline(lines, { className: `${cls}-casing`, interactive: false }).addTo(redwayLayer);
+      L.polyline(lines, { className: `${cls}-line`, interactive: false }).addTo(redwayLayer);
+    };
+    add(groups.shared, 'shared');
+    add(groups.redway, 'redway');
+    add(groups.leisure, 'leisure');
+    add(groups.superredway, 'superredway');
+    state.redwayReady = Object.values(groups).some(lines => lines.length > 0);
   }
 
   async function loadRedways() {
@@ -512,6 +689,7 @@
   }
 
   const isRedway = t => ['path', 'cycleway', 'footway'].includes(t.highway) && t.bicycle === 'designated' && t.foot === 'designated';
+  const taggedRouteClass = t => t._mk_class || '';
 
   function allowed(t, mode) {
     const h = t.highway || '';
@@ -527,8 +705,11 @@
 
   function edgeClass(t) {
     const h = t.highway || '';
+    const tagged = taggedRouteClass(t);
+    if (tagged === 'super_redway') return 'superredway';
+    if (tagged === 'leisure') return 'leisure';
     if (isRedway(t)) return 'redway';
-    if (['cycleway', 'footway', 'path', 'pedestrian', 'bridleway', 'track'].includes(h)) return 'trafficfree';
+    if (['cycleway', 'footway', 'path', 'pedestrian', 'bridleway', 'track'].includes(h)) return 'shared';
     if (['living_street', 'residential', 'service'].includes(h)) return 'quiet';
     if (h === 'unclassified') return 'road';
     if (['tertiary', 'tertiary_link'].includes(h)) return 'tertiary';
@@ -539,18 +720,25 @@
 
   function multiplier(cls, pref, mode) {
     if (mode === 'walk') {
-      return { redway: .94, trafficfree: 1, quiet: 1.08, road: 1.12, tertiary: 1.18, secondary: 1.24, primary: 1.35 }[cls] || 1.2;
+      return { superredway: .95, redway: .97, leisure: .99, shared: 1, quiet: 1.08, road: 1.12, tertiary: 1.18, secondary: 1.24, primary: 1.35 }[cls] || 1.2;
     }
     const table = {
-      maximum: { redway: .72, trafficfree: .93, quiet: 4.0, road: 5.5, tertiary: 8, secondary: 13, primary: 24 },
-      balanced: { redway: .84, trafficfree: .98, quiet: 1.7, road: 2.1, tertiary: 2.8, secondary: 4.3, primary: 9 },
-      fastest: { redway: 1, trafficfree: 1.04, quiet: 1.10, road: 1.13, tertiary: 1.18, secondary: 1.3, primary: 1.6 }
+      maximum: { superredway: .62, redway: .72, leisure: .88, shared: .97, quiet: 4.0, road: 5.5, tertiary: 8, secondary: 13, primary: 24 },
+      balanced: { superredway: .76, redway: .84, leisure: .94, shared: 1.02, quiet: 1.7, road: 2.1, tertiary: 2.8, secondary: 4.3, primary: 9 },
+      fastest: { superredway: .96, redway: 1, leisure: 1.03, shared: 1.06, quiet: 1.10, road: 1.13, tertiary: 1.18, secondary: 1.3, primary: 1.6 }
     };
     return table[pref][cls] || 2;
   }
 
   function edgeDisplayName(tags, cls) {
-    return tags.name || tags.ref || (cls === 'redway' ? 'Redway' : cls === 'trafficfree' ? 'path' : '');
+    if (tags.name) return tags.name;
+    if (tags._mk_route_name) return tags._mk_route_name;
+    if (tags.ref) return tags.ref;
+    if (cls === 'superredway') return 'Super Redway';
+    if (cls === 'redway') return 'Redway';
+    if (cls === 'leisure') return 'Leisure route';
+    if (cls === 'shared') return 'shared path';
+    return '';
   }
 
   function buildGraph(parsed, mode, pref) {
@@ -793,9 +981,11 @@
   }
 
   function targetPhrase(edge) {
-    if (edge?.name && !['Redway', 'path'].includes(edge.name)) return ` onto ${edge.name}`;
+    if (edge?.name && !['Super Redway', 'Redway', 'Leisure route', 'shared path'].includes(edge.name)) return ` onto ${edge.name}`;
+    if (edge?.cls === 'superredway') return ' onto the Super Redway';
     if (edge?.cls === 'redway') return ' onto the Redway';
-    if (edge?.cls === 'trafficfree') return ' onto the path';
+    if (edge?.cls === 'leisure') return ' onto the leisure route';
+    if (edge?.cls === 'shared') return ' onto the shared path';
     return '';
   }
 
@@ -809,7 +999,7 @@
       const abs = Math.abs(delta);
       const incoming = edges[i - 1];
       const outgoing = edges[i];
-      const enteredRedway = outgoing?.cls === 'redway' && incoming?.cls !== 'redway';
+      const enteredRedway = ['superredway', 'redway'].includes(outgoing?.cls) && !['superredway', 'redway'].includes(incoming?.cls);
       const changedName = outgoing?.name && outgoing.name !== incoming?.name;
       if (abs < 28 && !enteredRedway && !changedName) continue;
       if (cumulative[i] - lastAt < 28) continue;
@@ -841,9 +1031,11 @@
     if (coords.length < 2) return 'Follow the route';
     const dir = cardinal(bearing(coords[0], coords[1]));
     const e = edges[0];
-    if (e?.name && !['Redway', 'path'].includes(e.name)) return `Head ${dir} on ${e.name}`;
+    if (e?.name && !['Super Redway', 'Redway', 'Leisure route', 'shared path'].includes(e.name)) return `Head ${dir} on ${e.name}`;
+    if (e?.cls === 'superredway') return `Head ${dir} on the Super Redway`;
     if (e?.cls === 'redway') return `Head ${dir} on the Redway`;
-    if (e?.cls === 'trafficfree') return `Head ${dir} on the path`;
+    if (e?.cls === 'leisure') return `Head ${dir} on the leisure route`;
+    if (e?.cls === 'shared') return `Head ${dir} on the shared path`;
     return `Head ${dir}`;
   }
 
@@ -905,15 +1097,20 @@
       return [n.lat, n.lon];
     });
     const cumulative = buildCumulative(coords);
-    let tf = 0;
-    for (const ed of result.edges) if (ed.cls === 'redway' || ed.cls === 'trafficfree') tf += ed.d;
+    const mix = { superredway: 0, redway: 0, leisure: 0, shared: 0, road: 0 };
+    for (const ed of result.edges) {
+      if (Object.prototype.hasOwnProperty.call(mix, ed.cls)) mix[ed.cls] += ed.d;
+      else mix.road += ed.d;
+    }
+    const tf = mix.superredway + mix.redway + mix.leisure + mix.shared;
+    const redwayDistance = mix.superredway + mix.redway;
     const dist = result.edges.reduce((sum, ed) => sum + ed.d, 0);
     const speed = state.mode === 'cycle' ? 4.17 : 1.34;
     const mins = Math.max(1, dist / speed / 60);
     const maneuvers = buildManeuvers(coords, result.edges, cumulative);
 
     state.route = {
-      parsed, graph, result, coords, cumulative, maneuvers, dist, tf, mins,
+      parsed, graph, result, coords, cumulative, maneuvers, dist, tf, mix, mins,
       startNodeId: result.ids[0], endNodeId: result.ids[result.ids.length - 1],
       initialInstruction: initialInstruction(coords, result.edges),
       snaps
@@ -922,7 +1119,7 @@
     el('timeStat').textContent = formatDuration(mins);
     el('arrivalStat').textContent = `Arrive ${arrivalTime(mins)}`;
     el('distanceStat').textContent = formatDistance(dist);
-    el('redwayStat').textContent = `${Math.round((tf / Math.max(1, dist)) * 100)}%`;
+    el('redwayStat').textContent = `${Math.round((redwayDistance / Math.max(1, dist)) * 100)}%`;
     el('startNavBtn').disabled = false;
     setRouteStatus(`Route ready · start/end snapped ${Math.round(snaps.start)} m and ${Math.round(snaps.end)} m to the mapped network.`, 'good');
   }
@@ -1376,12 +1573,269 @@
     else if (state.voiceEnabled) speak('Voice guidance on.');
   });
 
+  // Offline MK basemap ------------------------------------------------------
+  function humanBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(bytes < 20 * 1024 * 1024 ? 1 : 0)} MB`;
+  }
+
+  async function offlineMapCached() {
+    if (!('caches' in window)) return false;
+    try {
+      const cache = await caches.open(OFFLINE_CACHE);
+      return Boolean(await cache.match(new URL(OFFLINE_MAP_URL, location.href).href));
+    } catch (_) { return false; }
+  }
+
+  function renderOfflineStatus() {
+    const status = el('offlineStatus');
+    const button = el('offlineDownloadBtn');
+    if (!status || !button) return;
+    if (state.offlineDownloadBusy) return;
+    if (state.offlineMapDownloaded) {
+      status.textContent = `Downloaded${state.offlineMapBytes ? ` · ${humanBytes(state.offlineMapBytes)}` : ''}. Map and routing are available offline.`;
+      button.textContent = 'Remove';
+      button.disabled = false;
+    } else if (state.offlineMapAvailable) {
+      status.textContent = `Download the MK basemap${state.offlineMapBytes ? ` (${humanBytes(state.offlineMapBytes)})` : ''} for navigation without signal.`;
+      button.textContent = 'Download';
+      button.disabled = false;
+    } else {
+      status.textContent = 'Offline basemap is not available in this deployment yet.';
+      button.textContent = 'Unavailable';
+      button.disabled = true;
+    }
+  }
+
+  async function probeOfflineMap() {
+    state.offlineMapDownloaded = await offlineMapCached();
+    try {
+      const response = await fetch(OFFLINE_MAP_URL, { method: 'HEAD', cache: 'no-store' });
+      state.offlineMapAvailable = response.ok;
+      const len = Number(response.headers.get('Content-Length') || 0);
+      if (len > 0) state.offlineMapBytes = len;
+    } catch (_) {
+      state.offlineMapAvailable = state.offlineMapDownloaded;
+    }
+    renderOfflineStatus();
+    return state.offlineMapAvailable;
+  }
+
+  async function activatePackagedBasemap() {
+    if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) return true;
+    if (!window.protomapsL?.leafletLayer) return false;
+    const available = state.offlineMapAvailable || await probeOfflineMap();
+    if (!available) return false;
+    try {
+      offlineVectorLayer = window.protomapsL.leafletLayer({
+        url: OFFLINE_MAP_URL,
+        flavor: 'light',
+        lang: 'en',
+        attribution: '© OpenStreetMap contributors'
+      });
+      const previousLayer = baseLayer;
+      let switched = false;
+      const finishSwitch = () => {
+        if (switched) return;
+        switched = true;
+        if (previousLayer && previousLayer !== offlineVectorLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
+        baseLayer = offlineVectorLayer;
+      };
+      offlineVectorLayer.on?.('tileload', finishSwitch);
+      offlineVectorLayer.on?.('load', finishSwitch);
+      offlineVectorLayer.addTo(map);
+      map.attributionControl.addAttribution('© OpenStreetMap contributors');
+      setTimeout(() => {
+        if (!switched && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+          // Leave the proven online layer in place if the PMTiles renderer never produced a tile.
+          map.removeLayer(offlineVectorLayer);
+          offlineVectorLayer = null;
+        }
+      }, 4500);
+      return true;
+    } catch (err) {
+      console.warn('Packaged basemap could not be activated', err);
+      return false;
+    }
+  }
+
+  async function cacheOfflineDependencies(cache) {
+    const urls = [
+      './data/network.json', './index.html', './styles.css', './app.js', './manifest.webmanifest',
+      './icons/app-logo.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+      'https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js',
+      'https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js'
+    ];
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, { cache: 'reload', mode: url.startsWith('http') ? 'cors' : 'same-origin' });
+        if (response.ok) await cache.put(url, response.clone());
+      } catch (err) { console.warn('Could not cache offline dependency', url, err); }
+    }
+  }
+
+  async function downloadOfflineMap() {
+    if (state.offlineDownloadBusy) return;
+    if (state.offlineMapDownloaded) {
+      try {
+        const cache = await caches.open(OFFLINE_CACHE);
+        await cache.delete(new URL(OFFLINE_MAP_URL, location.href).href);
+        state.offlineMapDownloaded = false;
+        renderOfflineStatus();
+        toast('Offline map removed');
+      } catch (_) {}
+      return;
+    }
+    if (!state.offlineMapAvailable) return;
+    state.offlineDownloadBusy = true;
+    const button = el('offlineDownloadBtn');
+    const status = el('offlineStatus');
+    button.disabled = true;
+    button.textContent = 'Downloading…';
+    status.textContent = 'Starting offline map download…';
+    try {
+      const response = await fetch(OFFLINE_MAP_URL, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Offline map returned ${response.status}`);
+      const total = Number(response.headers.get('Content-Length') || state.offlineMapBytes || 0);
+      const chunks = [];
+      let received = 0;
+      if (response.body?.getReader) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value); received += value.byteLength;
+          status.textContent = total > 0
+            ? `Downloading map… ${Math.min(100, Math.round(received / total * 100))}%`
+            : `Downloading map… ${humanBytes(received)}`;
+        }
+      } else {
+        chunks.push(new Uint8Array(await response.arrayBuffer()));
+        received = chunks[0].byteLength;
+      }
+      const blob = new Blob(chunks, { type: response.headers.get('Content-Type') || 'application/octet-stream' });
+      const cache = await caches.open(OFFLINE_CACHE);
+      const url = new URL(OFFLINE_MAP_URL, location.href).href;
+      await cache.put(url, new Response(blob, {
+        status: 200,
+        headers: { 'Content-Type': blob.type, 'Content-Length': String(blob.size), 'Accept-Ranges': 'bytes' }
+      }));
+      await cacheOfflineDependencies(cache);
+      try { await navigator.storage?.persist?.(); } catch (_) {}
+      state.offlineMapDownloaded = true;
+      state.offlineMapBytes = blob.size || received;
+      toast('Milton Keynes downloaded for offline use');
+      await activatePackagedBasemap();
+    } catch (err) {
+      console.error(err);
+      toast('Offline map download failed');
+      status.textContent = 'Download failed. Check your connection and try again.';
+    } finally {
+      state.offlineDownloadBusy = false;
+      renderOfflineStatus();
+    }
+  }
+
+  el('offlineDownloadBtn').addEventListener('click', downloadOfflineMap);
+
+  // PWA installation -------------------------------------------------------
+  function updateInstallButtonVisibility() {
+    const button = el('installAppBtn');
+    if (!button) return;
+    button.hidden = appInstalled || state.stage !== 'explore';
+  }
+
+  function setInstallInstructions() {
+    const steps = el('installSteps');
+    const action = el('installActionBtn');
+    steps.innerHTML = '';
+    action.hidden = true;
+
+    let copy;
+    if (deferredInstallPrompt) {
+      copy = [
+        'Tap Install below.',
+        'Confirm the browser installation prompt.'
+      ];
+      action.textContent = 'Install MK Redway';
+      action.hidden = false;
+    } else if (isIOS) {
+      copy = [
+        'Tap the Share button in your browser.',
+        'Choose Add to Home Screen.',
+        'Tap Add to finish.'
+      ];
+    } else if (/Android/i.test(navigator.userAgent)) {
+      copy = [
+        'Open your browser menu (⋮).',
+        'Choose Install app or Add to Home screen.',
+        'Confirm the installation.'
+      ];
+    } else {
+      copy = [
+        'Open your browser menu.',
+        'Choose Install MK Redway, Install app, or Add to Home screen.'
+      ];
+    }
+
+    for (const text of copy) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      steps.appendChild(li);
+    }
+  }
+
+  function showInstallSheet() {
+    setInstallInstructions();
+    el('installSheet').hidden = false;
+  }
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallButtonVisibility();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    appInstalled = true;
+    deferredInstallPrompt = null;
+    el('installSheet').hidden = true;
+    updateInstallButtonVisibility();
+    toast('MK Redway installed');
+  });
+
+  el('installAppBtn').addEventListener('click', showInstallSheet);
+  el('closeInstall').addEventListener('click', () => { el('installSheet').hidden = true; });
+  el('installActionBtn').addEventListener('click', async () => {
+    if (!deferredInstallPrompt) {
+      showInstallSheet();
+      return;
+    }
+    const prompt = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    await prompt.prompt();
+    try {
+      const choice = await prompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        appInstalled = true;
+        el('installSheet').hidden = true;
+      }
+    } catch (_) {}
+    updateInstallButtonVisibility();
+  });
+
   // Service worker + initial state ------------------------------------------
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
   }
 
+  loadSavedPlaces();
+  renderSavedPlaces();
   updatePlannerFields();
   setStage('explore');
   loadRedways();
+  probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
 })();
