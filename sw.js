@@ -1,4 +1,4 @@
-const CACHE = 'mk-redway-shell-v6';
+const CACHE = 'mk-redway-shell-v7';
 const SHELL = [
   './',
   './index.html',
@@ -25,6 +25,22 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  // The routing graph is generated at deployment time. Prefer the newest copy from
+  // GitHub Pages, but keep the last successful copy so routing survives weak signal.
+  if (url.pathname.endsWith('/data/network.json')) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, copy));
+        }
+        return response;
+      }).catch(async () => (await caches.match(event.request)) || Response.error())
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
       const copy = response.clone();

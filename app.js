@@ -60,18 +60,25 @@
     heading: null,
     lastHeadingFix: null,
     headingSupported: typeof map.setHeading === 'function' && typeof map.setBearing === 'function',
-    toastTimer: null
+    toastTimer: null,
+    routingNetwork: null,
+    routingNetworkPromise: null,
+    graphCache: new Map(),
+    networkSource: 'loading'
   };
 
   function syncViewport() {
-    // Keep the app shell on CSS dynamic viewport units. Using visualViewport.height
-    // for the root app height leaves a visible strip below standalone PWAs on some
-    // iOS releases because visualViewport can exclude the home-indicator region.
-    // We only expose the visual viewport as an auxiliary value for keyboard-aware
-    // panels; the map itself always fills 100dvh / the fixed viewport shell.
+    // The map shell itself is fixed by CSS and extends under the bottom safe area.
+    // visualViewport is only used to constrain keyboard-sensitive result panels.
     const h = window.visualViewport?.height || window.innerHeight;
     if (Number.isFinite(h) && h > 0) {
       document.documentElement.style.setProperty('--visual-height', `${Math.round(h)}px`);
+    }
+    const search = el('homeSearch');
+    if (search) {
+      search.placeholder = window.innerWidth <= 370
+        ? 'Search place or postcode'
+        : 'Search place, address or postcode';
     }
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
@@ -387,7 +394,7 @@
     for (const endpoint of OVERPASS) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 30000);
+        const timer = setTimeout(() => controller.abort(), 12000);
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
@@ -414,20 +421,80 @@
     return { nodes, ways };
   }
 
-  async function loadRedways() {
-    const q = `[out:json][timeout:25];(way["highway"]["foot"="designated"]["bicycle"="designated"](${MK.south},${MK.west},${MK.north},${MK.east}););(._;>;);out body;`;
-    try {
-      const parsed = parseWays(await overpass(q));
-      for (const w of parsed.ways) {
-        const pts = w.nodes.map(id => parsed.nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon]);
-        if (pts.length < 2) continue;
-        L.polyline(pts, { className: 'redway-casing', interactive: false }).addTo(redwayLayer);
-        L.polyline(pts, { className: 'redway-line', interactive: false }).addTo(redwayLayer);
-      }
-      state.redwayReady = true;
-    } catch (err) {
-      console.warn('Redway overlay unavailable', err);
+  function parseBundledNetwork(data) {
+    if (!data || data.format !== 'mk-redway-network-v1' || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
+      throw new Error('Bundled routing network has an unsupported format');
     }
+    const nodes = new Map();
+    for (const row of data.nodes) {
+      if (!Array.isArray(row) || row.length < 3) continue;
+      nodes.set(row[0], { id: row[0], lat: Number(row[1]), lon: Number(row[2]) });
+    }
+    const ways = [];
+    for (const row of data.ways) {
+      if (!Array.isArray(row) || row.length < 3 || !Array.isArray(row[1])) continue;
+      ways.push({ id: row[0], nodes: row[1], tags: row[2] || {} });
+    }
+    return { nodes, ways, generatedAt: data.generated_at || null };
+  }
+
+  async function loadBundledNetwork() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch('./data/network.json', {
+        headers: { Accept: 'application/json' },
+        cache: 'force-cache',
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`Bundled network returned ${response.status}`);
+      const parsed = parseBundledNetwork(await response.json());
+      if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Bundled routing network is incomplete');
+      state.routingNetwork = parsed;
+      state.networkSource = 'bundled';
+      state.graphCache.clear();
+      return parsed;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function ensureRoutingNetwork() {
+    if (state.routingNetwork) return Promise.resolve(state.routingNetwork);
+    if (!state.routingNetworkPromise) {
+      state.routingNetworkPromise = loadBundledNetwork().catch(err => {
+        console.warn('Bundled routing network unavailable; live fallback will be used', err);
+        state.networkSource = 'live-fallback';
+        return null;
+      });
+    }
+    return state.routingNetworkPromise;
+  }
+
+  function drawRedwaysFromParsed(parsed) {
+    redwayLayer.clearLayers();
+    const lines = [];
+    for (const w of parsed.ways) {
+      if (!isRedway(w.tags || {})) continue;
+      const pts = w.nodes.map(id => parsed.nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon]);
+      if (pts.length >= 2) lines.push(pts);
+    }
+    if (lines.length) {
+      L.polyline(lines, { className: 'redway-casing', interactive: false }).addTo(redwayLayer);
+      L.polyline(lines, { className: 'redway-line', interactive: false }).addTo(redwayLayer);
+    }
+    state.redwayReady = lines.length > 0;
+  }
+
+  async function loadRedways() {
+    const parsed = await ensureRoutingNetwork();
+    if (!parsed) return;
+    drawRedwaysFromParsed(parsed);
+    const warm = () => {
+      try { getGraph(parsed, 'cycle', 'maximum'); } catch (err) { console.warn('Graph warm-up failed', err); }
+    };
+    if ('requestIdleCallback' in window) requestIdleCallback(warm, { timeout: 2500 });
+    else setTimeout(warm, 700);
   }
 
   function hav(a, b) {
@@ -513,6 +580,105 @@
     return graph;
   }
 
+  function getGraph(parsed, mode, pref) {
+    if (parsed === state.routingNetwork) {
+      const key = `${mode}:${pref}`;
+      if (!state.graphCache.has(key)) {
+        // Keep memory predictable on phones; an old graph can still be referenced by
+        // an active route even after it drops out of this small cache.
+        if (state.graphCache.size >= 2) state.graphCache.clear();
+        state.graphCache.set(key, buildGraph(parsed, mode, pref));
+      }
+      return state.graphCache.get(key);
+    }
+    return buildGraph(parsed, mode, pref);
+  }
+
+  function nearestCandidates(parsed, latlng, graph, limit = 10, maxDistance = 900) {
+    const origin = { lat: latlng.lat, lon: latlng.lng };
+    const best = [];
+    for (const id of graph.keys()) {
+      const n = parsed.nodes.get(id);
+      if (!n) continue;
+      const d = hav(origin, n);
+      if (d > maxDistance && best.length >= limit) continue;
+      if (best.length < limit || d < best[best.length - 1].d) {
+        best.push({ id, d });
+        best.sort((a, b) => a.d - b.d);
+        if (best.length > limit) best.length = limit;
+      }
+    }
+    return best.filter(x => x.d <= maxDistance);
+  }
+
+  function aStarMulti(parsed, graph, startCandidates, endCandidates, targetLatLng) {
+    if (!startCandidates.length || !endCandidates.length) return null;
+    const open = new MinHeap();
+    const g = new Map();
+    const prev = new Map();
+    const prevEdge = new Map();
+    const sourceSnap = new Map();
+    const closed = new Set();
+    const goals = new Map(endCandidates.map(x => [x.id, x.d]));
+    const target = { lat: targetLatLng.lat, lon: targetLatLng.lng };
+    const connectorFactor = 1.12;
+
+    for (const s of startCandidates) {
+      const initial = s.d * connectorFactor;
+      if (initial < (g.get(s.id) ?? Infinity)) {
+        g.set(s.id, initial);
+        sourceSnap.set(s.id, s.d);
+        const n = parsed.nodes.get(s.id);
+        open.push(s.id, initial + (n ? hav(n, target) * .65 : 0));
+      }
+    }
+
+    let bestGoal = null;
+    let bestTotal = Infinity;
+    let loops = 0;
+    while (open.length && loops++ < 900000) {
+      const cur = open.pop();
+      if (closed.has(cur)) continue;
+      const curG = g.get(cur);
+      if (goals.has(cur)) {
+        const total = curG + goals.get(cur) * connectorFactor;
+        if (total < bestTotal) { bestTotal = total; bestGoal = cur; }
+        if (open.peekPriority >= bestTotal) break;
+      }
+      closed.add(cur);
+      for (const e of graph.get(cur) || []) {
+        if (closed.has(e.to)) continue;
+        const ng = curG + e.cost;
+        if (ng < (g.get(e.to) ?? Infinity)) {
+          g.set(e.to, ng);
+          prev.set(e.to, cur);
+          prevEdge.set(e.to, e);
+          sourceSnap.set(e.to, sourceSnap.get(cur));
+          const n = parsed.nodes.get(e.to);
+          open.push(e.to, ng + (n ? hav(n, target) * .65 : 0));
+        }
+      }
+    }
+    if (bestGoal == null) return null;
+
+    const ids = [bestGoal];
+    const edges = [];
+    let c = bestGoal;
+    while (prev.has(c)) {
+      edges.push(prevEdge.get(c));
+      c = prev.get(c);
+      ids.push(c);
+    }
+    ids.reverse();
+    edges.reverse();
+    return {
+      ids,
+      edges,
+      startSnap: sourceSnap.get(bestGoal) ?? startCandidates[0].d,
+      endSnap: goals.get(bestGoal) ?? endCandidates[0].d
+    };
+  }
+
   function nearestNode(parsed, latlng, graph) {
     let best = null;
     let bd = Infinity;
@@ -553,6 +719,7 @@
       return root.x;
     }
     get length() { return this.a.length; }
+    get peekPriority() { return this.a.length ? this.a[0].p : Infinity; }
   }
 
   function aStar(parsed, graph, startId, endId) {
@@ -756,27 +923,82 @@
     setRouteStatus(`Route ready · start/end snapped ${Math.round(snaps.start)} m and ${Math.round(snaps.end)} m to the mapped network.`, 'good');
   }
 
+  function solveRouteOnNetwork(parsed, { fit = true } = {}) {
+    const graph = getGraph(parsed, state.mode, state.pref);
+    let starts = nearestCandidates(parsed, state.start, graph, 10, 900);
+    let ends = nearestCandidates(parsed, state.end, graph, 10, 900);
+    if (!starts.length || !ends.length) {
+      throw new Error('No usable walking/cycling network was found near one of the selected points.');
+    }
+
+    let result = aStarMulti(parsed, graph, starts, ends, state.end);
+    if (!result) {
+      // A nearest path node can belong to an isolated car park, driveway or mapping
+      // fragment. Widen the candidate set before declaring the route impossible.
+      starts = nearestCandidates(parsed, state.start, graph, 24, 1500);
+      ends = nearestCandidates(parsed, state.end, graph, 24, 1500);
+      result = aStarMulti(parsed, graph, starts, ends, state.end);
+    }
+    if (!result) throw new Error('No connected Redway route was found between these points. Try Fastest or move one of the pins slightly.');
+    if (result.startSnap > 1000 || result.endSnap > 1000) {
+      throw new Error('One selected point is too far from the mapped walking/cycling network.');
+    }
+    installRoute(parsed, graph, result, { start: result.startSnap, end: result.endSnap }, { fit });
+    return true;
+  }
+
+  function expandedBox(box, factor = 1.8) {
+    const cy = (box.s + box.n) / 2;
+    const cx = (box.w + box.e) / 2;
+    const hh = (box.n - box.s) * factor / 2;
+    const hw = (box.e - box.w) * factor / 2;
+    return {
+      s: Math.max(MK.south, cy - hh),
+      w: Math.max(MK.west, cx - hw),
+      n: Math.min(MK.north, cy + hh),
+      e: Math.min(MK.east, cx + hw)
+    };
+  }
+
+  async function fetchLiveRoutingNetwork(box) {
+    const h = 'path|cycleway|footway|pedestrian|bridleway|track|steps|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link';
+    const q = `[out:json][timeout:15];way["highway"~"^(${h})$"](${box.s},${box.w},${box.n},${box.e});(._;>;);out body;`;
+    return parseWays(await overpass(q));
+  }
+
   async function calculateRoute({ fit = true, quiet = false } = {}) {
     if (!state.start || !state.end || state.routing) return;
     state.routing = true;
     el('startNavBtn').disabled = true;
     if (!quiet) setRouteStatus('Finding the best Redway route…');
+    const started = performance.now();
     try {
-      const box = corridorBBox(state.start, state.end);
-      const h = 'path|cycleway|footway|pedestrian|bridleway|track|steps|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link';
-      const q = `[out:json][timeout:30];way["highway"~"^(${h})$"](${box.s},${box.w},${box.n},${box.e});(._;>;);out body;`;
-      const parsed = parseWays(await overpass(q));
-      const graph = buildGraph(parsed, state.mode, state.pref);
-      const s = nearestNode(parsed, state.start, graph);
-      const e = nearestNode(parsed, state.end, graph);
-      if (!s.id || !e.id) throw new Error('No routable path was found near one of the selected points.');
-      if (s.d > 800 || e.d > 800) throw new Error('One selected point is too far from the mapped walking/cycling network.');
-      const result = aStar(parsed, graph, s.id, e.id);
-      if (!result) throw new Error('No route found. Try Balanced or Fastest, or choose another start point.');
-      installRoute(parsed, graph, result, { start: s.d, end: e.d }, { fit });
+      // Normal path: one versioned network file is generated during the GitHub Pages
+      // deployment, served from the same CDN as the app and cached on the phone.
+      const bundled = await ensureRoutingNetwork();
+      if (bundled) {
+        solveRouteOnNetwork(bundled, { fit });
+        const elapsed = performance.now() - started;
+        console.info(`Route calculated from bundled network in ${Math.round(elapsed)} ms`);
+        return;
+      }
+
+      // Fallback for local development or a failed network-data build. Keep the live
+      // query bounded and retry once with a wider corridor if topology is clipped.
+      if (!quiet) setRouteStatus('Loading live map data…');
+      const firstBox = corridorBBox(state.start, state.end);
+      let parsed = await fetchLiveRoutingNetwork(firstBox);
+      try {
+        solveRouteOnNetwork(parsed, { fit });
+      } catch (firstErr) {
+        console.warn('First live corridor could not connect route; widening it', firstErr);
+        if (!quiet) setRouteStatus('Checking a wider Redway area…');
+        parsed = await fetchLiveRoutingNetwork(expandedBox(firstBox, 2.0));
+        solveRouteOnNetwork(parsed, { fit });
+      }
     } catch (err) {
       console.error(err);
-      setRouteStatus(err.message || 'Routing failed. The public map-data service may be busy; try again shortly.', 'warn');
+      setRouteStatus(err.message || 'Routing failed. Try again shortly.', 'warn');
       toast('Could not calculate route');
     } finally {
       state.routing = false;
@@ -873,22 +1095,47 @@
     }
   }
 
+  function navigationTargetPoint() {
+    const size = map.getSize();
+    const landscape = window.innerWidth > window.innerHeight;
+    if (landscape) {
+      // Side controls occupy the left side in landscape, so the travelling point
+      // sits in the centre of the clear map area rather than the whole screen.
+      return L.point(size.x * 0.66, size.y * 0.54);
+    }
+    // Horizontally centred, slightly below mid-screen to expose more route ahead.
+    return L.point(size.x * 0.50, size.y * 0.58);
+  }
+
+  function alignNavigationPoint(latlng, animate = false) {
+    if (!latlng) return;
+    const actual = map.latLngToContainerPoint(latlng);
+    const target = navigationTargetPoint();
+    const offset = actual.subtract(target);
+    if (Math.abs(offset.x) > 1 || Math.abs(offset.y) > 1) {
+      map.panBy(offset, { animate });
+    }
+  }
+
   function followNavigationView(latlng, heading, animate = false) {
     if (!latlng) return;
     const zoom = state.mode === 'cycle' ? 17 : 18;
+    map.invalidateSize({ pan: false });
+
     if (state.headingSupported && Number.isFinite(heading)) {
       try { map.setHeading(heading, { ease: .22, deadzone: .6 }); } catch (err) { console.warn(err); }
     }
 
     map.setView(latlng, zoom, { animate: false });
-    const landscape = window.innerWidth > window.innerHeight;
-    if (landscape) {
-      // Keep the rider/walker in the clear right-hand portion of the map, away from the nav cards.
-      map.panBy([-Math.min(150, Math.round(window.innerWidth * .14)), 0], { animate });
-    } else {
-      // Put the position below centre so more of the route ahead is visible, sat-nav style.
-      map.panBy([0, -Math.min(110, Math.round(window.innerHeight * .12))], { animate });
-    }
+
+    // Leaflet-Rotate applies its transform after the map view update. Align on the
+    // next two frames so navigation always begins with the current position centred
+    // in the intended sat-nav camera area instead of inheriting an old map offset.
+    requestAnimationFrame(() => {
+      map.invalidateSize({ pan: false });
+      alignNavigationPoint(latlng, false);
+      requestAnimationFrame(() => alignNavigationPoint(latlng, animate));
+    });
   }
 
   function nearestOnRoute(latlng) {
@@ -1012,13 +1259,18 @@
     toast('Rerouting…');
     speak('Rerouting.');
     const parsed = state.route.parsed; const graph = state.route.graph;
-    const s = nearestNode(parsed, latlng, graph);
+    const starts = nearestCandidates(parsed, latlng, graph, 12, 900);
     const eId = state.route.endNodeId;
-    if (s.id && s.d < 600 && eId) {
-      const result = aStar(parsed, graph, s.id, eId);
+    const endNode = eId != null ? parsed.nodes.get(eId) : null;
+    if (starts.length && eId != null && endNode) {
+      const result = aStarMulti(
+        parsed, graph, starts,
+        [{ id: eId, d: state.route.snaps?.end || 0 }],
+        state.end || L.latLng(endNode.lat, endNode.lon)
+      );
       if (result) {
         state.start = latlng; state.startLabel = 'Your location';
-        installRoute(parsed, graph, result, { start: s.d, end: state.route.snaps?.end || 0 }, { fit: false });
+        installRoute(parsed, graph, result, { start: result.startSnap, end: result.endSnap }, { fit: false });
         resetNavigationProgress();
         speak(state.route.initialInstruction);
         return;
@@ -1068,7 +1320,11 @@
     const initialSnap = nearestOnRoute(current.latlng);
     state.heading = routeHeadingAt(initialSnap);
     state.lastHeadingFix = L.latLng(current.latlng.lat, current.latlng.lng);
-    followNavigationView(current.latlng, state.heading, false);
+    // Give the navigation overlays and rotated map one layout pass before setting
+    // the initial camera; this prevents the first frame from starting off-centre.
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      followNavigationView(current.latlng, state.heading, false)
+    ));
     if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
     el('turnIcon').textContent = '↑';
     el('turnDistance').textContent = 'Start';

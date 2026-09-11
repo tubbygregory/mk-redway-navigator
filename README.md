@@ -1,6 +1,32 @@
 # MK Redway Navigator
 
+## v0.7.0 — faster, reliable local routing
+
+v0.7 changes the routing architecture so normal route calculation no longer depends on a live public Overpass request. During GitHub Pages deployment, `scripts/build_network.py` downloads and compacts the Milton Keynes walking/cycling network into `data/network.json`. The browser downloads that same-origin file once, the PWA cache keeps it locally, and route searches then run entirely on-device.
+
+Routing reliability is also improved by **multi-point endpoint snapping**. Instead of attaching the start and destination to one nearest OSM node, the router considers several nearby network nodes. This avoids common failures where the geometrically nearest node is an isolated car park, driveway or incomplete mapping fragment while a connected Redway is nearby.
+
+The deployment workflow restores the last successful network file from the GitHub Actions cache before trying to refresh it. If the refresh service is temporarily unavailable, the previous working graph can still be deployed. If no bundled graph exists at all, the app retains a bounded live-query fallback.
+
+### Important deployment change
+
+For v0.7, update **the whole repository**, especially these new/changed files:
+
+- `.github/workflows/pages.yml`
+- `scripts/build_network.py`
+- `app.js`
+- `sw.js`
+- `VERSION`
+
+After committing to `main`, the Pages action will have an extra **Build current MK routing network** step. A successful run will report that `data/network.json` is present before the site is deployed. The first deployment may therefore take longer than previous versions, but route calculations in the published app should be much quicker and more dependable afterwards.
+
 A proof-of-concept walking and cycling navigator for the Milton Keynes Redway network.
+
+## v0.6.1 — iOS safe-area fix + search/camera polish
+
+- Extends the app/map underneath the iOS home-indicator safe area to remove the persistent bottom strip seen in standalone mode.
+- Shortens/resizes the home search field so its prompt fits on current phone widths.
+- Re-centres the navigation camera after the rotated map has completed layout, so sat-nav starts on the current position rather than an inherited offset.
 
 ## v0.6 — full-viewport mobile shell + broad smartphone support
 
@@ -42,7 +68,7 @@ The visual language is original to MK Redway Navigator; it uses the same general
 ## Data and services
 
 - Base map: OpenStreetMap
-- Path/road data: OpenStreetMap via public Overpass API endpoints
+- Path/road data: OpenStreetMap, compiled into `data/network.json` during the GitHub Pages deployment (public Overpass is only a runtime fallback)
 - Address/place search: OpenStreetMap Nominatim
 - Map renderer: Leaflet 1.9.4 + leaflet-rotate 0.2.4
 

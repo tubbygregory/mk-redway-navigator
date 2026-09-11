@@ -666,3 +666,68 @@ body {
     max-height: max(120px, min(46dvh, calc(var(--visual-height, 100dvh) - 190px)));
   }
 }
+
+
+/* v0.6.1 iOS safe-area + compact search fixes --------------------------- */
+/*
+   Some iOS standalone PWA builds report 100dvh only to the top edge of the
+   home-indicator safe area. Extend the fixed app shell by that inset so the
+   map paints underneath it; overlays already add the inset back as padding/
+   positioning, so controls remain safely above the indicator.
+*/
+html, body {
+  background: #dfe4df;
+}
+
+body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+}
+
+#app {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(0px - env(safe-area-inset-bottom, 0px));
+  width: auto;
+  height: auto;
+  min-height: 0;
+  background: #dfe4df;
+}
+
+#map {
+  inset: 0;
+}
+
+/* Keep the single-line search field readable rather than allowing the
+   placeholder/value to disappear beneath the search button. */
+.search-pill {
+  grid-template-columns: 32px minmax(0, 1fr) 44px;
+  gap: 7px;
+  padding-left: 8px;
+}
+.search-pill input {
+  min-width: 0;
+  width: 100%;
+  font-size: 16px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 370px) {
+  .search-pill {
+    grid-template-columns: 28px minmax(0, 1fr) 42px;
+    gap: 5px;
+    padding-left: 7px;
+  }
+  .search-logo { width: 28px; height: 28px; }
+}
