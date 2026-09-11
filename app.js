@@ -1,6 +1,10 @@
 (() => {
   'use strict';
 
+  const isIOSStandalone = (window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches)
+    && /iP(?:hone|ad|od)/.test(navigator.userAgent);
+  document.documentElement.classList.toggle('ios-standalone', Boolean(isIOSStandalone));
+
   const MK = { south: 51.955, west: -0.905, north: 52.155, east: -0.615 };
   const OVERPASS = [
     'https://overpass-api.de/api/interpreter',

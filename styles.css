@@ -16,12 +16,18 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; background: #d9d9d9; }
-html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+html { -webkit-text-size-adjust: 100%; background: #fff; }
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   color: var(--text);
-  background: #d9d9d9;
+  background: #fff;
 }
 button, input { font: inherit; }
 button { touch-action: manipulation; }
@@ -509,7 +515,7 @@ html {
   min-height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #dfe4df;
+  background: #fff;
 }
 
 body {
@@ -521,7 +527,7 @@ body {
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #dfe4df;
+  background: #fff;
 }
 
 #app {
@@ -531,7 +537,7 @@ body {
   height: auto;
   min-height: 0;
   overflow: hidden;
-  background: #dfe4df;
+  background: #fff;
 }
 
 #map {
@@ -676,7 +682,7 @@ body {
    positioning, so controls remain safely above the indicator.
 */
 html, body {
-  background: #dfe4df;
+  background: #fff;
 }
 
 body {
@@ -699,7 +705,7 @@ body {
   width: auto;
   height: auto;
   min-height: 0;
-  background: #dfe4df;
+  background: #fff;
 }
 
 #map {
@@ -730,4 +736,57 @@ body {
     padding-left: 7px;
   }
   .search-logo { width: 28px; height: 28px; }
+}
+
+
+/* v0.7.1 iOS 26 Home Screen PWA chin workaround -------------------------
+   iOS 26.x can expose a standalone-web-app viewport that is shorter than
+   the physical screen. Keep the document on the largest viewport unit when
+   WebKit supports it; on affected builds the remaining system-owned strip
+   cannot be painted by DOM content, so the root canvas is white and the map
+   fades into it instead of ending on a grey block. */
+html, body {
+  width: 100%;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  background: #fff !important;
+}
+
+@supports (height: 100lvh) {
+  html, body {
+    height: 100lvh !important;
+    min-height: 100lvh !important;
+  }
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  background: #fff !important;
+  overflow: hidden;
+}
+
+/* Only the installed iOS web app gets the visual blend. Browsers and Android
+   continue to render the map directly to the viewport edge. */
+html.ios-standalone #app::after {
+  content: "";
+  position: absolute;
+  z-index: 1050;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.92) 78%, #fff 100%);
+}
+
+/* Sheets and navigation controls must remain above the blend. */
+html.ios-standalone .bottom-sheet,
+html.ios-standalone .nav-bottom,
+html.ios-standalone .map-controls,
+html.ios-standalone .toast {
+  z-index: 1200;
 }

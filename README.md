@@ -1,6 +1,6 @@
 # MK Redway Navigator
 
-## v0.7.0 — faster, reliable local routing
+## v0.7.1 — faster, reliable local routing
 
 v0.7 changes the routing architecture so normal route calculation no longer depends on a live public Overpass request. During GitHub Pages deployment, `scripts/build_network.py` downloads and compacts the Milton Keynes walking/cycling network into `data/network.json`. The browser downloads that same-origin file once, the PWA cache keeps it locally, and route searches then run entirely on-device.
 
@@ -116,3 +116,8 @@ For production, the next architectural step would be a verified Milton Keynes ne
 v0.6 removes the previous JavaScript root-height override that could leave a grey strip under the app in iOS standalone mode. The map shell now fills the CSS dynamic viewport (`100dvh`) while `visualViewport` is used only to keep search-result panels usable when an on-screen keyboard is open.
 
 The responsive rules are designed around modern phone classes rather than one exact handset: roughly 320–600 CSS px portrait widths and phone landscape views up to 1100 px wide / 600 px high. Safe-area insets are honoured where exposed by iOS/Android browsers, and collapse to zero on devices without cut-outs.
+
+
+## iOS 26 Home Screen bottom-area note
+
+iOS 26.x has a WebKit standalone-PWA viewport issue on some iPhones where the web layer is shorter than the physical display. v0.7.1 removes legacy `height:100%` root sizing, prefers the largest viewport unit, and uses a white system canvas plus a subtle map-edge blend when running as an installed iOS app. This prevents the previous grey chin from appearing even on affected WebKit builds.
