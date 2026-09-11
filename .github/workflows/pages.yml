@@ -2,8 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -11,25 +10,48 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Pages
+      - name: Restore last routing network
+        uses: actions/cache@v4
+        with:
+          path: data/network.json
+          key: mk-redway-routing-v1-${{ github.run_number }}
+          restore-keys: |
+            mk-redway-routing-v1-
+
+      - name: Build current MK routing network
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 scripts/build_network.py
+
+      - name: Verify routing data
+        run: |
+          if [ -f data/network.json ]; then
+            echo "Bundled routing network is present ($(du -h data/network.json | cut -f1))."
+          else
+            echo "::warning::No bundled routing network was generated. The app will use its slower live fallback."
+          fi
+
+      - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: '.'
+          path: .
 
       - name: Deploy to GitHub Pages
         id: deployment
