@@ -28,21 +28,41 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/network.json
-          key: mk-redway-routing-v1-${{ github.run_number }}
+          key: mk-redway-routing-v2-${{ github.run_number }}
           restore-keys: |
-            mk-redway-routing-v1-
+            mk-redway-routing-v2-
+
+      - name: Restore last offline basemap
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/mk-basemap.pmtiles
+            data/mk-basemap-build.txt
+          key: mk-redway-basemap-v1-${{ github.run_number }}
+          restore-keys: |
+            mk-redway-basemap-v1-
 
       - name: Build current MK routing network
         continue-on-error: true
         timeout-minutes: 10
         run: python3 scripts/build_network.py
 
-      - name: Verify routing data
+      - name: Build offline Milton Keynes basemap
+        continue-on-error: true
+        timeout-minutes: 15
+        run: bash scripts/build_offline_map.sh
+
+      - name: Verify offline data
         run: |
           if [ -f data/network.json ]; then
             echo "Bundled routing network is present ($(du -h data/network.json | cut -f1))."
           else
             echo "::warning::No bundled routing network was generated. The app will use its slower live fallback."
+          fi
+          if [ -f data/mk-basemap.pmtiles ]; then
+            echo "Offline basemap is present ($(du -h data/mk-basemap.pmtiles | cut -f1))."
+          else
+            echo "::warning::No offline basemap was generated. Online mapping will still work."
           fi
 
       - name: Configure Pages
