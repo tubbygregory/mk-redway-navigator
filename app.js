@@ -64,8 +64,15 @@
   };
 
   function syncViewport() {
+    // Keep the app shell on CSS dynamic viewport units. Using visualViewport.height
+    // for the root app height leaves a visible strip below standalone PWAs on some
+    // iOS releases because visualViewport can exclude the home-indicator region.
+    // We only expose the visual viewport as an auxiliary value for keyboard-aware
+    // panels; the map itself always fills 100dvh / the fixed viewport shell.
     const h = window.visualViewport?.height || window.innerHeight;
-    if (Number.isFinite(h) && h > 0) document.documentElement.style.setProperty('--app-height', `${Math.round(h)}px`);
+    if (Number.isFinite(h) && h > 0) {
+      document.documentElement.style.setProperty('--visual-height', `${Math.round(h)}px`);
+    }
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
   function refreshMapAfterOrientationChange() {

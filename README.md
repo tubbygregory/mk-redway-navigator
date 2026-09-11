@@ -2,7 +2,7 @@
 
 A proof-of-concept walking and cycling navigator for the Milton Keynes Redway network.
 
-## v0.5 — heading-up sat-nav + portrait/landscape layouts
+## v0.6 — full-viewport mobile shell + broad smartphone support
 
 The interface now uses a map-first flow familiar from modern navigation apps rather than a permanent control panel:
 
@@ -18,13 +18,14 @@ Highlights:
 - dedicated full-screen navigation mode
 - heading-up navigation: the map rotates so your direction of travel stays at the top
 - GPS heading with movement/route-direction fallback and smoothing
-- adaptive portrait and landscape layouts, including iPhone safe areas
+- adaptive portrait and landscape layouts across modern iPhone and Android screen sizes
+- full dynamic-viewport shell with safe-area handling for notches, Dynamic Island and home/navigation indicators
 - turn-by-turn manoeuvre banner
 - spoken guidance using the browser speech engine
 - live GPS progress, ETA and remaining distance
 - automatic rerouting after moving materially off route
 - recenter and voice controls
-- iPhone 16 safe-area and Home Screen/PWA support
+- iOS/Android safe-area and Home Screen/PWA support
 
 The visual language is original to MK Redway Navigator; it uses the same general interaction model as established map apps rather than copying another app pixel-for-pixel.
 
@@ -83,3 +84,9 @@ Then open `http://localhost:8080`. Browsers treat localhost as a secure context 
 - Temporary closures and hazards are not represented reliably.
 
 For production, the next architectural step would be a verified Milton Keynes network plus a dedicated routing engine/backend such as Valhalla or GraphHopper.
+
+## Mobile viewport compatibility (v0.6)
+
+v0.6 removes the previous JavaScript root-height override that could leave a grey strip under the app in iOS standalone mode. The map shell now fills the CSS dynamic viewport (`100dvh`) while `visualViewport` is used only to keep search-result panels usable when an on-screen keyboard is open.
+
+The responsive rules are designed around modern phone classes rather than one exact handset: roughly 320–600 CSS px portrait widths and phone landscape views up to 1100 px wide / 600 px high. Safe-area insets are honoured where exposed by iOS/Android browsers, and collapse to zero on devices without cut-outs.
