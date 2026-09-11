@@ -8,7 +8,17 @@
   ];
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 
-  const map = L.map('map', { zoomControl: true }).setView([52.0406, -0.7594], 12);
+  const el = id => document.getElementById(id);
+  const map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true,
+    rotate: true,
+    bearing: 0,
+    dragRotate: false,
+    shiftKeyRotate: false,
+    touchRotate: false,
+    rotateControl: false
+  }).setView([52.0406, -0.7594], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
     attribution: '© OpenStreetMap contributors'
@@ -17,295 +27,353 @@
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
-
-  // Keep the app aligned to iOS Safari's changing visual viewport (address bar / keyboard).
-  function syncViewport() {
-    const height = window.visualViewport?.height || window.innerHeight;
-    if (Number.isFinite(height) && height > 0) {
-      document.documentElement.style.setProperty('--app-height', `${Math.round(height)}px`);
-    }
-    requestAnimationFrame(() => map.invalidateSize({ pan: false }));
-  }
-
-  const el = id => document.getElementById(id);
-  syncViewport();
-  window.addEventListener('resize', syncViewport, { passive: true });
-  window.addEventListener('orientationchange', () => setTimeout(syncViewport, 120), { passive: true });
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', syncViewport, { passive: true });
-  }
-
-  const routeSheet = el('routeSheet');
-  const sheetToggle = el('sheetToggle');
-  if (routeSheet && sheetToggle) {
-    sheetToggle.addEventListener('click', () => {
-      const collapsed = routeSheet.classList.toggle('sheet-collapsed');
-      sheetToggle.textContent = collapsed ? 'Show controls' : 'Minimise controls';
-      sheetToggle.setAttribute('aria-expanded', String(!collapsed));
-      setTimeout(syncViewport, 220);
-    });
-  }
+  const userLayer = L.layerGroup().addTo(map);
 
   const state = {
     mode: 'cycle',
     pref: 'maximum',
-    selecting: 'start',
+    stage: 'explore',
     start: null,
     end: null,
     startLabel: '',
     endLabel: '',
-    redwayReady: false,
+    endAddress: '',
+    route: null,
     routing: false,
-    lastGeocodeAt: 0
+    redwayReady: false,
+    searchContext: 'destination',
+    lastGeocodeAt: 0,
+    watchId: null,
+    navigating: false,
+    voiceEnabled: true,
+    followUser: true,
+    userLatLng: null,
+    userMarker: null,
+    lastSegment: 0,
+    navProgressMeters: 0,
+    maneuverIndex: 0,
+    announcedFar: new Set(),
+    announcedNear: new Set(),
+    offRouteCount: 0,
+    lastRerouteAt: 0,
+    lastPositionAt: 0,
+    heading: null,
+    lastHeadingFix: null,
+    headingSupported: typeof map.setHeading === 'function' && typeof map.setBearing === 'function',
+    toastTimer: null
   };
 
-  function setStatus(msg, kind = '') {
-    const s = el('status');
-    s.textContent = msg;
-    s.className = 'status' + (kind ? ' ' + kind : '');
+  function syncViewport() {
+    const h = window.visualViewport?.height || window.innerHeight;
+    if (Number.isFinite(h) && h > 0) document.documentElement.style.setProperty('--app-height', `${Math.round(h)}px`);
+    requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+  }
+  function refreshMapAfterOrientationChange() {
+    setTimeout(() => {
+      syncViewport();
+      if (state.navigating && state.userLatLng) {
+        followNavigationView(state.userLatLng, state.heading, false);
+      } else if (state.route && state.stage === 'planner') {
+        drawRoute(state.route.coords, true);
+      }
+    }, 220);
+  }
+
+  syncViewport();
+  window.addEventListener('resize', syncViewport, { passive: true });
+  window.addEventListener('orientationchange', refreshMapAfterOrientationChange, { passive: true });
+  window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
+
+  function setStage(stage) {
+    state.stage = stage;
+    el('exploreUI').hidden = stage !== 'explore';
+    el('plannerUI').hidden = stage !== 'planner';
+    el('placeSheet').hidden = stage !== 'place';
+    el('routeSheet').hidden = stage !== 'planner';
+    const nav = stage === 'navigation';
+    el('navBanner').hidden = !nav;
+    el('navBottom').hidden = !nav;
+    el('mapControls').hidden = !nav;
+    if (stage !== 'search-results') el('resultsSheet').hidden = true;
+    setTimeout(syncViewport, 40);
+  }
+
+  function toast(message, ms = 2600) {
+    const t = el('toast');
+    clearTimeout(state.toastTimer);
+    t.textContent = message;
+    t.hidden = false;
+    state.toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+  }
+
+  function setRouteStatus(msg, kind = '') {
+    const n = el('routeStatus');
+    n.textContent = msg;
+    n.className = 'route-status' + (kind ? ` ${kind}` : '');
   }
 
   function fmtCoord(p) {
     return `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
   }
 
-  function pointLabel(which) {
-    const point = state[which];
-    const label = state[`${which}Label`];
-    return point ? (label || fmtCoord(point)) : 'Search or tap the map';
-  }
+  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-  function invalidateRoute() {
-    routeLayer.clearLayers();
-    el('stats').hidden = true;
-  }
-
-  function updatePointUI() {
-    el('startText').textContent = pointLabel('start');
-    el('endText').textContent = pointLabel('end');
-    el('routeBtn').disabled = !(state.start && state.end) || state.routing;
+  function setPoint(which, latlng, label = '', address = '') {
+    state[which] = L.latLng(latlng.lat, latlng.lng);
+    state[`${which}Label`] = label || fmtCoord(state[which]);
+    if (which === 'end') state.endAddress = address || label || '';
+    invalidateRoute();
+    updatePlannerFields();
     redrawMarkers();
   }
 
-  function setSelecting(which) {
-    state.selecting = which;
-    el('startPoint').classList.toggle('active', which === 'start');
-    el('endPoint').classList.toggle('active', which === 'end');
+  function updatePlannerFields() {
+    if (document.activeElement !== el('startSearch')) {
+      el('startSearch').value = state.start ? (state.startLabel || 'Your location') : '';
+    }
+    if (document.activeElement !== el('endSearch')) {
+      el('endSearch').value = state.end ? state.endLabel : '';
+    }
   }
 
   function redrawMarkers() {
     markerLayer.clearLayers();
-    if (state.start) {
-      L.circleMarker(state.start, {
-        radius: 7,
-        color: '#fff',
-        weight: 3,
-        fillColor: '#26734d',
-        fillOpacity: 1
-      }).addTo(markerLayer).bindTooltip('Start');
+    if (state.start && !state.navigating) {
+      L.circleMarker(state.start, { radius: 7, color: '#fff', weight: 3, fillColor: '#2457d6', fillOpacity: 1 })
+        .addTo(markerLayer).bindTooltip('Start');
     }
     if (state.end) {
-      L.circleMarker(state.end, {
-        radius: 7,
-        color: '#fff',
-        weight: 3,
-        fillColor: '#b3261e',
-        fillOpacity: 1
-      }).addTo(markerLayer).bindTooltip('Destination');
+      L.circleMarker(state.end, { radius: 8, color: '#fff', weight: 3, fillColor: '#a9251d', fillOpacity: 1 })
+        .addTo(markerLayer).bindTooltip(state.endLabel || 'Destination');
     }
   }
 
-  function setPoint(which, latlng, label = '') {
-    state[which] = L.latLng(latlng.lat, latlng.lng);
-    state[`${which}Label`] = label;
-    invalidateRoute();
-    updatePointUI();
-  }
-
-  map.on('click', e => {
-    const which = state.selecting;
-    setPoint(which, e.latlng, 'Map pin');
-    if (which === 'start') setSelecting('end');
-  });
-
-  ['startPoint', 'endPoint'].forEach(id => {
-    const node = el(id);
-    const which = id === 'startPoint' ? 'start' : 'end';
-    node.addEventListener('click', () => setSelecting(which));
-    node.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        setSelecting(which);
-      }
-    });
-  });
-
-  el('cycleBtn').addEventListener('click', () => setMode('cycle'));
-  el('walkBtn').addEventListener('click', () => setMode('walk'));
-
-  function setMode(mode) {
-    state.mode = mode;
-    el('cycleBtn').classList.toggle('active', mode === 'cycle');
-    el('walkBtn').classList.toggle('active', mode === 'walk');
-    invalidateRoute();
-  }
-
-  document.querySelectorAll('[data-pref]').forEach(b => b.addEventListener('click', () => {
-    state.pref = b.dataset.pref;
-    document.querySelectorAll('[data-pref]').forEach(x => x.classList.toggle('active', x === b));
-    invalidateRoute();
-  }));
-
-  el('locateBtn').addEventListener('click', () => {
-    if (!navigator.geolocation) {
-      setStatus('This browser does not expose location. Search for a start address/postcode or tap the map instead.', 'warn');
-      return;
-    }
-    setStatus('Requesting your location…');
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setPoint('start', L.latLng(pos.coords.latitude, pos.coords.longitude), 'Current location');
-        setSelecting('end');
-        map.setView(state.start, 15);
-        setStatus('Current location set as the start. Search for a destination or tap the map.', 'good');
-      },
-      () => setStatus('Location was unavailable. Search for your start address/postcode instead.', 'warn'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-    );
-  });
-
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  function invalidateRoute() {
+    routeLayer.clearLayers();
+    state.route = null;
+    el('startNavBtn').disabled = true;
+    el('timeStat').textContent = '—';
+    el('distanceStat').textContent = '—';
+    el('redwayStat').textContent = '—';
+    el('arrivalStat').textContent = 'Route preview';
   }
 
   function conciseResultName(result) {
     const a = result.address || {};
     const parts = [];
-    if (a.house_number || a.road) parts.push([a.house_number, a.road].filter(Boolean).join(' '));
+    const namedPlace = a.shop || a.amenity || a.tourism || a.leisure || a.office || a.building;
+    if (namedPlace) parts.push(namedPlace);
+    if (!namedPlace && result.name) parts.push(result.name);
+    if (!parts.length && (a.house_number || a.road)) parts.push([a.house_number, a.road].filter(Boolean).join(' '));
     const locality = a.suburb || a.neighbourhood || a.village || a.town || a.city_district || a.city;
-    if (locality) parts.push(locality);
+    if (locality && !parts.includes(locality)) parts.push(locality);
     if (a.postcode) parts.push(a.postcode);
     return parts.filter(Boolean).join(', ') || result.display_name;
   }
 
-  function secondaryResultName(result, primary) {
-    if (!result.display_name || result.display_name === primary) return 'Milton Keynes';
-    const text = result.display_name;
-    return text.length > 105 ? text.slice(0, 102) + '…' : text;
+  function resultSecondary(result, primary) {
+    const text = result.display_name || '';
+    if (!text || text === primary) return 'Milton Keynes';
+    return text.length > 130 ? `${text.slice(0, 127)}…` : text;
   }
 
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
-
     const elapsed = Date.now() - state.lastGeocodeAt;
     if (elapsed < 1050) await sleep(1050 - elapsed);
     state.lastGeocodeAt = Date.now();
-
     const params = new URLSearchParams({
       q: trimmed,
       format: 'jsonv2',
       addressdetails: '1',
-      limit: '5',
+      namedetails: '1',
+      limit: '6',
       countrycodes: 'gb',
       viewbox: `${MK.west},${MK.north},${MK.east},${MK.south}`,
       bounded: '1',
       'accept-language': 'en-GB'
     });
-
-    const response = await fetch(`${NOMINATIM}?${params.toString()}`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!response.ok) throw new Error(`Address search returned ${response.status}`);
+    const response = await fetch(`${NOMINATIM}?${params.toString()}`, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`Search returned ${response.status}`);
     return response.json();
   }
 
-  function renderSearchResults(which, results) {
-    const box = el(which === 'start' ? 'startResults' : 'endResults');
-    box.innerHTML = '';
-    box.hidden = false;
+  function showResults(results, context, query) {
+    state.searchContext = context;
+    const list = el('resultsList');
+    list.innerHTML = '';
+    el('resultsTitle').textContent = results.length ? `Results for “${query}”` : 'No matching places';
 
     if (!results.length) {
-      const message = document.createElement('div');
-      message.className = 'search-message';
-      message.textContent = 'No Milton Keynes match found. Try the full postcode or include the house number and street.';
-      box.appendChild(message);
-      return;
+      const msg = document.createElement('div');
+      msg.className = 'result-message';
+      msg.textContent = 'No Milton Keynes match found. Try a full postcode, street address or place name.';
+      list.appendChild(msg);
+    } else {
+      for (const result of results) {
+        const primary = conciseResultName(result);
+        const secondary = resultSecondary(result, primary);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'result-item';
+        button.innerHTML = `<span class="result-icon" aria-hidden="true">⌖</span><span class="result-copy"><strong></strong><span></span></span>`;
+        button.querySelector('strong').textContent = primary;
+        button.querySelector('.result-copy span').textContent = secondary;
+        button.addEventListener('click', () => selectSearchResult(result, context));
+        list.appendChild(button);
+      }
     }
-
-    for (const result of results) {
-      const primary = conciseResultName(result);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'search-result';
-
-      const strong = document.createElement('strong');
-      strong.textContent = primary;
-      const small = document.createElement('small');
-      small.textContent = secondaryResultName(result, primary);
-      button.append(strong, small);
-
-      button.addEventListener('click', () => {
-        const lat = Number(result.lat);
-        const lng = Number(result.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-        setPoint(which, L.latLng(lat, lng), primary);
-        setSelecting(which === 'start' ? 'end' : 'end');
-        box.hidden = true;
-        map.setView([lat, lng], 16);
-        const input = el(which === 'start' ? 'startSearch' : 'endSearch');
-        input.value = primary;
-        setStatus(`${which === 'start' ? 'Start' : 'Destination'} set to ${primary}.`, 'good');
-      });
-
-      box.appendChild(button);
-    }
+    el('resultsSheet').hidden = false;
   }
 
-  async function runSearch(which) {
-    const input = el(which === 'start' ? 'startSearch' : 'endSearch');
-    const button = input.closest('form').querySelector('.search-button');
+  async function runSearch(context, input) {
     const query = input.value.trim();
-    if (!query) {
-      input.focus();
-      return;
-    }
-
-    button.disabled = true;
-    setStatus(`Searching Milton Keynes for “${query}”…`);
+    if (!query) { input.focus(); return; }
+    input.blur();
+    el('resultsSheet').hidden = false;
+    el('resultsTitle').textContent = 'Searching…';
+    el('resultsList').innerHTML = '<div class="result-message">Searching Milton Keynes…</div>';
     try {
       const results = await geocode(query);
-      renderSearchResults(which, results);
-      setStatus(results.length
-        ? `Found ${results.length} possible match${results.length === 1 ? '' : 'es'}. Choose the correct one.`
-        : 'No Milton Keynes address/postcode match found.',
-        results.length ? '' : 'warn');
+      showResults(results, context, query);
     } catch (err) {
       console.error(err);
-      const box = el(which === 'start' ? 'startResults' : 'endResults');
-      box.hidden = false;
-      box.innerHTML = '<div class="search-message">Address search is temporarily unavailable. You can still set the point by tapping the map.</div>';
-      setStatus('Address search is temporarily unavailable. Try again shortly or tap the map.', 'warn');
-    } finally {
-      button.disabled = false;
+      el('resultsTitle').textContent = 'Search unavailable';
+      el('resultsList').innerHTML = '<div class="result-message">The public address-search service is temporarily unavailable. Try again shortly.</div>';
     }
   }
 
+  function selectSearchResult(result, context) {
+    const lat = Number(result.lat);
+    const lng = Number(result.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const primary = conciseResultName(result);
+    const secondary = resultSecondary(result, primary);
+    el('resultsSheet').hidden = true;
+
+    if (context === 'destination') {
+      setPoint('end', L.latLng(lat, lng), primary, secondary);
+      el('homeSearch').value = primary;
+      showPlaceSheet();
+      map.setView([lat, lng], 16);
+    } else if (context === 'start') {
+      setPoint('start', L.latLng(lat, lng), primary, secondary);
+      setStage('planner');
+      maybeCalculateRoute();
+      map.setView([lat, lng], 15);
+    } else {
+      setPoint('end', L.latLng(lat, lng), primary, secondary);
+      setStage('planner');
+      maybeCalculateRoute();
+      map.setView([lat, lng], 15);
+    }
+  }
+
+  function showPlaceSheet() {
+    el('placeName').textContent = state.endLabel || 'Dropped pin';
+    el('placeAddress').textContent = state.endAddress || (state.end ? fmtCoord(state.end) : '');
+    setStage('place');
+  }
+
+  el('homeSearchForm').addEventListener('submit', e => {
+    e.preventDefault();
+    runSearch('destination', el('homeSearch'));
+  });
   el('startSearchForm').addEventListener('submit', e => {
     e.preventDefault();
-    runSearch('start');
+    runSearch('start', el('startSearch'));
   });
   el('endSearchForm').addEventListener('submit', e => {
     e.preventDefault();
-    runSearch('end');
+    runSearch('end', el('endSearch'));
+  });
+  el('closeResults').addEventListener('click', () => { el('resultsSheet').hidden = true; });
+  el('closePlace').addEventListener('click', () => {
+    state.end = null; state.endLabel = ''; state.endAddress = '';
+    redrawMarkers();
+    el('homeSearch').value = '';
+    setStage('explore');
   });
 
-  document.addEventListener('click', e => {
-    for (const [formId, resultsId] of [['startSearchForm', 'startResults'], ['endSearchForm', 'endResults']]) {
-      const form = el(formId);
-      if (!form.contains(e.target)) el(resultsId).hidden = true;
+  map.on('click', e => {
+    if (state.navigating) return;
+    if (state.stage === 'explore' || state.stage === 'place') {
+      setPoint('end', e.latlng, 'Dropped pin', fmtCoord(e.latlng));
+      showPlaceSheet();
     }
   });
+
+  function acquireCurrentLocation() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('Location is not available in this browser.'));
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ latlng: L.latLng(pos.coords.latitude, pos.coords.longitude), accuracy: pos.coords.accuracy }),
+        err => reject(err),
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
+      );
+    });
+  }
+
+  async function useCurrentLocation({ calculate = true } = {}) {
+    el('useLocationBtn').disabled = true;
+    setRouteStatus('Getting your current location…');
+    try {
+      const pos = await acquireCurrentLocation();
+      setPoint('start', pos.latlng, 'Your location');
+      map.setView(pos.latlng, 15);
+      if (calculate) maybeCalculateRoute();
+      return pos.latlng;
+    } catch (err) {
+      console.error(err);
+      setRouteStatus('Location unavailable. Search for the starting address or postcode instead.', 'warn');
+      toast('Location unavailable — enter a starting point');
+      return null;
+    } finally {
+      el('useLocationBtn').disabled = false;
+    }
+  }
+
+  el('useLocationBtn').addEventListener('click', () => useCurrentLocation());
+
+  el('directionsBtn').addEventListener('click', async () => {
+    setStage('planner');
+    updatePlannerFields();
+    if (!state.start) await useCurrentLocation({ calculate: false });
+    maybeCalculateRoute();
+  });
+
+  el('plannerBack').addEventListener('click', () => {
+    if (state.end) showPlaceSheet();
+    else setStage('explore');
+  });
+
+  function setMode(mode) {
+    if (state.mode === mode) return;
+    state.mode = mode;
+    el('cycleBtn').classList.toggle('active', mode === 'cycle');
+    el('walkBtn').classList.toggle('active', mode === 'walk');
+    invalidateRoute();
+    maybeCalculateRoute();
+  }
+  el('cycleBtn').addEventListener('click', () => setMode('cycle'));
+  el('walkBtn').addEventListener('click', () => setMode('walk'));
+
+  const PREF_LABEL = { maximum: 'Max Redway', balanced: 'Balanced', fastest: 'Fastest' };
+  el('prefBtn').addEventListener('click', () => {
+    const menu = el('prefMenu');
+    menu.hidden = !menu.hidden;
+    el('prefBtn').setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  document.querySelectorAll('[data-pref]').forEach(button => button.addEventListener('click', () => {
+    state.pref = button.dataset.pref;
+    document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('active', b === button));
+    el('prefLabel').textContent = PREF_LABEL[state.pref];
+    el('prefMenu').hidden = true;
+    el('prefBtn').setAttribute('aria-expanded', 'false');
+    invalidateRoute();
+    maybeCalculateRoute();
+  }));
 
   async function overpass(query) {
     let lastErr;
@@ -316,17 +384,15 @@
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-          body: 'data=' + encodeURIComponent(query),
+          body: `data=${encodeURIComponent(query)}`,
           signal: controller.signal
         });
         clearTimeout(timer);
-        if (!res.ok) throw new Error(`Overpass ${res.status}`);
+        if (!res.ok) throw new Error(`Map data returned ${res.status}`);
         return await res.json();
-      } catch (e) {
-        lastErr = e;
-      }
+      } catch (err) { lastErr = err; }
     }
-    throw lastErr || new Error('Overpass unavailable');
+    throw lastErr || new Error('Map data service unavailable');
   }
 
   function parseWays(data) {
@@ -345,20 +411,15 @@
     const q = `[out:json][timeout:25];(way["highway"]["foot"="designated"]["bicycle"="designated"](${MK.south},${MK.west},${MK.north},${MK.east}););(._;>;);out body;`;
     try {
       const parsed = parseWays(await overpass(q));
-      let count = 0;
       for (const w of parsed.ways) {
         const pts = w.nodes.map(id => parsed.nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon]);
         if (pts.length < 2) continue;
         L.polyline(pts, { className: 'redway-casing', interactive: false }).addTo(redwayLayer);
         L.polyline(pts, { className: 'redway-line', interactive: false }).addTo(redwayLayer);
-        count++;
       }
       state.redwayReady = true;
-      setStatus(`Loaded ${count.toLocaleString()} mapped Redway candidate segments. Search for a start and destination, or tap the map.`, 'good');
-    } catch (e) {
-      state.redwayReady = false;
-      setStatus('The Redway overlay could not be loaded from OpenStreetMap right now. Routing can still be attempted after you set two points.', 'warn');
-      console.error(e);
+    } catch (err) {
+      console.warn('Redway overlay unavailable', err);
     }
   }
 
@@ -410,6 +471,10 @@
     return table[pref][cls] || 2;
   }
 
+  function edgeDisplayName(tags, cls) {
+    return tags.name || tags.ref || (cls === 'redway' ? 'Redway' : cls === 'trafficfree' ? 'path' : '');
+  }
+
   function buildGraph(parsed, mode, pref) {
     const graph = new Map();
     const add = (id, edge) => {
@@ -422,6 +487,7 @@
       const cls = edgeClass(t);
       const reverse = t.oneway === '-1';
       const oneWay = mode === 'cycle' && ['yes', '1', 'true', '-1'].includes(t.oneway) && t['oneway:bicycle'] !== 'no';
+      const name = edgeDisplayName(t, cls);
       for (let i = 0; i < w.nodes.length - 1; i++) {
         const ida = w.nodes[i];
         const idb = w.nodes[i + 1];
@@ -429,13 +495,12 @@
         const b = parsed.nodes.get(idb);
         if (!a || !b) continue;
         const d = hav(a, b);
-        const eAB = { to: idb, d, cost: d * multiplier(cls, pref, mode), cls };
-        const eBA = { to: ida, d, cost: d * multiplier(cls, pref, mode), cls };
+        const base = { d, cost: d * multiplier(cls, pref, mode), cls, name, wayId: w.id };
         if (!oneWay) {
-          add(ida, eAB);
-          add(idb, eBA);
-        } else if (reverse) add(idb, eBA);
-        else add(ida, eAB);
+          add(ida, { ...base, to: idb });
+          add(idb, { ...base, to: ida });
+        } else if (reverse) add(idb, { ...base, to: ida });
+        else add(ida, { ...base, to: idb });
       }
     }
     return graph;
@@ -447,10 +512,7 @@
     for (const [id, n] of parsed.nodes) {
       if (!graph.has(id)) continue;
       const d = hav({ lat: latlng.lat, lon: latlng.lng }, n);
-      if (d < bd) {
-        bd = d;
-        best = id;
-      }
+      if (d < bd) { bd = d; best = id; }
     }
     return { id: best, d: bd };
   }
@@ -458,31 +520,26 @@
   class MinHeap {
     constructor() { this.a = []; }
     push(x, p) {
-      const n = { x, p };
-      this.a.push(n);
+      const n = { x, p }; this.a.push(n);
       let i = this.a.length - 1;
       while (i) {
         const q = (i - 1) >> 1;
         if (this.a[q].p <= p) break;
-        this.a[i] = this.a[q];
-        i = q;
+        this.a[i] = this.a[q]; i = q;
       }
       this.a[i] = n;
     }
     pop() {
       if (!this.a.length) return null;
-      const root = this.a[0];
-      const last = this.a.pop();
+      const root = this.a[0]; const last = this.a.pop();
       if (this.a.length) {
         let i = 0;
         while (true) {
-          const l = i * 2 + 1;
-          const r = l + 1;
+          const l = i * 2 + 1; const r = l + 1;
           if (l >= this.a.length) break;
           const c = r < this.a.length && this.a[r].p < this.a[l].p ? r : l;
           if (this.a[c].p >= last.p) break;
-          this.a[i] = this.a[c];
-          i = c;
+          this.a[i] = this.a[c]; i = c;
         }
         this.a[i] = last;
       }
@@ -497,10 +554,9 @@
     const prev = new Map();
     const prevEdge = new Map();
     const closed = new Set();
-    open.push(startId, 0);
     const goal = parsed.nodes.get(endId);
+    open.push(startId, 0);
     let loops = 0;
-
     while (open.length && loops++ < 750000) {
       const cur = open.pop();
       if (closed.has(cur)) continue;
@@ -510,113 +566,555 @@
         if (closed.has(e.to)) continue;
         const ng = g.get(cur) + e.cost;
         if (ng < (g.get(e.to) ?? Infinity)) {
-          g.set(e.to, ng);
-          prev.set(e.to, cur);
-          prevEdge.set(e.to, e);
+          g.set(e.to, ng); prev.set(e.to, cur); prevEdge.set(e.to, e);
           const n = parsed.nodes.get(e.to);
           open.push(e.to, ng + hav(n, goal) * .70);
         }
       }
     }
-
     if (!prev.has(endId) && startId !== endId) return null;
-    const ids = [endId];
-    const edges = [];
+    const ids = [endId]; const edges = [];
     let c = endId;
     while (c !== startId) {
-      edges.push(prevEdge.get(c));
-      c = prev.get(c);
+      edges.push(prevEdge.get(c)); c = prev.get(c);
       if (c == null) return null;
       ids.push(c);
     }
-    ids.reverse();
-    edges.reverse();
+    ids.reverse(); edges.reverse();
     return { ids, edges };
   }
 
   function corridorBBox(a, b) {
-    const minLat = Math.min(a.lat, b.lat);
-    const maxLat = Math.max(a.lat, b.lat);
-    const minLon = Math.min(a.lng, b.lng);
-    const maxLon = Math.max(a.lng, b.lng);
+    const minLat = Math.min(a.lat, b.lat); const maxLat = Math.max(a.lat, b.lat);
+    const minLon = Math.min(a.lng, b.lng); const maxLon = Math.max(a.lng, b.lng);
     const straight = hav({ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng });
     const pad = Math.max(.018, Math.min(.055, straight / 110000 * .5));
     return { s: minLat - pad, w: minLon - pad, n: maxLat + pad, e: maxLon + pad };
   }
 
-  async function calculate() {
-    if (!state.start || !state.end || state.routing) return;
-    state.routing = true;
-    el('routeBtn').disabled = true;
-    invalidateRoute();
-    try {
-      const box = corridorBBox(state.start, state.end);
-      setStatus('Loading nearby walk/cycle paths and connecting roads…');
-      const h = 'path|cycleway|footway|pedestrian|bridleway|track|steps|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link';
-      const q = `[out:json][timeout:30];way["highway"~"^(${h})$"](${box.s},${box.w},${box.n},${box.e});(._;>;);out body;`;
-      const parsed = parseWays(await overpass(q));
-      setStatus(`Building route graph from ${parsed.ways.length.toLocaleString()} nearby ways…`);
-      const graph = buildGraph(parsed, state.mode, state.pref);
-      const s = nearestNode(parsed, state.start, graph);
-      const e = nearestNode(parsed, state.end, graph);
-      if (!s.id || !e.id) throw new Error('No routable path near one of the selected points.');
-      if (s.d > 800 || e.d > 800) throw new Error('One selected point is too far from the loaded walking/cycling network.');
-      const result = aStar(parsed, graph, s.id, e.id);
-      if (!result) throw new Error('No route was found in this corridor. Try Balanced/Fastest or choose points closer to the MK network.');
+  function bearing(a, b) {
+    const p1 = a[0] * Math.PI / 180; const p2 = b[0] * Math.PI / 180;
+    const dl = (b[1] - a[1]) * Math.PI / 180;
+    const y = Math.sin(dl) * Math.cos(p2);
+    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
 
-      const coords = result.ids.map(id => {
-        const n = parsed.nodes.get(id);
-        return [n.lat, n.lon];
-      });
-      L.polyline(coords, { className: 'route-casing', interactive: false }).addTo(routeLayer);
-      L.polyline(coords, { className: 'route-line', interactive: false }).addTo(routeLayer);
+  function angleDiff(a, b) { return ((b - a + 540) % 360) - 180; }
+  function cardinal(deg) {
+    const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+    return dirs[Math.round(deg / 45) % 8];
+  }
 
-      let dist = 0;
-      let tf = 0;
-      for (const ed of result.edges) {
-        dist += ed.d;
-        if (ed.cls === 'redway' || ed.cls === 'trafficfree') tf += ed.d;
+  function buildCumulative(coords) {
+    const c = [0];
+    for (let i = 1; i < coords.length; i++) {
+      c.push(c[i - 1] + hav({ lat: coords[i - 1][0], lon: coords[i - 1][1] }, { lat: coords[i][0], lon: coords[i][1] }));
+    }
+    return c;
+  }
+
+  function targetPhrase(edge) {
+    if (edge?.name && !['Redway', 'path'].includes(edge.name)) return ` onto ${edge.name}`;
+    if (edge?.cls === 'redway') return ' onto the Redway';
+    if (edge?.cls === 'trafficfree') return ' onto the path';
+    return '';
+  }
+
+  function buildManeuvers(coords, edges, cumulative) {
+    const maneuvers = [];
+    let lastAt = -1000;
+    for (let i = 1; i < coords.length - 1; i++) {
+      const before = bearing(coords[i - 1], coords[i]);
+      const after = bearing(coords[i], coords[i + 1]);
+      const delta = angleDiff(before, after);
+      const abs = Math.abs(delta);
+      const incoming = edges[i - 1];
+      const outgoing = edges[i];
+      const enteredRedway = outgoing?.cls === 'redway' && incoming?.cls !== 'redway';
+      const changedName = outgoing?.name && outgoing.name !== incoming?.name;
+      if (abs < 28 && !enteredRedway && !changedName) continue;
+      if (cumulative[i] - lastAt < 28) continue;
+
+      let icon = '↑';
+      let instruction = '';
+      if (abs >= 150) {
+        icon = '↶'; instruction = `Make a U-turn${targetPhrase(outgoing)}`;
+      } else if (abs >= 58) {
+        const right = delta > 0; icon = right ? '↱' : '↰';
+        instruction = `Turn ${right ? 'right' : 'left'}${targetPhrase(outgoing)}`;
+      } else if (abs >= 28) {
+        const right = delta > 0; icon = right ? '↗' : '↖';
+        instruction = `Bear ${right ? 'right' : 'left'}${targetPhrase(outgoing)}`;
+      } else if (enteredRedway) {
+        icon = '↑'; instruction = 'Continue onto the Redway';
+      } else {
+        icon = '↑'; instruction = `Continue${targetPhrase(outgoing)}`;
       }
-      const speed = state.mode === 'cycle' ? 4.17 : 1.34;
-      const mins = Math.max(1, Math.round(dist / speed / 60));
-      el('distanceStat').textContent = dist < 1000 ? `${Math.round(dist)} m` : `${(dist / 1000).toFixed(1)} km`;
-      el('timeStat').textContent = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
-      el('redwayStat').textContent = `${Math.round(tf / dist * 100)}%`;
-      el('stats').hidden = false;
-      map.fitBounds(L.latLngBounds(coords).pad(.08), { maxZoom: 16 });
-      setStatus(`Route found. Start/end were snapped ${Math.round(s.d)} m and ${Math.round(e.d)} m to the routable network.`, 'good');
-    } catch (err) {
-      console.error(err);
-      setStatus(err.message || 'Routing failed. The public OpenStreetMap data service may be busy; try again shortly.', 'warn');
-    } finally {
-      state.routing = false;
-      updatePointUI();
+      maneuvers.push({ index: i, at: cumulative[i], icon, instruction });
+      lastAt = cumulative[i];
+    }
+    const endAt = cumulative[cumulative.length - 1] || 0;
+    maneuvers.push({ index: coords.length - 1, at: endAt, icon: '●', instruction: `Arrive at ${state.endLabel || 'your destination'}`, arrive: true });
+    return maneuvers;
+  }
+
+  function initialInstruction(coords, edges) {
+    if (coords.length < 2) return 'Follow the route';
+    const dir = cardinal(bearing(coords[0], coords[1]));
+    const e = edges[0];
+    if (e?.name && !['Redway', 'path'].includes(e.name)) return `Head ${dir} on ${e.name}`;
+    if (e?.cls === 'redway') return `Head ${dir} on the Redway`;
+    if (e?.cls === 'trafficfree') return `Head ${dir} on the path`;
+    return `Head ${dir}`;
+  }
+
+  function formatDistance(m) {
+    if (!Number.isFinite(m)) return '—';
+    if (m < 1000) return `${Math.max(0, Math.round(m / 10) * 10)} m`;
+    return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+  }
+
+  function formatTurnDistance(m) {
+    if (m < 35) return 'Now';
+    if (m < 100) return `In ${Math.round(m / 10) * 10} m`;
+    if (m < 1000) return `In ${Math.round(m / 50) * 50} m`;
+    return `In ${(m / 1000).toFixed(1)} km`;
+  }
+
+  function formatDuration(mins) {
+    if (mins < 60) return `${Math.max(1, Math.round(mins))} min`;
+    const h = Math.floor(mins / 60); const m = Math.round(mins % 60);
+    return `${h}h ${m}m`;
+  }
+
+  function arrivalTime(mins) {
+    const d = new Date(Date.now() + mins * 60000);
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  function fitRouteBounds(coords) {
+    const landscape = window.innerWidth > window.innerHeight;
+    if (landscape) {
+      const panel = el('routeSheet');
+      const panelWidth = panel && !panel.hidden ? panel.getBoundingClientRect().width : Math.min(430, window.innerWidth * .48);
+      map.fitBounds(L.latLngBounds(coords).pad(.10), {
+        maxZoom: 16,
+        paddingTopLeft: [Math.round(panelWidth + 26), 26],
+        paddingBottomRight: [22, 22]
+      });
+    } else {
+      const panel = el('routeSheet');
+      const panelHeight = panel && !panel.hidden ? panel.getBoundingClientRect().height : 220;
+      map.fitBounds(L.latLngBounds(coords).pad(.10), {
+        maxZoom: 16,
+        paddingTopLeft: [20, 86],
+        paddingBottomRight: [20, Math.round(panelHeight + 24)]
+      });
     }
   }
 
-  el('routeBtn').addEventListener('click', calculate);
+  function drawRoute(coords, fit = true) {
+    routeLayer.clearLayers();
+    L.polyline(coords, { className: 'route-casing', interactive: false }).addTo(routeLayer);
+    L.polyline(coords, { className: 'route-line', interactive: false }).addTo(routeLayer);
+    if (fit) setTimeout(() => fitRouteBounds(coords), 30);
+  }
+
+  function installRoute(parsed, graph, result, snaps, { fit = true } = {}) {
+    const coords = result.ids.map(id => {
+      const n = parsed.nodes.get(id);
+      return [n.lat, n.lon];
+    });
+    const cumulative = buildCumulative(coords);
+    let tf = 0;
+    for (const ed of result.edges) if (ed.cls === 'redway' || ed.cls === 'trafficfree') tf += ed.d;
+    const dist = result.edges.reduce((sum, ed) => sum + ed.d, 0);
+    const speed = state.mode === 'cycle' ? 4.17 : 1.34;
+    const mins = Math.max(1, dist / speed / 60);
+    const maneuvers = buildManeuvers(coords, result.edges, cumulative);
+
+    state.route = {
+      parsed, graph, result, coords, cumulative, maneuvers, dist, tf, mins,
+      startNodeId: result.ids[0], endNodeId: result.ids[result.ids.length - 1],
+      initialInstruction: initialInstruction(coords, result.edges),
+      snaps
+    };
+    drawRoute(coords, fit);
+    el('timeStat').textContent = formatDuration(mins);
+    el('arrivalStat').textContent = `Arrive ${arrivalTime(mins)}`;
+    el('distanceStat').textContent = formatDistance(dist);
+    el('redwayStat').textContent = `${Math.round((tf / Math.max(1, dist)) * 100)}%`;
+    el('startNavBtn').disabled = false;
+    setRouteStatus(`Route ready · start/end snapped ${Math.round(snaps.start)} m and ${Math.round(snaps.end)} m to the mapped network.`, 'good');
+  }
+
+  async function calculateRoute({ fit = true, quiet = false } = {}) {
+    if (!state.start || !state.end || state.routing) return;
+    state.routing = true;
+    el('startNavBtn').disabled = true;
+    if (!quiet) setRouteStatus('Finding the best Redway route…');
+    try {
+      const box = corridorBBox(state.start, state.end);
+      const h = 'path|cycleway|footway|pedestrian|bridleway|track|steps|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link';
+      const q = `[out:json][timeout:30];way["highway"~"^(${h})$"](${box.s},${box.w},${box.n},${box.e});(._;>;);out body;`;
+      const parsed = parseWays(await overpass(q));
+      const graph = buildGraph(parsed, state.mode, state.pref);
+      const s = nearestNode(parsed, state.start, graph);
+      const e = nearestNode(parsed, state.end, graph);
+      if (!s.id || !e.id) throw new Error('No routable path was found near one of the selected points.');
+      if (s.d > 800 || e.d > 800) throw new Error('One selected point is too far from the mapped walking/cycling network.');
+      const result = aStar(parsed, graph, s.id, e.id);
+      if (!result) throw new Error('No route found. Try Balanced or Fastest, or choose another start point.');
+      installRoute(parsed, graph, result, { start: s.d, end: e.d }, { fit });
+    } catch (err) {
+      console.error(err);
+      setRouteStatus(err.message || 'Routing failed. The public map-data service may be busy; try again shortly.', 'warn');
+      toast('Could not calculate route');
+    } finally {
+      state.routing = false;
+    }
+  }
+
+  function maybeCalculateRoute() {
+    updatePlannerFields();
+    if (state.start && state.end) calculateRoute();
+    else if (!state.start) setRouteStatus('Use your location or search for a starting point.');
+    else setRouteStatus('Search for a destination.');
+  }
 
   el('clearBtn').addEventListener('click', () => {
-    state.start = null;
-    state.end = null;
-    state.startLabel = '';
-    state.endLabel = '';
-    state.selecting = 'start';
-    el('startSearch').value = '';
-    el('endSearch').value = '';
-    el('startResults').hidden = true;
-    el('endResults').hidden = true;
-    invalidateRoute();
-    markerLayer.clearLayers();
-    setSelecting('start');
-    updatePointUI();
-    setStatus(state.redwayReady ? 'Route cleared. Search for a start address/postcode or tap the map.' : 'Route cleared. Redway overlay is still loading.');
+    stopNavigation({ keepRoute: false });
+    state.start = null; state.end = null; state.startLabel = ''; state.endLabel = ''; state.endAddress = '';
+    invalidateRoute(); markerLayer.clearLayers(); userLayer.clearLayers();
+    el('homeSearch').value = ''; el('startSearch').value = ''; el('endSearch').value = '';
+    resetMapOrientation();
+    setStage('explore'); map.setView([52.0406, -0.7594], 12);
   });
 
+  // Navigation helpers -------------------------------------------------------
+  function xy(latlng, lat0) {
+    const rad = Math.PI / 180;
+    return { x: latlng.lng * 111320 * Math.cos(lat0 * rad), y: latlng.lat * 110540 };
+  }
+
+  function normalizeHeading(deg) {
+    return ((deg % 360) + 360) % 360;
+  }
+
+  function bearingBetween(a, b) {
+    const rad = Math.PI / 180;
+    const lat1 = a.lat * rad;
+    const lat2 = b.lat * rad;
+    const dLon = (b.lng - a.lng) * rad;
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return normalizeHeading(Math.atan2(y, x) / rad);
+  }
+
+  function smoothHeading(raw) {
+    raw = normalizeHeading(raw);
+    if (!Number.isFinite(state.heading)) {
+      state.heading = raw;
+      return raw;
+    }
+    const delta = ((raw - state.heading + 540) % 360) - 180;
+    const alpha = state.mode === 'cycle' ? .42 : .32;
+    state.heading = normalizeHeading(state.heading + delta * alpha);
+    return state.heading;
+  }
+
+  function routeHeadingAt(snap) {
+    const coords = state.route?.coords;
+    if (!coords || coords.length < 2 || !snap) return null;
+    const i = Math.max(0, Math.min(coords.length - 2, snap.segment));
+    return bearingBetween(
+      { lat: coords[i][0], lng: coords[i][1] },
+      { lat: coords[i + 1][0], lng: coords[i + 1][1] }
+    );
+  }
+
+  function resolveTravelHeading(position, snap, latlng) {
+    let raw = Number(position.coords.heading);
+    const speed = Number(position.coords.speed);
+    if (!Number.isFinite(raw) || raw < 0 || (Number.isFinite(speed) && speed < .45)) raw = null;
+
+    if (state.lastHeadingFix) {
+      const moved = map.distance(state.lastHeadingFix, latlng);
+      if (raw == null && moved >= (state.mode === 'cycle' ? 5 : 3)) {
+        raw = bearingBetween(state.lastHeadingFix, latlng);
+      }
+      if (moved >= 2) state.lastHeadingFix = L.latLng(latlng.lat, latlng.lng);
+    } else {
+      state.lastHeadingFix = L.latLng(latlng.lat, latlng.lng);
+    }
+
+    if (raw == null) raw = routeHeadingAt(snap);
+    return raw == null ? state.heading : smoothHeading(raw);
+  }
+
+  function resetMapOrientation() {
+    state.heading = null;
+    state.lastHeadingFix = null;
+    if (!state.headingSupported) return;
+    try {
+      map.setHeading(null);
+      map.stopHeadingUp?.();
+      map.setBearing(0);
+    } catch (err) {
+      console.warn('Could not reset map bearing', err);
+    }
+  }
+
+  function followNavigationView(latlng, heading, animate = false) {
+    if (!latlng) return;
+    const zoom = state.mode === 'cycle' ? 17 : 18;
+    if (state.headingSupported && Number.isFinite(heading)) {
+      try { map.setHeading(heading, { ease: .22, deadzone: .6 }); } catch (err) { console.warn(err); }
+    }
+
+    map.setView(latlng, zoom, { animate: false });
+    const landscape = window.innerWidth > window.innerHeight;
+    if (landscape) {
+      // Keep the rider/walker in the clear right-hand portion of the map, away from the nav cards.
+      map.panBy([-Math.min(150, Math.round(window.innerWidth * .14)), 0], { animate });
+    } else {
+      // Put the position below centre so more of the route ahead is visible, sat-nav style.
+      map.panBy([0, -Math.min(110, Math.round(window.innerHeight * .12))], { animate });
+    }
+  }
+
+  function nearestOnRoute(latlng) {
+    const route = state.route;
+    if (!route || route.coords.length < 2) return null;
+    const p = xy(latlng, latlng.lat);
+    let best = null;
+    let start = Math.max(0, state.lastSegment - 25);
+    let end = Math.min(route.coords.length - 2, state.lastSegment + 160);
+    if (!Number.isFinite(state.lastSegment)) { start = 0; end = route.coords.length - 2; }
+
+    const scan = (a, b) => {
+      let out = null;
+      for (let i = a; i <= b; i++) {
+        const A = xy(L.latLng(route.coords[i][0], route.coords[i][1]), latlng.lat);
+        const B = xy(L.latLng(route.coords[i + 1][0], route.coords[i + 1][1]), latlng.lat);
+        const vx = B.x - A.x; const vy = B.y - A.y;
+        const len2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - A.x) * vx + (p.y - A.y) * vy) / len2));
+        const qx = A.x + t * vx; const qy = A.y + t * vy;
+        const d = Math.hypot(p.x - qx, p.y - qy);
+        if (!out || d < out.distance) {
+          const segLen = route.cumulative[i + 1] - route.cumulative[i];
+          out = { segment: i, fraction: t, distance: d, progress: route.cumulative[i] + t * segLen };
+        }
+      }
+      return out;
+    };
+
+    best = scan(start, end);
+    if (!best || best.distance > 120) best = scan(0, route.coords.length - 2);
+    return best;
+  }
+
+  function setUserMarker(latlng) {
+    userLayer.clearLayers();
+    const icon = L.divIcon({ className: '', html: '<div class="user-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
+    state.userMarker = L.marker(latlng, { icon, interactive: false }).addTo(userLayer);
+  }
+
+  function speak(text) {
+    if (!state.voiceEnabled || !('speechSynthesis' in window) || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-GB'; u.rate = 1.02; u.pitch = 1;
+      window.speechSynthesis.speak(u);
+    } catch (err) { console.warn('Speech unavailable', err); }
+  }
+
+  function activeManeuver(progress) {
+    const ms = state.route?.maneuvers || [];
+    let i = 0;
+    while (i < ms.length - 1 && ms[i].at < progress + 8) i++;
+    return { maneuver: ms[i], index: i, next: ms[i + 1] || null };
+  }
+
+  function announceManeuver(m, index, dist) {
+    if (!m || m.arrive) return;
+    const far = state.mode === 'cycle' ? 160 : 80;
+    const near = state.mode === 'cycle' ? 45 : 22;
+    if (dist <= near && !state.announcedNear.has(index)) {
+      state.announcedNear.add(index);
+      speak(`${formatTurnDistance(dist)}. ${m.instruction}.`);
+    } else if (dist <= far && !state.announcedFar.has(index)) {
+      state.announcedFar.add(index);
+      speak(`${formatTurnDistance(dist)}. ${m.instruction}.`);
+    }
+  }
+
+  function updateNavigation(position) {
+    if (!state.route || !state.navigating) return;
+    const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+    state.userLatLng = latlng;
+    state.lastPositionAt = Date.now();
+    setUserMarker(latlng);
+
+    const snap = nearestOnRoute(latlng);
+    if (!snap) return;
+    const heading = resolveTravelHeading(position, snap, latlng);
+    state.lastSegment = snap.segment;
+    state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
+    const progress = Math.max(state.navProgressMeters, snap.progress);
+    state.navProgressMeters = progress;
+
+    const total = state.route.cumulative[state.route.cumulative.length - 1] || state.route.dist;
+    const remaining = Math.max(0, total - progress);
+    const speed = state.mode === 'cycle' ? 4.17 : 1.34;
+    const mins = remaining / speed / 60;
+    el('navEta').textContent = arrivalTime(mins);
+    el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(remaining)} remaining`;
+
+    const { maneuver, index, next } = activeManeuver(progress);
+    if (maneuver) {
+      const d = Math.max(0, maneuver.at - progress);
+      el('turnIcon').textContent = maneuver.icon;
+      el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Arriving' : formatTurnDistance(d);
+      el('turnText').textContent = maneuver.instruction;
+      el('nextTurnText').textContent = next && !maneuver.arrive ? `Then ${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}` : '';
+      announceManeuver(maneuver, index, d);
+    }
+
+    if (remaining < 22) {
+      speak(`You have arrived at ${state.endLabel || 'your destination'}.`);
+      toast('You have arrived', 4000);
+      stopNavigation({ keepRoute: true, arrived: true });
+      return;
+    }
+
+    const offThreshold = state.mode === 'cycle' ? 50 : 35;
+    if (snap.distance > offThreshold) state.offRouteCount += 1;
+    else state.offRouteCount = 0;
+    if (state.offRouteCount >= 2 && Date.now() - state.lastRerouteAt > 25000) rerouteFromPosition(latlng);
+
+    if (state.followUser) followNavigationView(latlng, heading, true);
+  }
+
+  async function rerouteFromPosition(latlng) {
+    if (!state.route || state.routing) return;
+    state.lastRerouteAt = Date.now(); state.offRouteCount = 0;
+    toast('Rerouting…');
+    speak('Rerouting.');
+    const parsed = state.route.parsed; const graph = state.route.graph;
+    const s = nearestNode(parsed, latlng, graph);
+    const eId = state.route.endNodeId;
+    if (s.id && s.d < 600 && eId) {
+      const result = aStar(parsed, graph, s.id, eId);
+      if (result) {
+        state.start = latlng; state.startLabel = 'Your location';
+        installRoute(parsed, graph, result, { start: s.d, end: state.route.snaps?.end || 0 }, { fit: false });
+        resetNavigationProgress();
+        speak(state.route.initialInstruction);
+        return;
+      }
+    }
+    // Fall back to a fresh corridor query if the cached graph can no longer connect us.
+    state.start = latlng; state.startLabel = 'Your location';
+    await calculateRoute({ fit: false, quiet: true });
+    resetNavigationProgress();
+  }
+
+  function resetNavigationProgress() {
+    state.lastSegment = 0; state.navProgressMeters = 0;
+    state.announcedFar.clear(); state.announcedNear.clear();
+  }
+
+  async function startNavigation() {
+    if (!state.route || state.navigating) return;
+    if (!navigator.geolocation) { toast('Live navigation needs location access'); return; }
+
+    // User gesture unlocks speech synthesis on iOS.
+    if ('speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+    }
+
+    const current = await acquireCurrentLocation().catch(() => null);
+    if (!current) { toast('Allow location access to start navigation'); return; }
+    state.userLatLng = current.latlng;
+    const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
+    if (distanceFromPlannedStart > 60) {
+      state.start = current.latlng; state.startLabel = 'Your location';
+      invalidateRoute();
+      await calculateRoute({ fit: false, quiet: true });
+      if (!state.route) {
+        setStage('planner');
+        return;
+      }
+    }
+
+    state.navigating = true;
+    state.followUser = true;
+    resetNavigationProgress();
+    redrawMarkers();
+    setStage('navigation');
+    redwayLayer.remove(); // declutter sat-nav view; the chosen route remains visible.
+    setUserMarker(current.latlng);
+    const initialSnap = nearestOnRoute(current.latlng);
+    state.heading = routeHeadingAt(initialSnap);
+    state.lastHeadingFix = L.latLng(current.latlng.lat, current.latlng.lng);
+    followNavigationView(current.latlng, state.heading, false);
+    if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
+    el('turnIcon').textContent = '↑';
+    el('turnDistance').textContent = 'Start';
+    el('turnText').textContent = state.route.initialInstruction;
+    el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
+    speak(`Navigation started. ${state.route.initialInstruction}.`);
+
+    state.watchId = navigator.geolocation.watchPosition(
+      updateNavigation,
+      err => { console.warn(err); toast('GPS signal unavailable'); },
+      { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
+    );
+  }
+
+  function stopNavigation({ keepRoute = true, arrived = false } = {}) {
+    if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null; state.navigating = false; state.followUser = true;
+    resetMapOrientation();
+    userLayer.clearLayers();
+    if ('speechSynthesis' in window && !arrived) window.speechSynthesis.cancel();
+    if (!map.hasLayer(redwayLayer)) redwayLayer.addTo(map);
+    redrawMarkers();
+    if (keepRoute && state.route) {
+      setStage('planner');
+      drawRoute(state.route.coords, true);
+    } else if (state.end) showPlaceSheet();
+    else setStage('explore');
+  }
+
+  el('startNavBtn').addEventListener('click', startNavigation);
+  el('exitNavBtn').addEventListener('click', () => stopNavigation({ keepRoute: true }));
+  el('recenterBtn').addEventListener('click', () => {
+    state.followUser = true;
+    if (state.userLatLng) followNavigationView(state.userLatLng, state.heading, true);
+  });
+  map.on('dragstart', () => { if (state.navigating) state.followUser = false; });
+
+  el('voiceBtn').addEventListener('click', () => {
+    state.voiceEnabled = !state.voiceEnabled;
+    const b = el('voiceBtn');
+    b.classList.toggle('voice-on', state.voiceEnabled);
+    b.classList.toggle('voice-off', !state.voiceEnabled);
+    b.setAttribute('aria-label', state.voiceEnabled ? 'Mute voice guidance' : 'Enable voice guidance');
+    if (!state.voiceEnabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+    else if (state.voiceEnabled) speak('Voice guidance on.');
+  });
+
+  // Service worker + initial state ------------------------------------------
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
   }
 
-  updatePointUI();
+  updatePlannerFields();
+  setStage('explore');
   loadRedways();
 })();

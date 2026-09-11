@@ -1,4 +1,4 @@
-const CACHE = 'mk-redway-shell-v3';
+const CACHE = 'mk-redway-shell-v5';
 const SHELL = [
   './',
   './index.html',

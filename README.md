@@ -1,90 +1,85 @@
 # MK Redway Navigator
 
-A proof-of-concept walking and cycling router for the Milton Keynes Redway network.
+A proof-of-concept walking and cycling navigator for the Milton Keynes Redway network.
 
-The prototype deliberately prefers traffic-free shared paths and allows the user to choose how strongly ordinary roads should be penalised.
+## v0.5 — heading-up sat-nav + portrait/landscape layouts
 
-## v0.3 — iPhone 16 display optimisation
+The interface now uses a map-first flow familiar from modern navigation apps rather than a permanent control panel:
 
-- iPhone 16 portrait layout tuned for its 393×852 CSS-pixel viewport
-- Dynamic Island and Home Indicator safe-area handling
-- map-first mobile layout with a scrollable, collapsible control sheet
-- 44px+ touch targets and 16px search fields to avoid iOS input zoom
-- iOS Safari visual-viewport resizing support for the keyboard/address bar
-- Apple Home Screen metadata, 180px touch icon and iPhone 16 launch image
+**Search → place → Directions → route preview → Start → navigation**
 
-## Features
+Highlights:
 
-- Interactive Milton Keynes map
-- Cycling and walking modes
-- Maximum / Balanced / Fastest Redway preference
-- Start/destination selection by address, postcode or tapping the map
-- Current-location start over HTTPS
+- compact floating destination search over the map
+- searches addresses, postcodes and place names within Milton Keynes
+- route planner with searchable start and destination fields
+- current-location start
+- compact route preview with Cycle / Walk and Redway preference controls
+- dedicated full-screen navigation mode
+- heading-up navigation: the map rotates so your direction of travel stays at the top
+- GPS heading with movement/route-direction fallback and smoothing
+- adaptive portrait and landscape layouts, including iPhone safe areas
+- turn-by-turn manoeuvre banner
+- spoken guidance using the browser speech engine
+- live GPS progress, ETA and remaining distance
+- automatic rerouting after moving materially off route
+- recenter and voice controls
+- iPhone 16 safe-area and Home Screen/PWA support
+
+The visual language is original to MK Redway Navigator; it uses the same general interaction model as established map apps rather than copying another app pixel-for-pixel.
+
+## Routing features
+
+- **Cycle / Walk** modes
+- **Maximum Redway / Balanced / Fastest** cycling preferences
 - Redway-biased A* routing in the browser
-- Distance, estimated time and percentage of route on traffic-free paths
-- Installable Progressive Web App (PWA)
-- No API keys or backend required
+- distance, estimated time and percentage of route on traffic-free paths
+- turn instructions generated from route geometry and OpenStreetMap way names
+- GPS route-progress matching and off-route detection
+- automatic rerouting using the already-loaded local route graph where possible
 
 ## Data and services
 
 - Base map: OpenStreetMap
 - Path/road data: OpenStreetMap via public Overpass API endpoints
-- Map renderer: Leaflet 1.9.4
+- Address/place search: OpenStreetMap Nominatim
+- Map renderer: Leaflet 1.9.4 + leaflet-rotate 0.2.4
 
-This is a proof of concept, not a safety-certified navigation product. OpenStreetMap data may be incomplete or incorrect, and temporary closures/conditions are not represented reliably.
+Nominatim searches are only made when a user submits a search and the app rate-limits searches to roughly one request per second. Public OSM services are suitable for this small proof of concept, not a high-volume production service.
 
 ## Publish with GitHub Pages
 
-1. Create a new public GitHub repository, for example `mk-redway-navigator`.
-2. Upload all files from this folder to the repository root, including the `.github` folder.
-3. Commit to the `main` branch.
-4. Open **Settings → Pages** in the repository.
-5. Under **Build and deployment → Source**, choose **GitHub Actions**.
-6. The included workflow will publish the site automatically.
-7. After the workflow completes, GitHub will show the public Pages URL.
+1. Upload all files in this folder to the **root** of your GitHub repository.
+2. Keep `.github/workflows/pages.yml`.
+3. Commit the files to `main`.
+4. In **Settings → Pages**, set the source to **GitHub Actions**.
+5. Open **Actions → Deploy to GitHub Pages** and wait for the green tick.
+6. Reload the Pages site. If an older version remains cached on iPhone, fully close/reopen it; if necessary remove and re-add the Home Screen app.
 
 Typical URL:
 
 `https://YOUR-USERNAME.github.io/mk-redway-navigator/`
 
+## iPhone installation
+
+Open the GitHub Pages URL in Safari and choose **Share → Add to Home Screen**. The installed PWA removes most Safari chrome and is the intended iPhone presentation.
+
+Live navigation requires location permission. Voice guidance uses the browser's speech-synthesis support.
+
 ## Run locally
-
-Because browser location and service workers require a secure context, use a local web server rather than opening `index.html` as a file.
-
-Python:
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Then open:
+Then open `http://localhost:8080`. Browsers treat localhost as a secure context for development, but the deployed GitHub Pages HTTPS site is the better test for iPhone GPS behaviour.
 
-`http://localhost:8080`
+## Proof-of-concept limitations
 
-## Routing model
+- Public Overpass/Nominatim servers can occasionally be slow or unavailable.
+- Redway classification is inferred from OpenStreetMap tagging rather than an authoritative MK Council routing dataset.
+- Turn instructions are derived from route geometry, not a production-grade manoeuvre engine such as Valhalla. Complex multi-branch Redway junctions therefore still need real-world testing.
+- Browser/PWA background-location behaviour on iOS is more limited than a native iOS app, particularly with the screen locked.
+- Temporary closures and hazards are not represented reliably.
 
-The prototype treats OpenStreetMap ways tagged with both `foot=designated` and `bicycle=designated` as Redway candidates. It also loads nearby paths and connecting roads and assigns different routing costs depending on mode and preference.
-
-The three cycling profiles roughly mean:
-
-- **Maximum** — major preference for Redway/traffic-free paths; road segments are expensive.
-- **Balanced** — still prefers Redways, but accepts sensible road shortcuts.
-- **Fastest** — mild Redway preference with more weight on total distance.
-
-## Known proof-of-concept limitations
-
-- Uses public Overpass servers directly, so routing can occasionally fail or be slow.
-- Redway classification is inferred from OSM tagging rather than an authoritative council dataset.
-- No turn-by-turn navigation yet.
-- No live rerouting while moving.
-- No temporary closure or hazard feed.
-- Route calculations are limited to a corridor around the selected endpoints.
-
-## Next steps
-
-For a production version, move routing to a dedicated Valhalla/GraphHopper backend or bundle a verified MK graph, add turn-by-turn navigation, and validate the Redway classification against official GIS data.
-
-
-## Geocoding
-
-The proof of concept uses the public OpenStreetMap Nominatim search API only when the user explicitly submits an address or postcode. Searches are restricted to Milton Keynes and client-side requests are rate-limited to no more than about one per second. For a production-scale service, use a dedicated/self-hosted geocoder or a provider with suitable capacity and terms.
+For production, the next architectural step would be a verified Milton Keynes network plus a dedicated routing engine/backend such as Valhalla or GraphHopper.
