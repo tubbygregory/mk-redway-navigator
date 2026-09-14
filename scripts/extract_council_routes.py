@@ -1,26 +1,15 @@
 #!/usr/bin/env python3
-"""Extract official MK cycle-path classifications from Get Around MK's interactive map.
+"""Extract council classifications from the KML sources used by its public map.
 
-This deliberately reads the public website rather than depending on an undocumented
-hard-coded API URL. A headless Chromium session loads the map, enables the three
-cycle-path categories, and captures route geometry from:
-  * JSON/GeoJSON/KML network responses,
-  * google.maps.Data layers, and
-  * google.maps.Polyline instances created by the page, and
-  * source KML/KMZ URLs used by google.maps.KmlLayer.
-
-The result is data/council_routes.geojson with route_class values:
-  super_redway, redway, leisure.
-
-The project owner has stated that Milton Keynes City Council granted permission to
-use the website's copyright map data. Keep council attribution in DATA-LICENCE.md.
+Discover current source URLs in the website HTML/JavaScript and select only the
+six files verified against its Cycle Paths filter bindings. Never classify
+Google basemap geometry or hidden layers by the currently selected filter.
+Keep council attribution in DATA-LICENCE.md.
 """
 from __future__ import annotations
 
-import asyncio
 import io
 import json
-import math
 import re
 import zipfile
 from pathlib import Path
@@ -67,62 +56,6 @@ def line_in_mk(coords: Any) -> bool:
     while flat and isinstance(flat[0], list) and flat[0] and isinstance(flat[0][0], list):
         flat = [p for part in flat for p in part]
     return sum(1 for p in flat if valid_lonlat(p)) >= 2
-
-
-def feature_from_geometry(geometry: dict, props: dict, default_class: str | None = None) -> list[dict]:
-    typ = geometry.get("type")
-    coords = geometry.get("coordinates")
-    cls = classify_text(*(props.get(k) for k in ("route_class", "class", "type", "category", "name", "title", "layer", "description"))) or default_class
-    if not cls:
-        return []
-    out: list[dict] = []
-    if typ == "LineString" and line_in_mk(coords):
-        out.append({"type": "Feature", "properties": {**props, "route_class": cls}, "geometry": {"type": "LineString", "coordinates": coords}})
-    elif typ == "MultiLineString" and isinstance(coords, list):
-        for line in coords:
-            if line_in_mk(line):
-                out.append({"type": "Feature", "properties": {**props, "route_class": cls}, "geometry": {"type": "LineString", "coordinates": line}})
-    return out
-
-
-def extract_json(value: Any, context: str = "") -> list[dict]:
-    out: list[dict] = []
-    if isinstance(value, dict):
-        if value.get("type") == "FeatureCollection" and isinstance(value.get("features"), list):
-            for f in value["features"]:
-                if isinstance(f, dict):
-                    props = f.get("properties") or {}
-                    cls = classify_text(context, *(props.values()))
-                    geom = f.get("geometry") or {}
-                    out.extend(feature_from_geometry(geom, props, cls))
-        elif value.get("type") == "Feature" and isinstance(value.get("geometry"), dict):
-            props = value.get("properties") or {}
-            cls = classify_text(context, *(props.values()))
-            out.extend(feature_from_geometry(value["geometry"], props, cls))
-        else:
-            # Common API shapes: {name/category, geometry:{...}} or {coordinates:[...]}
-            descriptor = " ".join(str(value.get(k) or "") for k in ("name", "title", "type", "category", "layer", "description", "routeType"))
-            cls = classify_text(context, descriptor)
-            geom = value.get("geometry")
-            if isinstance(geom, dict):
-                out.extend(feature_from_geometry(geom, {"source_label": descriptor}, cls))
-            coords = value.get("coordinates") or value.get("path") or value.get("points")
-            if cls and isinstance(coords, list):
-                # GeoJSON-style lon/lat path.
-                if line_in_mk(coords):
-                    out.append({"type": "Feature", "properties": {"route_class": cls, "source_label": descriptor}, "geometry": {"type": "LineString", "coordinates": coords}})
-                # Google-style objects: [{lat,lng}, ...]
-                elif len(coords) >= 2 and all(isinstance(p, dict) and "lat" in p and ("lng" in p or "lon" in p) for p in coords[:2]):
-                    line = [[float(p.get("lng", p.get("lon"))), float(p["lat"])] for p in coords]
-                    if line_in_mk(line):
-                        out.append({"type": "Feature", "properties": {"route_class": cls, "source_label": descriptor}, "geometry": {"type": "LineString", "coordinates": line}})
-            for k, v in value.items():
-                if isinstance(v, (dict, list)):
-                    out.extend(extract_json(v, f"{context} {descriptor} {k}"))
-    elif isinstance(value, list):
-        for item in value:
-            out.extend(extract_json(item, context))
-    return out
 
 
 def extract_kml(text: str, context: str = "") -> list[dict]:
@@ -205,325 +138,108 @@ def dedupe(features: list[dict]) -> list[dict]:
     return out
 
 
-async def main() -> int:
+
+# Verified against the council site's Cycle Paths filter bindings. Discover the
+# current URLs rather than capturing every KmlLayer.setMap call (including off).
+SOURCE_FILES = {
+    "Redway_Super_Routes.kmz": "super_redway",
+    "GIS_Redway_layer_2019.kmz": "redway",
+    **{f"LeisureRouteNetwork_9_04_2019-{i}.kmz": "leisure" for i in range(1, 5)},
+}
+
+
+def discover_sources(texts: list[str]) -> dict[str, str]:
+    found = {}
+    for text in texts:
+        for url in find_kml_urls(text):
+            name = urlparse(url).path.rsplit("/", 1)[-1]
+            if name in SOURCE_FILES:
+                if name in found and found[name] != url:
+                    raise ValueError(f"Conflicting source URLs for {name}")
+                found[name] = url
+    missing = SOURCE_FILES.keys() - found.keys()
+    if missing:
+        raise ValueError(f"Missing required council sources: {sorted(missing)}")
+    return found
+
+
+def download(url: str) -> bytes:
+    from urllib.request import Request, urlopen
+    with urlopen(Request(url, headers={"User-Agent": "MK-Redway-Navigator/1.0"}), timeout=45) as response:
+        body = response.read(20_000_001)
+    if len(body) > 20_000_000:
+        raise ValueError(f"Council response exceeds 20 MB: {url}")
+    return body
+
+
+def main() -> int:
+    from html.parser import HTMLParser
+
+    class Scripts(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.urls = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "script" and dict(attrs).get("src"):
+                url = urljoin(URL, dict(attrs)["src"])
+                if urlparse(url).hostname == urlparse(URL).hostname:
+                    self.urls.append(url)
+
+    diagnostics = {"url": URL, "sources": [], "errors": []}
+    features = []
     try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        raise SystemExit("Playwright is required: pip install playwright")
-
-    features: list[dict] = []
-    diagnostics: dict[str, Any] = {"url": URL, "responses": [], "layers": {}, "errors": []}
-
-    capture_script = r"""
-    (() => {
-      window.__mkCouncilPolylines = [];
-      window.__mkCouncilDataFeatures = [];
-      window.__mkCouncilKmlLayers = [];
-      const copyPath = p => {
-        try {
-          const arr = p && typeof p.getArray === 'function' ? p.getArray() : p;
-          return Array.from(arr || []).map(x => {
-            const lat = typeof x.lat === 'function' ? x.lat() : x.lat;
-            const lng = typeof x.lng === 'function' ? x.lng() : (x.lng ?? x.lon);
-            return [Number(lng), Number(lat)];
-          }).filter(x => Number.isFinite(x[0]) && Number.isFinite(x[1]));
-        } catch (_) { return []; }
-      };
-      const timer = setInterval(() => {
-        try {
-          const gm = window.google && window.google.maps;
-          if (!gm) return;
-          if (gm.Polyline && !gm.Polyline.__mkWrapped) {
-            const Orig = gm.Polyline;
-            function Wrapped(opts) {
-              const obj = new Orig(opts);
-              try {
-                window.__mkCouncilPolylines.push({
-                  path: copyPath((opts && opts.path) || obj.getPath()),
-                  strokeColor: opts && opts.strokeColor,
-                  title: opts && (opts.title || opts.name),
-                  options: opts || {}
-                });
-              } catch (_) {}
-              return obj;
-            }
-            Object.setPrototypeOf(Wrapped, Orig); Wrapped.prototype = Orig.prototype; Wrapped.__mkWrapped = true;
-            gm.Polyline = Wrapped;
-          }
-          if (gm.Data && gm.Data.prototype && gm.Data.prototype.addGeoJson && !gm.Data.prototype.addGeoJson.__mkWrapped) {
-            const origAdd = gm.Data.prototype.addGeoJson;
-            const wrappedAdd = function(obj, options) {
-              try { window.__mkCouncilDataFeatures.push({obj, options}); } catch (_) {}
-              return origAdd.call(this, obj, options);
-            };
-            wrappedAdd.__mkWrapped = true;
-            gm.Data.prototype.addGeoJson = wrappedAdd;
-          }
-          if (gm.KmlLayer && gm.KmlLayer.prototype && !gm.KmlLayer.__mkWrapped) {
-            const Orig = gm.KmlLayer;
-            const record = (obj, supplied, reason) => {
-              try {
-                const url = (typeof supplied === 'string' ? supplied : (supplied && supplied.url)) ||
-                            (obj && typeof obj.getUrl === 'function' ? obj.getUrl() : '');
-                if (url) window.__mkCouncilKmlLayers.push({url:String(url), reason, ts:Date.now()});
-              } catch (_) {}
-            };
-            if (Orig.prototype.setMap && !Orig.prototype.setMap.__mkWrapped) {
-              const origSetMap = Orig.prototype.setMap;
-              const wrappedSetMap = function(map) { record(this, null, map ? 'setMap:on' : 'setMap:off'); return origSetMap.call(this, map); };
-              wrappedSetMap.__mkWrapped = true;
-              Orig.prototype.setMap = wrappedSetMap;
-            }
-            if (Orig.prototype.setUrl && !Orig.prototype.setUrl.__mkWrapped) {
-              const origSetUrl = Orig.prototype.setUrl;
-              const wrappedSetUrl = function(url) { record(this, url, 'setUrl'); return origSetUrl.call(this, url); };
-              wrappedSetUrl.__mkWrapped = true;
-              Orig.prototype.setUrl = wrappedSetUrl;
-            }
-            function Wrapped(...args) {
-              const obj = Reflect.construct(Orig, args, Orig);
-              record(obj, args[0], 'constructor');
-              return obj;
-            }
-            Object.setPrototypeOf(Wrapped, Orig);
-            Wrapped.prototype = Orig.prototype;
-            Wrapped.__mkWrapped = true;
-            gm.KmlLayer = Wrapped;
-          }
-        } catch (_) {}
-      }, 1);
-      setTimeout(() => clearInterval(timer), 30000);
-    })();
-    """
-
-    layers = [
-        ("Redway Super Routes", "super_redway"),
-        ("Redway Routes", "redway"),
-        ("Leisure Routes", "leisure"),
-    ]
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(viewport={"width": 1440, "height": 1000}, locale="en-GB")
-
-        for label, target_class in layers:
-            page = await context.new_page()
-            await page.add_init_script(capture_script)
-            active = {"capture": False}
-            response_features: list[dict] = []
-            layer_features: list[dict] = []
-
-            async def on_response(resp, _label=label):
-                if not active["capture"]:
-                    return
-                url = resp.url
-                try:
-                    ct = (resp.headers.get("content-type") or "").lower()
-                    # Ignore Google Maps' internal vector-tile/API traffic. It contains
-                    # hundreds of thousands of unrelated basemap lines and must never be
-                    # treated as council route geometry merely because a filter is active.
-                    parsed = urlparse(url)
-                    host = (parsed.hostname or "").lower()
-                    path_l = parsed.path.lower()
-                    explicit_route_payload = path_l.endswith((".kml", ".kmz", ".geojson", ".json"))
-                    trusted_host = host.endswith("getaroundmk.org.uk")
-                    interesting = (trusted_host and any(x in ct for x in ("json", "geojson", "xml", "kml"))) or explicit_route_payload
-                    if not interesting:
-                        return
-                    body = await resp.body()
-                    if len(body) > 20_000_000:
-                        return
-                    diagnostics["responses"].append({"layer": _label, "url": url, "status": resp.status, "content_type": ct, "bytes": len(body)})
-                    text = body.decode("utf-8", "ignore")
-                    context_text = f"{_label} {url}"
-                    if "json" in ct or text.lstrip().startswith(("{", "[")):
-                        try:
-                            response_features.extend(extract_json(json.loads(text), context_text))
-                        except Exception:
-                            pass
-                    if "kml" in ct or "xml" in ct or "<kml" in text[:1000].lower():
-                        response_features.extend(extract_kml(text, context_text))
-                except Exception as exc:
-                    diagnostics["errors"].append(f"response {_label} {url}: {exc}")
-
-            page.on("response", on_response)
-            try:
-                await page.goto(URL, wait_until="domcontentloaded", timeout=90000)
-                await page.wait_for_timeout(4000)
-
-                # Open the filter panel if it is collapsed.
-                for button_name in ("Map Filter", "Map filter"):
-                    try:
-                        btn = page.get_by_role("button", name=re.compile(button_name, re.I))
-                        if await btn.count():
-                            await btn.first.click(timeout=2500)
-                            await page.wait_for_timeout(500)
-                            break
-                    except Exception:
-                        pass
-
-                # Start from a known filter state. The site can retain selections.
-                try:
-                    cleared = await page.evaluate(r"""() => {
-                      const clickable = Array.from(document.querySelectorAll('button,input[type=button],input[type=submit],a'));
-                      const norm = el => ((el.textContent || el.value || '') + '').replace(/\s+/g,' ').trim().toLowerCase();
-                      const el = clickable.find(x => norm(x) === 'clear all' || norm(x).includes('clear all'));
-                      if (!el) return false;
-                      el.click(); return true;
-                    }""")
-                    if cleared:
-                        await page.wait_for_timeout(600)
-                except Exception:
-                    pass
-
-                baseline = await page.evaluate("() => ({p:(window.__mkCouncilPolylines||[]).length,d:(window.__mkCouncilDataFeatures||[]).length,k:(window.__mkCouncilKmlLayers||[]).length})")
-
-                # Select exactly one official layer. This makes otherwise anonymous JSON or
-                # polyline payloads safely classifiable by the active website filter.
-                selected = await page.evaluate(r"""(label) => {
-                  const els = Array.from(document.querySelectorAll('label, li, div, span'));
-                  const norm = s => (s || '').replace(/\s+/g,' ').trim();
-                  const el = els.find(x => norm(x.textContent) === label) || els.find(x => norm(x.textContent).includes(label));
-                  if (!el) return null;
-                  const labelEl = el.closest('label') || el;
-                  let input = labelEl.querySelector && labelEl.querySelector('input[type=checkbox],input[type=radio]');
-                  if (!input && labelEl.htmlFor) input = document.getElementById(labelEl.htmlFor);
-                  if (!input) {
-                    const parent = labelEl.parentElement;
-                    input = parent && parent.querySelector('input[type=checkbox],input[type=radio]');
-                  }
-                  if (input) {
-                    if (!input.checked) input.click();
-                    return {found:true,id:input.id||'',name:input.name||'',value:input.value||'',checked:!!input.checked};
-                  }
-                  labelEl.click(); return {found:true,id:'',name:'',value:'',checked:null};
-                }""", label)
-                diagnostics["layers"][label] = {"selected": bool(selected), "filter": selected or {}}
-                if not selected:
-                    raise RuntimeError(f"Could not find website filter '{label}'")
-
-                active["capture"] = True
-                applied = False
-                try:
-                    applied = bool(await page.evaluate(r"""() => {
-                      const clickable = Array.from(document.querySelectorAll('button,input[type=button],input[type=submit],a'));
-                      const norm = el => ((el.textContent || el.value || '') + '').replace(/\s+/g,' ').trim().toLowerCase();
-                      const el = clickable.find(x => norm(x) === 'apply filters' || norm(x).startsWith('apply'));
-                      if (!el) return false;
-                      el.click(); return true;
-                    }"""))
-                except Exception:
-                    pass
-                diagnostics["layers"][label]["apply_clicked"] = applied
-                await page.wait_for_timeout(12000)
-                diagnostics["layers"][label]["final_url"] = page.url
-
-                captured = await page.evaluate("""() => ({
-                  polylines: window.__mkCouncilPolylines || [],
-                  dataFeatures: window.__mkCouncilDataFeatures || [],
-                  kmlLayers: window.__mkCouncilKmlLayers || []
-                })""")
-
-                fallback_features: list[dict] = []
-                for item in captured.get("dataFeatures", [])[baseline.get("d", 0):]:
-                    fallback_features.extend(extract_json(item.get("obj"), label))
-
-                # The council map uses Google Maps KmlLayer. The original KML/KMZ source
-                # is the clean authoritative payload; if it is available, deliberately
-                # ignore all generic map responses and rendered polylines.
-                kml_entries = captured.get("kmlLayers", [])[baseline.get("k", 0):]
-                kml_urls: list[str] = []
-                for entry in kml_entries:
-                    url = str((entry or {}).get("url") or "")
-                    if url and url not in kml_urls:
-                        kml_urls.append(url)
-                diagnostics["layers"][label]["kml_layers"] = kml_entries
-                diagnostics["layers"][label]["kml_urls"] = kml_urls
-
-                kml_features: list[dict] = []
-                for kml_url in kml_urls:
-                    try:
-                        kr = await context.request.get(kml_url, timeout=30000)
-                        if kr.ok:
-                            blob = await kr.body()
-                            parsed_features = extract_kml_blob(blob, label)
-                            for f in parsed_features:
-                                f.setdefault("properties", {})["capture"] = "google.maps.KmlLayer source"
-                            kml_features.extend(parsed_features)
-                        else:
-                            diagnostics["errors"].append(f"KML {label} {kml_url}: HTTP {kr.status}")
-                    except Exception as exc:
-                        diagnostics["errors"].append(f"KML {label} {kml_url}: {exc}")
-
-                for item in captured.get("polylines", [])[baseline.get("p", 0):]:
-                    path = item.get("path") or []
-                    if line_in_mk(path):
-                        opts = item.get("options") or {}
-                        fallback_features.append({
-                            "type": "Feature",
-                            "properties": {
-                                "route_class": target_class,
-                                "name": item.get("title") or opts.get("name") or "",
-                                "capture": "google.maps.Polyline",
-                            },
-                            "geometry": {"type": "LineString", "coordinates": path},
-                        })
-
-                if kml_features:
-                    layer_features = kml_features
-                    diagnostics["layers"][label]["method"] = "KmlLayer source"
-                elif fallback_features:
-                    layer_features = fallback_features
-                    diagnostics["layers"][label]["method"] = "Google Maps rendered/data fallback"
-                else:
-                    layer_features = response_features
-                    diagnostics["layers"][label]["method"] = "trusted website response fallback"
-                # Because only one layer is enabled, any line extracted from that layer's
-                # response is authoritatively assigned to the selected website category.
-                for f in layer_features:
-                    f.setdefault("properties", {})["route_class"] = target_class
-                layer_features = dedupe(layer_features)
-                diagnostics["layers"][label]["features"] = len(layer_features)
-                features.extend(layer_features)
-            except Exception as exc:
-                diagnostics["errors"].append(f"layer {label}: {exc}")
-                diagnostics["layers"].setdefault(label, {})["error"] = str(exc)
-            finally:
-                await page.close()
-
-        await browser.close()
-
-    features = dedupe(features)
-    counts = {c: sum(1 for f in features if f["properties"].get("route_class") == c) for c in ("super_redway", "redway", "leisure")}
-    diagnostics["feature_counts"] = counts
-    diagnostics["total_features"] = len(features)
-    DIAG.parent.mkdir(parents=True, exist_ok=True)
-    DIAG.write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
-
-    # Require all three website layers. A partial scrape is worse than the last known-good
-    # council extract because it could silently declassify valid paths.
-    # MK's cycle network cannot plausibly contain hundreds of thousands of distinct
-    # route lines. Treat such a result as contaminated Google basemap/vector data rather
-    # than feeding it into the OSM matcher and timing out the build.
-    if len(features) < 20 or len(features) > 80_000 or any(counts[c] == 0 for c in counts):
-        reason = "implausibly large / contaminated" if len(features) > 80_000 else "incomplete"
-        print(f"Council-map extraction {reason}: {len(features):,} usable lines ({counts}); retaining any cached extract.")
+        html = download(URL).decode("utf-8")
+        parser = Scripts()
+        parser.feed(html)
+        scripts = [download(url).decode("utf-8") for url in dict.fromkeys(parser.urls)]
+        sources = discover_sources([html, *scripts])
+        for name, url in sources.items():
+            cls = SOURCE_FILES[name]
+            parsed = extract_kml_blob(download(url), cls.replace("_", " "))
+            for feature in parsed:
+                feature["properties"].update(route_class=cls, source_url=url,
+                                              capture="council website KML source")
+            parsed = dedupe(parsed)
+            if not parsed:
+                raise ValueError(f"No usable lines in required source: {name}")
+            diagnostics["sources"].append({"url": url, "route_class": cls, "features": len(parsed)})
+            features.extend(parsed)
+        features = dedupe(features)
+        counts = {cls: sum(f["properties"]["route_class"] == cls for f in features)
+                  for cls in ("super_redway", "redway", "leisure")}
+        diagnostics.update(feature_counts=counts, total_features=len(features))
+        # Verified leisure KMZs contain about 150,000 short line fragments.
+        # Source identity and cross-category checks guard against contamination.
+        if not 20 <= len(features) <= 200_000 or not all(counts.values()):
+            raise ValueError(f"Incomplete or contaminated extract: {counts}")
+        geometries = {cls: {json.dumps(f["geometry"]["coordinates"]) for f in features
+                           if f["properties"]["route_class"] == cls} for cls in counts}
+        if any(geometries[a] == geometries[b] for a, b in
+               (("super_redway", "redway"), ("super_redway", "leisure"), ("redway", "leisure"))):
+            raise ValueError("Two council categories contain identical geometry sets")
+        payload = {
+            "type": "FeatureCollection",
+            "name": "Get Around MK official cycle-path classifications",
+            "source": URL,
+            "permission": "Used with permission from Milton Keynes City Council as confirmed by the project owner.",
+            "features": features,
+        }
+        OUT.parent.mkdir(parents=True, exist_ok=True)
+        tmp = OUT.with_suffix(".geojson.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(OUT)
+        print(f"Wrote {OUT}: {len(features):,} lines — {counts}")
+        return 0
+    except Exception as exc:
+        diagnostics["errors"].append(str(exc))
+        print(f"Council-map extraction failed: {exc}; retaining any cached extract.")
         return 2
-
-    payload = {
-        "type": "FeatureCollection",
-        "name": "Get Around MK official cycle-path classifications",
-        "source": URL,
-        "permission": "Used with permission from Milton Keynes City Council as confirmed by the project owner.",
-        "features": features,
-    }
-    tmp = OUT.with_suffix(".geojson.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(OUT)
-    size = OUT.stat().st_size / (1024 * 1024)
-    print(f"Wrote {OUT}: {len(features):,} lines — {counts}; {size:.2f} MiB")
-    return 0
+    finally:
+        DIAG.parent.mkdir(parents=True, exist_ok=True)
+        DIAG.write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(main())
+
