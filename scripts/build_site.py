@@ -64,7 +64,7 @@ def main():
         with urlopen(item["url"], timeout=60) as response:
             body = response.read()
         digest = hashlib.sha256(body).hexdigest()
-        if item.get("sha256") and item["sha256"] != digest:
+        if not item.get("sha256") or item["sha256"] != digest:
             raise ValueError(f"Dependency checksum changed: {item['path']}")
         target.write_bytes(body)
         item["sha256"] = digest

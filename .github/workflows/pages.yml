@@ -115,6 +115,9 @@ jobs:
         with:
           path: dist
 
+      - name: Inspect actual Pages archive
+        run: python3 scripts/check_pages_artifact.py "$RUNNER_TEMP/artifact.tar"
+
       - name: Upload browser captures
         if: always()
         uses: actions/upload-artifact@v4

@@ -45,15 +45,18 @@
     "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/LICENSE",
-    "path": "vendor/leaflet-LICENSE.txt"
+    "path": "vendor/leaflet-LICENSE.txt",
+    "sha256": "53e8dc25862014e4324741ca18fbe3611e11d42ef69f59f86ea8c5389647d4cb",
+    "url": "https://unpkg.com/leaflet@1.9.4/LICENSE"
   },
   {
-    "url": "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/LICENSE",
-    "path": "vendor/leaflet-rotate-LICENSE.txt"
+    "path": "vendor/leaflet-rotate-LICENSE.txt",
+    "sha256": "6fa3ebf510cc314802fff147cd740fef308c5dfa5abe2ed55f096a92970be033",
+    "url": "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/LICENSE"
   },
   {
-    "url": "https://unpkg.com/protomaps-leaflet@5.1.0/LICENSE",
-    "path": "vendor/protomaps-leaflet-LICENSE.txt"
+    "path": "vendor/protomaps-leaflet-LICENSE.txt",
+    "sha256": "a2ada548aa25012e833b71364a402d6924f2afcf5f8f146e2989a377290ab3ad",
+    "url": "https://unpkg.com/protomaps-leaflet@5.1.0/LICENSE"
   }
 ]
