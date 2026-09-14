@@ -28,19 +28,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/council_routes.geojson
-          key: mk-redway-council-v1-${{ github.run_number }}
+          key: mk-redway-council-v2-${{ github.run_number }}
           restore-keys: |
-            mk-redway-council-v1-
+            mk-redway-council-v2-
 
       - name: Restore last routing network
         uses: actions/cache@v4
         with:
           path: data/network.json
-          key: mk-redway-routing-v6-${{ github.run_number }}
+          key: mk-redway-routing-v7-${{ github.run_number }}
           restore-keys: |
+            mk-redway-routing-v7-
             mk-redway-routing-v6-
             mk-redway-routing-v5-
-            mk-redway-routing-v4-
 
       - name: Restore cached Geofabrik OSM extract
         uses: actions/cache@v4
