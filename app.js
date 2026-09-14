@@ -27,6 +27,7 @@
     touchRotate: false,
     rotateControl: false
   }).setView([52.0406, -0.7594], 12);
+  map.attributionControl.setPrefix(false);
   let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
     attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
@@ -136,6 +137,7 @@
 
   function setStage(stage) {
     state.stage = stage;
+    el('app').dataset.stage = stage;
     el('exploreUI').hidden = stage !== 'explore';
     el('plannerUI').hidden = stage !== 'planner';
     el('placeSheet').hidden = stage !== 'place';
@@ -929,8 +931,7 @@
   }
 
   function routeReadyStatus() {
-    const source = state.networkSource === 'bundled' ? 'Using downloaded routing data' : 'Using online fallback data';
-    return `Route ready · ${source}`;
+    return state.networkSource === 'bundled' ? 'Route ready' : 'Route ready · Online data';
   }
 
   function renderAlternatives() {
@@ -957,7 +958,7 @@
     const route = state.route, note = el('approachNote');
     note.hidden = !route || route.approachDist < 5;
     if (!route) return;
-    note.textContent = `Approaches: ${formatDistance(route.snaps.start)} at the start, ${formatDistance(route.snaps.end)} at the destination. Dashed lines are unverified gaps, not mapped paths. Totals include an estimated walking approach. Choose an entrance if needed.`;
+    note.textContent = `Approaches: ${formatDistance(route.snaps.start)} at the start, ${formatDistance(route.snaps.end)} at the destination. Dashed approaches are unverified; check access. Totals include walking these gaps.`;
   }
 
   function installRoute(plan, { fit = true } = {}) {

@@ -47,6 +47,7 @@ def review(browser, url, live=False):
         page.get_by_role("button", name="Close search results", exact=True).click()
     plan(page, "52.0467,-0.7378", "52.025,-0.783")
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    assert page.locator("#timeStat").bounding_box()["height"] < 40, "Journey time wraps"
     capture(page, "route")
     for name in ("Balanced", "Fastest", "Max Redway"):
         page.locator(".route-option").filter(has_text=name).click()
@@ -55,16 +56,20 @@ def review(browser, url, live=False):
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Start", exact=True).click()
     expect(page.locator("#navBanner")).to_be_visible()
+    page.wait_for_timeout(3000)  # Inspect the settled camera and asynchronous tiles.
     capture(page, "navigation")
     page.get_by_role("button", name="Exit", exact=True).click()
     page.get_by_role("button", name="Clear", exact=True).click()
     page.get_by_role("button", name="Open settings", exact=True).click()
     page.locator("#aboutData summary").click()
-    expect(page.locator("#aboutVersion")).to_contain_text("0.12.0")
+    expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
     capture(page, "about")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
     page.set_viewport_size({"width": 844, "height": 390})
     expect(page.get_by_role("button", name="Close settings", exact=True)).to_be_visible()
+    saved = page.locator("#savedPlacesBtn").bounding_box()
+    install = page.locator("#installAppBtn").bounding_box()
+    assert install["x"] + install["width"] <= saved["x"], "Landscape map buttons overlap"
     capture(page, "landscape-settings")
     page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_role("button", name="Close settings", exact=True).click()

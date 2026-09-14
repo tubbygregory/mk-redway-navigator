@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.1
+
+- Fix journey-time wrapping, landscape map-button overlap and undersized tap targets found in the live mobile review.
+- Make map attribution readable and keep it clear of controls.
+- Simplify route-preview copy and retain explicit unverified-approach information.
+- Require all six council source files when validating cached classification data.
+
 ## 0.12.0
 
 - Publish a validated browser-only Pages artifact.

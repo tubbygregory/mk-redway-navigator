@@ -27,11 +27,13 @@ def validate_council(data):
     if not 20 <= len(features) <= 200_000:
         raise ValueError("Council feature count outside reviewed limits")
     groups = {key: set() for key in ("super_redway", "redway", "leisure")}
+    source_names = set()
     for feature in features:
         props, geometry = feature["properties"], feature["geometry"]
         cls = props["route_class"]
         if source_class(props.get("source_url", "")) != cls:
             raise ValueError("Council source/category mismatch")
+        source_names.add(urlparse(props["source_url"]).path.rsplit("/", 1)[-1])
         coords = geometry["coordinates"]
         if geometry["type"] != "LineString" or len(coords) < 2:
             raise ValueError("Invalid council line")
@@ -42,6 +44,8 @@ def validate_council(data):
             raise ValueError("Council line outside MK")
         line = tuple(tuple(p[:2]) for p in coords)
         groups[cls].add(min(line, line[::-1]))
+    if source_names != set(SOURCES):
+        raise ValueError("Incomplete council source set")
     limits = {"super_redway": (1, 500), "redway": (10, 15_000), "leisure": (10, 180_000)}
     for cls, (low, high) in limits.items():
         if not low <= len(groups[cls]) <= high:
