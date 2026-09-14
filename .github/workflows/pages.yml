@@ -60,13 +60,6 @@ jobs:
           restore-keys: |
             mk-redway-basemap-v1-
 
-      - name: Install council-map extractor
-        continue-on-error: true
-        timeout-minutes: 8
-        run: |
-          python3 -m pip install --disable-pip-version-check playwright
-          python3 -m playwright install --with-deps chromium
-
       - name: Install routing-data parser
         run: python3 -m pip install --disable-pip-version-check osmium
 
@@ -74,6 +67,14 @@ jobs:
         continue-on-error: true
         timeout-minutes: 8
         run: python3 scripts/extract_council_routes.py
+
+      - name: Upload council extraction diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: council-extraction-diagnostics
+          path: data/council-route-extract-diagnostics.json
+          if-no-files-found: warn
 
       - name: Build current MK routing network
         continue-on-error: true
