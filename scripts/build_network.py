@@ -19,6 +19,11 @@ import time
 import urllib.parse
 import urllib.request
 
+try:
+    import osmium  # type: ignore
+except ImportError:
+    osmium = None
+
 SOUTH, WEST, NORTH, EAST = 51.955, -0.905, 52.155, -0.615
 HIGHWAYS = (
     "path|cycleway|footway|pedestrian|bridleway|track|steps|living_street|"
@@ -38,8 +43,122 @@ KEEP_TAGS = {
 ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = ROOT / "scripts" / "official_route_rules.json"
 OUT = ROOT / "data" / "network.json"
+OSM_PBF = ROOT / "data" / "buckinghamshire-latest.osm.pbf"
+GEOFABRIK_URL = "https://download.geofabrik.de/europe/united-kingdom/england/buckinghamshire-latest.osm.pbf"
 TMP = ROOT / "data" / "network.json.tmp"
 COUNCIL_ROUTES = ROOT / "data" / "council_routes.geojson"
+
+
+
+def download_geofabrik_pbf() -> Path:
+    """Download the small Buckinghamshire OSM extract used for deterministic builds."""
+    if OSM_PBF.exists() and OSM_PBF.stat().st_size > 5_000_000:
+        age = (time.time() - OSM_PBF.stat().st_mtime) / 86400
+        if age < 2:
+            print(f"Reusing cached Geofabrik OSM extract ({OSM_PBF.stat().st_size / 1024 / 1024:.1f} MiB, {age:.1f} days old).", flush=True)
+            return OSM_PBF
+    tmp = OSM_PBF.with_suffix(OSM_PBF.suffix + ".tmp")
+    OSM_PBF.parent.mkdir(parents=True, exist_ok=True)
+    last = None
+    for attempt in range(3):
+        try:
+            print(f"Downloading current Buckinghamshire OSM extract from Geofabrik (attempt {attempt + 1}/3)…", flush=True)
+            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator-PoC/0.10.2 GitHub-Pages-build"})
+            with urllib.request.urlopen(req, timeout=180) as r, tmp.open("wb") as out:
+                while True:
+                    chunk = r.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            if tmp.stat().st_size < 5_000_000:
+                raise RuntimeError(f"Downloaded extract is unexpectedly small ({tmp.stat().st_size} bytes)")
+            tmp.replace(OSM_PBF)
+            print(f"Downloaded {OSM_PBF.stat().st_size / 1024 / 1024:.1f} MiB OSM extract.", flush=True)
+            return OSM_PBF
+        except Exception as exc:
+            last = exc
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
+            wait = 3 + attempt * 5
+            print(f"Geofabrik download attempt {attempt + 1} failed: {exc}; retrying in {wait}s", flush=True)
+            time.sleep(wait)
+    if OSM_PBF.exists() and OSM_PBF.stat().st_size > 5_000_000:
+        print(f"Geofabrik refresh unavailable; using cached OSM extract ({OSM_PBF.stat().st_size / 1024 / 1024:.1f} MiB).", flush=True)
+        return OSM_PBF
+    raise RuntimeError(f"Could not download Geofabrik OSM extract: {last}")
+
+
+def load_osm_from_pbf(path: Path) -> tuple[dict[int, tuple[float, float]], dict[int, tuple[list[int], dict[str, str]]], dict]:
+    """Read routable ways, their nodes and bicycle relations from a local PBF."""
+    if osmium is None:
+        raise RuntimeError("Python package 'osmium' is required for the Geofabrik routing build")
+
+    class WaysAndRelations(osmium.SimpleHandler):
+        def __init__(self):
+            super().__init__()
+            self.ways: dict[int, tuple[list[int], dict[str, str]]] = {}
+            self.node_ids: set[int] = set()
+            self.relations: list[dict] = []
+
+        def way(self, w):
+            tags_all = {t.k: t.v for t in w.tags}
+            highway = tags_all.get("highway", "")
+            if not re.fullmatch(rf"(?:{HIGHWAYS})", highway):
+                return
+            ids = [int(n.ref) for n in w.nodes]
+            if len(ids) < 2:
+                return
+            tags = {k: str(v) for k, v in tags_all.items() if k in KEEP_TAGS}
+            self.ways[int(w.id)] = (ids, tags)
+            self.node_ids.update(ids)
+
+        def relation(self, r):
+            tags = {t.k: t.v for t in r.tags}
+            if tags.get("route") != "bicycle":
+                return
+            members = []
+            for m in r.members:
+                if m.type == "w":
+                    members.append({"type": "way", "ref": int(m.ref), "role": m.role})
+            if members:
+                self.relations.append({"type": "relation", "id": int(r.id), "tags": tags, "members": members})
+
+    first = WaysAndRelations()
+    first.apply_file(str(path), locations=False)
+
+    class Nodes(osmium.SimpleHandler):
+        def __init__(self, wanted: set[int]):
+            super().__init__()
+            self.wanted = wanted
+            self.nodes: dict[int, tuple[float, float]] = {}
+
+        def node(self, n):
+            nid = int(n.id)
+            if nid in self.wanted and n.location.valid():
+                self.nodes[nid] = (float(n.location.lat), float(n.location.lon))
+
+    second = Nodes(first.node_ids)
+    second.apply_file(str(path), locations=False)
+
+    # Limit the graph to the MK app extent after coordinates are available. Keep a small
+    # buffer so paths crossing the boundary remain connected.
+    margin = 0.01
+    kept_ways: dict[int, tuple[list[int], dict[str, str]]] = {}
+    referenced: set[int] = set()
+    for wid, (ids, tags) in first.ways.items():
+        pts = [second.nodes.get(n) for n in ids]
+        if not any(pt and SOUTH - margin <= pt[0] <= NORTH + margin and WEST - margin <= pt[1] <= EAST + margin for pt in pts):
+            continue
+        clean = [n for n in ids if n in second.nodes]
+        if len(clean) >= 2:
+            kept_ways[wid] = (clean, tags)
+            referenced.update(clean)
+    nodes = {nid: second.nodes[nid] for nid in referenced}
+    relation_json = {"elements": first.relations}
+    print(f"Loaded {len(nodes):,} referenced nodes and {len(kept_ways):,} routable ways from Geofabrik.", flush=True)
+    return nodes, kept_ways, relation_json
 
 
 def request_overpass(query: str, label: str, rotate: int = 0, attempts: int = 2) -> dict:
@@ -406,7 +525,7 @@ def existing_network_is_valid() -> bool:
         with OUT.open("r", encoding="utf-8") as f:
             data = json.load(f)
         return (
-            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2", "mk-redway-network-v3", "mk-redway-network-v4"}
+            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2", "mk-redway-network-v3", "mk-redway-network-v4", "mk-redway-network-v5"}
             and len(data.get("nodes", [])) > 1000
             and len(data.get("ways", [])) > 100
         )
@@ -470,7 +589,7 @@ def main() -> int:
     cached_council_hash = existing_network_council_hash()
     if (
         existing_network_is_valid()
-        and existing_network_format() == "mk-redway-network-v4"
+        and existing_network_format() == "mk-redway-network-v5"
         and age is not None and age < 7
         and current_council_hash == cached_council_hash
         and os.environ.get("FORCE_NETWORK_REFRESH") != "1"
@@ -492,19 +611,12 @@ def main() -> int:
 
     nodes_by_osm: dict[int, tuple[float, float]] = {}
     ways_by_osm: dict[int, tuple[list[int], dict[str, str]]] = {}
+    cycle_relations: dict = {"elements": []}
     try:
-        for i, tile in enumerate(tiles):
-            print(f"Fetching routing tile {i + 1}/{len(tiles)}…", flush=True)
-            data = request_tile(*tile, tile_no=i)
-            for element in data.get("elements", []):
-                typ = element.get("type")
-                if typ == "node" and "lat" in element and "lon" in element:
-                    nodes_by_osm[int(element["id"])] = (float(element["lat"]), float(element["lon"]))
-                elif typ == "way" and len(element.get("nodes", [])) > 1:
-                    tags = {k: str(v) for k, v in (element.get("tags") or {}).items() if k in KEEP_TAGS}
-                    ways_by_osm[int(element["id"])] = ([int(x) for x in element["nodes"]], tags)
+        pbf = download_geofabrik_pbf()
+        nodes_by_osm, ways_by_osm, cycle_relations = load_osm_from_pbf(pbf)
     except Exception as exc:  # noqa: BLE001
-        print(f"Network refresh failed: {exc}", file=sys.stderr)
+        print(f"Geofabrik routing refresh failed: {exc}", file=sys.stderr)
         if existing_network_is_valid():
             print("Keeping the cached network.json restored by GitHub Actions.", flush=True)
             return 0
@@ -514,11 +626,10 @@ def main() -> int:
     route_names: dict[int, str] = {}
     route_refs: dict[int, str] = {}
     try:
-        print("Fetching Super Redway / leisure route metadata…", flush=True)
-        route_classes, route_names, route_refs = relation_classes(request_cycle_relations(), rules)
+        route_classes, route_names, route_refs = relation_classes(cycle_relations, rules)
         super_count = sum(1 for x in route_classes.values() if x == "super_redway")
         leisure_count = sum(1 for x in route_classes.values() if x == "leisure")
-        print(f"Classified {super_count:,} Super Redway way memberships and {leisure_count:,} leisure-route memberships.", flush=True)
+        print(f"Classified {super_count:,} Super Redway way memberships and {leisure_count:,} leisure-route memberships from the local OSM extract.", flush=True)
     except Exception as exc:  # noqa: BLE001
         print(f"Route-class metadata unavailable; continuing with Redway tag classification: {exc}", flush=True)
 
@@ -614,10 +725,11 @@ def main() -> int:
         compact_ways.append([way_id, compact, tags])
 
     payload = {
-        "format": "mk-redway-network-v4",
+        "format": "mk-redway-network-v5",
         "generated_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         "bbox": [SOUTH, WEST, NORTH, EAST],
-        "classification": "Get Around MK interactive-map Redway/Super Redway/Leisure geometry matched to OSM routable geometry; OSM/corridor rules are fallback only",
+        "classification": "Get Around MK interactive-map Redway/Super Redway/Leisure geometry matched to Geofabrik/OSM routable geometry; OSM/corridor rules are fallback only",
+        "osm_source": GEOFABRIK_URL,
         "council_geometry_source": "https://getaroundmk.org.uk/interactive-map?cycle-paths=1",
         "council_geometry_features": len(council_features),
         "council_geometry_sha256": current_council_hash,

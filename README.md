@@ -1,4 +1,4 @@
-# MK Redway Navigator v0.10.1
+# MK Redway Navigator v0.10.2
 
 Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
 
@@ -47,7 +47,7 @@ The app does **not** bulk-download tiles from `tile.openstreetmap.org`; OSM's pu
 
 
 
-## v0.10.1 — direct Get Around MK map integration
+## v0.10.2 — direct Get Around MK map integration
 
 With Milton Keynes City Council permission confirmed by the project owner, the build now reads the three official cycle-path layers directly from the Get Around MK interactive map. GitHub Actions opens the council map in headless Chromium, enables **Redway Super Routes**, **Redway Routes** and **Leisure Routes** independently, and saves the resulting official line classification as `data/council_routes.geojson`.
 
@@ -117,3 +117,10 @@ See `DATA-LICENCE.md`.
 Voice guidance is now initialised synchronously from the **Start** button tap so it satisfies iOS user-activation requirements. Spoken prompts use a persistent queue instead of cancelling the Web Speech synthesizer for every instruction. Navigation announces an advance warning and a junction instruction, plus rerouting and arrival messages. The speaker button can re-initialise speech after iOS has suspended the PWA.
 
 On iOS Home Screen web apps, keep the app in the foreground for reliable spoken guidance; iOS/WebKit can suspend web-app audio when backgrounded or the screen is locked.
+
+
+## v0.10.2 routing-build reliability
+
+The routing build no longer uses public Overpass servers for its normal OSM refresh. GitHub Actions downloads Geofabrik's small Buckinghamshire OSM PBF extract, parses it locally with pyosmium, and then matches the official Get Around MK route layers onto that graph. The extract is cached between builds. This avoids intermittent Overpass 504s, DNS failures and mirror certificate problems.
+
+If the Geofabrik refresh itself is unavailable, the last valid `data/network.json` remains the fallback.

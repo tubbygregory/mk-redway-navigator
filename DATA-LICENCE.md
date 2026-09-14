@@ -37,3 +37,8 @@ OpenStreetMap data is available under the Open Database License (ODbL).
 3. Leisure Routes
 
 It captures the line data loaded/rendered by the website and stores a compact GeoJSON copy for build-time classification. If the website is temporarily unavailable or its implementation changes, GitHub Actions retains the previous successful council extract and the router falls back to its existing OSM/corridor classification rather than breaking the deployed app.
+
+
+## OSM build source
+
+The routing topology is refreshed from the Geofabrik Buckinghamshire OpenStreetMap PBF extract and remains subject to the OpenStreetMap ODbL. The build clips that regional extract to the Milton Keynes application extent before publishing `data/network.json`.
