@@ -35,6 +35,7 @@
   const OFFLINE_CACHE = 'mk-redway-offline-v1';
   const SAVED_KEY = 'mk-redway-saved-v1';
   const SETTINGS_KEY = 'mk-redway-settings-v1';
+  const SETTINGS_LOGO_HINT_KEY = 'mk-redway-settings-logo-hint-v1';
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
@@ -143,7 +144,6 @@
     if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
     if (!['explore', 'place'].includes(stage)) el('settingsSheet').hidden = true;
     el('savedPlacesBtn').hidden = !['explore', 'place'].includes(stage);
-    el('settingsBtn').hidden = !['explore', 'place'].includes(stage);
     updateInstallButtonVisibility();
     setTimeout(syncViewport, 40);
   }
@@ -532,13 +532,36 @@
     probeOfflineMap().catch(() => {});
   });
   el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
-  el('settingsBtn').addEventListener('click', () => {
+  function settingsHintSeen() {
+    try { return localStorage.getItem(SETTINGS_LOGO_HINT_KEY) === '1'; } catch (_) { return false; }
+  }
+
+  function markSettingsHintSeen() {
+    try { localStorage.setItem(SETTINGS_LOGO_HINT_KEY, '1'); } catch (_) {}
+  }
+
+  function dismissSettingsLogoHint() {
+    markSettingsHintSeen();
+    el('settingsLogoHint').hidden = true;
+  }
+
+  function openSettings() {
+    dismissSettingsLogoHint();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
     syncVoiceControls();
     syncUnitControls();
     el('settingsSheet').hidden = false;
-  });
+  }
+
+  function showSettingsLogoHintOnce() {
+    if (settingsHintSeen()) return;
+    el('settingsLogoHint').hidden = false;
+    setTimeout(() => el('settingsHintGotIt')?.focus({ preventScroll: true }), 80);
+  }
+
+  el('logoSettingsBtn').addEventListener('click', openSettings);
+  el('settingsHintGotIt').addEventListener('click', dismissSettingsLogoHint);
   el('closeSettings').addEventListener('click', () => { el('settingsSheet').hidden = true; });
   el('voiceSettingBtn').addEventListener('click', () => {
     setVoiceEnabled(!state.voiceEnabled, { announce: !state.voiceEnabled });
@@ -2129,6 +2152,7 @@
   syncUnitControls();
   updatePlannerFields();
   setStage('explore');
+  setTimeout(showSettingsLogoHintOnce, 450);
   loadRedways();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
 })();

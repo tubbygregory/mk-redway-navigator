@@ -72,7 +72,12 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
-.search-logo { width: 32px; height: 32px; border-radius: 8px; }
+.search-logo-button {
+  width: 34px; height: 44px; min-width: 34px; padding: 0; border: 0; border-radius: 10px;
+  display: grid; place-items: center; background: transparent; color: inherit;
+}
+.search-logo-button:active { transform: scale(.96); }
+.search-logo { width: 32px; height: 32px; border-radius: 8px; pointer-events: none; }
 .search-pill input,
 .planner-row input {
   min-width: 0;
@@ -915,28 +920,7 @@ html.ios-standalone .toast {
   .saved-sheet { left: max(8px, calc(env(safe-area-inset-left, 0px) + 6px)); right: auto; width: min(430px, 48vw); max-height: calc(100dvh - 10px); }
 }
 
-/* v0.9.2 settings -------------------------------------------------------- */
-.settings-fab {
-  position: absolute;
-  z-index: 1184;
-  right: max(12px, calc(env(safe-area-inset-right, 0px) + 8px));
-  top: max(134px, calc(env(safe-area-inset-top, 0px) + 126px));
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255,255,255,.96);
-  color: var(--text);
-  box-shadow: 0 4px 16px rgba(0,0,0,.16);
-  font-weight: 700;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
-.settings-fab svg { width: 19px; height: 19px; }
+/* v0.9.3 settings -------------------------------------------------------- */
 .settings-sheet { z-index: 1460; max-height: min(72dvh, 560px); overflow: auto; -webkit-overflow-scrolling: touch; }
 .setting-row {
   display: grid;
@@ -993,21 +977,63 @@ html.ios-standalone .toast {
 .unit-choice button.active { background: rgba(169,37,29,.11); color: var(--red); box-shadow: inset 0 0 0 1px rgba(169,37,29,.18); }
 .unit-choice button.active small { color: var(--red); }
 
-@media (max-width: 350px) {
-  .settings-fab span { display: none; }
-  .settings-fab { width: 44px; padding: 0; }
-}
-
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1100px) {
-  .settings-fab {
-    top: auto;
-    bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) + 6px));
-    right: max(116px, calc(env(safe-area-inset-right, 0px) + 112px));
-  }
   .settings-sheet {
     left: max(8px, calc(env(safe-area-inset-left, 0px) + 6px));
     right: auto;
     width: min(430px, 48vw);
     max-height: calc(100dvh - 10px);
+  }
+}
+
+
+/* One-time settings coachmark */
+.settings-coachmark-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 1700;
+  background: rgba(0,0,0,.18);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.settings-coachmark {
+  position: absolute;
+  top: max(78px, calc(env(safe-area-inset-top, 0px) + 76px));
+  left: max(10px, env(safe-area-inset-left, 0px));
+  width: min(370px, calc(100% - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 44px minmax(0,1fr);
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(255,255,255,.98);
+  box-shadow: var(--shadow);
+}
+.settings-coachmark::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 25px;
+  width: 18px; height: 18px;
+  background: rgba(255,255,255,.98);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  transform: rotate(45deg);
+}
+.coachmark-logo { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; }
+.coachmark-logo img { width: 40px; height: 40px; border-radius: 10px; }
+.coachmark-copy { min-width: 0; }
+.coachmark-copy strong { display: block; font-size: 17px; line-height: 1.2; }
+.coachmark-copy p { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.coachmark-action {
+  grid-column: 1 / -1;
+  min-height: 46px;
+  margin-top: 2px;
+}
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1100px) {
+  .settings-coachmark {
+    top: max(72px, calc(env(safe-area-inset-top, 0px) + 66px));
+    width: min(390px, 52vw);
   }
 }

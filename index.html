@@ -26,7 +26,9 @@
     <!-- Explore / destination search. Compact and map-first, inspired by familiar mapping-app interaction patterns. -->
     <section id="exploreUI" class="top-overlay" aria-label="Destination search">
       <form id="homeSearchForm" class="search-pill">
-        <img src="./icons/app-logo.svg" class="search-logo" width="32" height="32" alt="" aria-hidden="true" />
+        <button id="logoSettingsBtn" class="search-logo-button" type="button" aria-label="Open settings" aria-haspopup="dialog" title="Settings">
+          <img src="./icons/app-logo.svg" class="search-logo" width="32" height="32" alt="" aria-hidden="true" />
+        </button>
         <label class="sr-only" for="homeSearch">Search for a destination</label>
         <input id="homeSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Search place, address or postcode" />
         <button id="homeSearchSubmit" class="icon-button search-submit" type="submit" aria-label="Search">
@@ -40,10 +42,6 @@
       <span>Saved</span>
     </button>
 
-    <button id="settingsBtn" class="settings-fab" type="button" aria-label="Open settings">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"></path><circle cx="15" cy="7" r="2"></circle><circle cx="9" cy="17" r="2"></circle></svg>
-      <span>Settings</span>
-    </button>
 
     <button id="installAppBtn" class="install-fab" type="button" hidden aria-label="Install MK Redway as an app">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"></path><path d="m8 10 4 4 4-4"></path><path d="M5 15v4h14v-4"></path></svg>
@@ -229,6 +227,18 @@
         <span><i class="key-shared"></i>Shared path</span>
       </div>
     </section>
+
+
+    <div id="settingsLogoHint" class="settings-coachmark-backdrop" hidden>
+      <section class="settings-coachmark" role="dialog" aria-modal="true" aria-labelledby="settingsHintTitle" aria-describedby="settingsHintCopy">
+        <div class="coachmark-logo" aria-hidden="true"><img src="./icons/app-logo.svg" width="40" height="40" alt="" /></div>
+        <div class="coachmark-copy">
+          <strong id="settingsHintTitle">Settings are in the logo</strong>
+          <p id="settingsHintCopy">Tap the MK Redway logo in the top-left of the search bar whenever you want to change voice guidance or distance units.</p>
+        </div>
+        <button id="settingsHintGotIt" class="primary-action coachmark-action" type="button">Got it</button>
+      </section>
+    </div>
 
     <section id="settingsSheet" class="bottom-sheet settings-sheet" aria-label="Settings" hidden>
       <div class="grabber" aria-hidden="true"></div>

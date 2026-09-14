@@ -1,4 +1,4 @@
-# MK Redway Navigator v0.9.2
+# MK Redway Navigator v0.9.3
 
 Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
 
@@ -41,6 +41,11 @@ Address/place search still uses Nominatim and therefore needs an internet connec
 
 The app does **not** bulk-download tiles from `tile.openstreetmap.org`; OSM's public raster tile service does not permit offline-prefetch features.
 
+
+
+## v0.9.3 — settings moved to the logo
+
+The separate **Settings** map pill has been removed. Tap the **MK Redway logo at the left of the search bar** to open Settings. A one-time coachmark explains this on the first launch after updating to v0.9.3, then stores a local flag so it does not appear again on that browser/device.
 
 ## v0.9.2 — voice and distance settings
 
