@@ -3,7 +3,7 @@
   'use strict';
   const text = (id, value) => { document.getElementById(id).textContent = value; };
   const date = value => {
-    const parsed = value ? new Date(value) : null;
+    const parsed = value ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value + 'T12:00:00' : value) : null;
     return parsed && Number.isFinite(parsed.getTime())
       ? parsed.toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'})
       : 'Date unavailable';
@@ -26,6 +26,11 @@
       const saved = await cache.match(new URL('./data/mk-basemap.pmtiles', location.href).href);
       const network = await caches.match(new URL('./data/network.json', location.href).href);
       text('aboutOffline', saved && network ? 'Downloaded on this device' : 'Not downloaded');
+      if (saved) {
+        const stored = await cache.match(new URL('./data/data-meta.json', location.href).href);
+        const savedData = stored ? await stored.json() : null;
+        text('aboutMap', date(savedData?.basemap?.built_on) + ' · Downloaded map');
+      }
     } catch (_) { text('aboutOffline', 'Storage unavailable'); }
   }
   document.getElementById('aboutData').addEventListener('toggle', event => {

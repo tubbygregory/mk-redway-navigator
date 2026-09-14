@@ -57,6 +57,10 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="Start", exact=True).click()
     expect(page.locator("#navBanner")).to_be_visible()
     page.wait_for_timeout(3000)  # Inspect the settled camera and asynchronous tiles.
+    marker = page.locator(".user-pulse").bounding_box()
+    assert marker, "Navigation location marker is missing"
+    assert abs(marker["x"] + marker["width"] / 2 - 195) < 35, marker
+    assert abs(marker["y"] + marker["height"] / 2 - 844 * .58) < 55, marker
     capture(page, "navigation")
     page.get_by_role("button", name="Exit", exact=True).click()
     page.get_by_role("button", name="Clear", exact=True).click()

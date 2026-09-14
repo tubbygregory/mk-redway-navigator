@@ -114,8 +114,8 @@
       else if (state.pendingSaveKind === 'work') search.placeholder = 'Search for Work';
       else if (state.pendingSaveKind === 'favourite') search.placeholder = 'Search for a favourite';
       else search.placeholder = window.innerWidth <= 370
-        ? 'Search place or postcode'
-        : 'Search place, address or postcode';
+        ? 'Search places or postcodes'
+        : 'Search places or postcodes';
     }
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
@@ -331,7 +331,7 @@
   function finishSavedSearch() {
     state.pendingSaveKind = null;
     el('homeSearch').value = '';
-    el('homeSearch').placeholder = window.innerWidth <= 370 ? 'Search place or postcode' : 'Search place, address or postcode';
+    el('homeSearch').placeholder = window.innerWidth <= 370 ? 'Search places or postcodes' : 'Search places or postcodes';
   }
 
   function setPoint(which, latlng, label = '', address = '') {
@@ -1186,6 +1186,17 @@
       map.panBy(offset, { animate });
     }
   }
+
+  // Heading easing continues after the initial camera layout frames. Keep the
+  // travelling point anchored throughout rotation, unless the user pans away.
+  let navigationAlignmentFrame = 0;
+  map.on('rotate', () => {
+    if (!state.navigating || !state.followUser || !state.userLatLng || navigationAlignmentFrame) return;
+    navigationAlignmentFrame = requestAnimationFrame(() => {
+      navigationAlignmentFrame = 0;
+      if (state.navigating && state.followUser) alignNavigationPoint(state.userLatLng, false);
+    });
+  });
 
   function followNavigationView(latlng, heading, animate = false) {
     if (!latlng) return;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.2
+
+- Keep the navigation location marker anchored while heading-up rotation settles; verify its screen position in browser gates.
+- Keep the shorter search placeholder after viewport updates.
+- Display calendar-only map dates without timezone shifts and identify the downloaded map’s own build date.
+
 ## 0.12.1
 
 - Fix journey-time wrapping, landscape map-button overlap and undersized tap targets found in the live mobile review.
