@@ -1,4 +1,4 @@
-# MK Redway Navigator v0.9.0
+# MK Redway Navigator v0.9.2
 
 Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
 
@@ -13,7 +13,7 @@ Installable GitHub Pages proof of concept for Redway-first walking and cycling n
 - Responsive portrait/landscape PWA interface.
 - Home Screen / PWA installation helper.
 
-## New in v0.9.0
+## Existing v0.9 features
 
 ### Saved places
 
@@ -41,6 +41,16 @@ Address/place search still uses Nominatim and therefore needs an internet connec
 
 The app does **not** bulk-download tiles from `tile.openstreetmap.org`; OSM's public raster tile service does not permit offline-prefetch features.
 
+
+## v0.9.2 — voice and distance settings
+
+A new **Settings** sheet adds persistent controls for:
+
+- **Voice guidance** — turn spoken instructions on or off. The navigation speaker button stays in sync with this preference. Re-enabling voice from Settings or navigation also provides the direct user gesture iOS may require to restart speech.
+- **Distance units** — choose **Metric (km / m)** or **Miles & yards (mi / yd)**. The choice applies to route length, remaining distance, turn-distance banners, route snap distances and spoken advance instructions.
+
+Settings are stored locally with `localStorage`; no account or server is involved.
+
 ## Deploy
 
 1. Upload the contents of this project to the root of your GitHub repository.
@@ -66,3 +76,10 @@ See `DATA-LICENCE.md`.
 - Super Redway and leisure-route classification depends on what has been mapped in OpenStreetMap route relations; the normal Redway classification remains available even where relation metadata is incomplete.
 - Browser/PWA background GPS on iOS remains more restricted than a native iOS navigation app.
 - Nominatim place/address search is online-only.
+
+
+## v0.9.1 — reliable spoken navigation
+
+Voice guidance is now initialised synchronously from the **Start** button tap so it satisfies iOS user-activation requirements. Spoken prompts use a persistent queue instead of cancelling the Web Speech synthesizer for every instruction. Navigation announces an advance warning and a junction instruction, plus rerouting and arrival messages. The speaker button can re-initialise speech after iOS has suspended the PWA.
+
+On iOS Home Screen web apps, keep the app in the foreground for reliable spoken guidance; iOS/WebKit can suspend web-app audio when backgrounded or the screen is locked.

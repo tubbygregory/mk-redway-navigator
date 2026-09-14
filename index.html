@@ -40,6 +40,11 @@
       <span>Saved</span>
     </button>
 
+    <button id="settingsBtn" class="settings-fab" type="button" aria-label="Open settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"></path><circle cx="15" cy="7" r="2"></circle><circle cx="9" cy="17" r="2"></circle></svg>
+      <span>Settings</span>
+    </button>
+
     <button id="installAppBtn" class="install-fab" type="button" hidden aria-label="Install MK Redway as an app">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"></path><path d="m8 10 4 4 4-4"></path><path d="M5 15v4h14v-4"></path></svg>
       <span>Install app</span>
@@ -222,6 +227,37 @@
         <span><i class="key-redway"></i>Redway</span>
         <span><i class="key-leisure"></i>Leisure route</span>
         <span><i class="key-shared"></i>Shared path</span>
+      </div>
+    </section>
+
+    <section id="settingsSheet" class="bottom-sheet settings-sheet" aria-label="Settings" hidden>
+      <div class="grabber" aria-hidden="true"></div>
+      <div class="sheet-heading">
+        <strong>Settings</strong>
+        <button id="closeSettings" class="icon-button small-icon" type="button" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+        </button>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>Voice guidance</strong>
+          <span>Speak upcoming turns while navigating.</span>
+        </div>
+        <button id="voiceSettingBtn" class="setting-switch" type="button" role="switch" aria-checked="true" aria-label="Voice guidance">
+          <span class="switch-thumb" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div class="setting-block">
+        <div class="setting-copy">
+          <strong>Distance units</strong>
+          <span>Used on route summaries and spoken turn prompts.</span>
+        </div>
+        <div id="unitChoice" class="unit-choice" role="group" aria-label="Distance units">
+          <button type="button" data-units="metric" class="active">Metric <small>km · m</small></button>
+          <button type="button" data-units="imperial">Miles &amp; yards <small>mi · yd</small></button>
+        </div>
       </div>
     </section>
 

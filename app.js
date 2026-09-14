@@ -34,6 +34,7 @@
   const OFFLINE_MAP_URL = './data/mk-basemap.pmtiles';
   const OFFLINE_CACHE = 'mk-redway-offline-v1';
   const SAVED_KEY = 'mk-redway-saved-v1';
+  const SETTINGS_KEY = 'mk-redway-settings-v1';
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
@@ -57,6 +58,15 @@
     watchId: null,
     navigating: false,
     voiceEnabled: true,
+    units: 'metric',
+    speechUnlocked: false,
+    speechVoice: null,
+    speechActive: null,
+    speechQueue: [],
+    speechSequence: 0,
+    speechFailureNotified: false,
+    lastSpokenText: '',
+    lastSpokenAt: 0,
     followUser: true,
     userLatLng: null,
     userMarker: null,
@@ -131,7 +141,9 @@
     if (stage !== 'search-results') el('resultsSheet').hidden = true;
     if (stage !== 'explore') el('installSheet').hidden = true;
     if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
+    if (!['explore', 'place'].includes(stage)) el('settingsSheet').hidden = true;
     el('savedPlacesBtn').hidden = !['explore', 'place'].includes(stage);
+    el('settingsBtn').hidden = !['explore', 'place'].includes(stage);
     updateInstallButtonVisibility();
     setTimeout(syncViewport, 40);
   }
@@ -155,6 +167,62 @@
   }
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  function loadSettings() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (typeof raw.voiceEnabled === 'boolean') state.voiceEnabled = raw.voiceEnabled;
+      if (raw.units === 'metric' || raw.units === 'imperial') state.units = raw.units;
+    } catch (_) {}
+  }
+
+  function persistSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        voiceEnabled: state.voiceEnabled,
+        units: state.units
+      }));
+    } catch (_) {}
+  }
+
+  function syncVoiceControls() {
+    const navButton = el('voiceBtn');
+    if (navButton) {
+      navButton.classList.toggle('voice-on', state.voiceEnabled);
+      navButton.classList.toggle('voice-off', !state.voiceEnabled);
+      navButton.setAttribute('aria-label', state.voiceEnabled ? 'Mute voice guidance' : 'Enable voice guidance');
+    }
+    const settingButton = el('voiceSettingBtn');
+    if (settingButton) {
+      settingButton.classList.toggle('on', state.voiceEnabled);
+      settingButton.setAttribute('aria-checked', state.voiceEnabled ? 'true' : 'false');
+    }
+  }
+
+  function syncUnitControls() {
+    document.querySelectorAll('[data-units]').forEach(button => {
+      button.classList.toggle('active', button.dataset.units === state.units);
+    });
+  }
+
+  function setVoiceEnabled(enabled, { announce = false } = {}) {
+    state.voiceEnabled = Boolean(enabled);
+    persistSettings();
+    syncVoiceControls();
+    if (!state.voiceEnabled) {
+      clearSpeechQueue({ cancelActive: true });
+    } else if (announce) {
+      unlockSpeechFromGesture('Voice guidance on.');
+    }
+  }
+
+  function setUnits(units) {
+    if (units !== 'metric' && units !== 'imperial') return;
+    state.units = units;
+    persistSettings();
+    syncUnitControls();
+    refreshDistanceDisplays();
+  }
 
   function loadSavedPlaces() {
     try {
@@ -459,10 +527,25 @@
   el('savedPlacesBtn').addEventListener('click', () => {
     if (state.pendingSaveKind) finishSavedSearch();
     renderSavedPlaces();
+    el('settingsSheet').hidden = true;
     el('savedSheet').hidden = false;
     probeOfflineMap().catch(() => {});
   });
   el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
+  el('settingsBtn').addEventListener('click', () => {
+    el('savedSheet').hidden = true;
+    el('installSheet').hidden = true;
+    syncVoiceControls();
+    syncUnitControls();
+    el('settingsSheet').hidden = false;
+  });
+  el('closeSettings').addEventListener('click', () => { el('settingsSheet').hidden = true; });
+  el('voiceSettingBtn').addEventListener('click', () => {
+    setVoiceEnabled(!state.voiceEnabled, { announce: !state.voiceEnabled });
+  });
+  document.querySelectorAll('[data-units]').forEach(button => {
+    button.addEventListener('click', () => setUnits(button.dataset.units));
+  });
   el('setHomeBtn').addEventListener('click', () => beginSavedSearch('home'));
   el('setWorkBtn').addEventListener('click', () => beginSavedSearch('work'));
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
@@ -1041,15 +1124,62 @@
 
   function formatDistance(m) {
     if (!Number.isFinite(m)) return '—';
+    if (state.units === 'imperial') {
+      const miles = m / 1609.344;
+      const yards = m * 1.0936133;
+      if (miles < 0.1) return `${Math.max(0, Math.round(yards / 10) * 10)} yd`;
+      if (miles < 0.5) return `${Math.max(0, Math.round(yards / 50) * 50)} yd`;
+      return `${miles.toFixed(miles < 10 ? 1 : 0)} mi`;
+    }
     if (m < 1000) return `${Math.max(0, Math.round(m / 10) * 10)} m`;
     return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
   }
 
   function formatTurnDistance(m) {
     if (m < 35) return 'Now';
+    if (state.units === 'imperial') {
+      const yards = m * 1.0936133;
+      if (yards < 100) return `In ${Math.round(yards / 10) * 10} yd`;
+      if (yards < 1000) return `In ${Math.round(yards / 50) * 50} yd`;
+      const miles = m / 1609.344;
+      return `In ${miles.toFixed(miles < 10 ? 1 : 0)} mi`;
+    }
     if (m < 100) return `In ${Math.round(m / 10) * 10} m`;
     if (m < 1000) return `In ${Math.round(m / 50) * 50} m`;
     return `In ${(m / 1000).toFixed(1)} km`;
+  }
+
+  function formatSpokenTurnDistance(m) {
+    if (m < 35) return 'Now';
+    if (state.units === 'imperial') {
+      const yards = m * 1.0936133;
+      if (yards < 100) return `In ${Math.round(yards / 10) * 10} yards`;
+      if (yards < 1000) return `In ${Math.round(yards / 50) * 50} yards`;
+      const miles = m / 1609.344;
+      return `In ${miles.toFixed(miles < 10 ? 1 : 0)} miles`;
+    }
+    if (m < 100) return `In ${Math.round(m / 10) * 10} metres`;
+    if (m < 1000) return `In ${Math.round(m / 50) * 50} metres`;
+    return `In ${(m / 1000).toFixed(1)} kilometres`;
+  }
+
+  function refreshDistanceDisplays() {
+    if (!state.route) return;
+    el('distanceStat').textContent = formatDistance(state.route.dist);
+    if (!state.navigating) {
+      setRouteStatus(`Route ready · start/end snapped ${formatDistance(state.route.snaps.start)} and ${formatDistance(state.route.snaps.end)} to the mapped network.`, 'good');
+    } else {
+      const total = state.route.cumulative[state.route.cumulative.length - 1] || state.route.dist;
+      const remaining = Math.max(0, total - state.navProgressMeters);
+      const speed = state.mode === 'cycle' ? 4.17 : 1.34;
+      const mins = remaining / speed / 60;
+      el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(remaining)} remaining`;
+      const { maneuver } = activeManeuver(state.navProgressMeters);
+      if (maneuver) {
+        const d = Math.max(0, maneuver.at - state.navProgressMeters);
+        el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Arriving' : formatTurnDistance(d);
+      }
+    }
   }
 
   function formatDuration(mins) {
@@ -1121,7 +1251,7 @@
     el('distanceStat').textContent = formatDistance(dist);
     el('redwayStat').textContent = `${Math.round((redwayDistance / Math.max(1, dist)) * 100)}%`;
     el('startNavBtn').disabled = false;
-    setRouteStatus(`Route ready · start/end snapped ${Math.round(snaps.start)} m and ${Math.round(snaps.end)} m to the mapped network.`, 'good');
+    setRouteStatus(`Route ready · start/end snapped ${formatDistance(snaps.start)} and ${formatDistance(snaps.end)} to the mapped network.`, 'good');
   }
 
   function solveRouteOnNetwork(parsed, { fit = true } = {}) {
@@ -1377,14 +1507,167 @@
     state.userMarker = L.marker(latlng, { icon, interactive: false }).addTo(userLayer);
   }
 
-  function speak(text) {
-    if (!state.voiceEnabled || !('speechSynthesis' in window) || !text) return;
+  // Voice guidance ----------------------------------------------------------
+  // iOS requires the first speech request to happen synchronously inside a
+  // user gesture. Once that first utterance has started, later GPS-triggered
+  // utterances are normally allowed for the lifetime of the page. Keep our own
+  // queue as repeatedly calling speechSynthesis.cancel() is unreliable on
+  // mobile WebKit and can silently suppress subsequent instructions.
+  function speechSupported() {
+    return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  }
+
+  function selectSpeechVoice() {
+    if (!speechSupported()) return null;
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    const british = voices.filter(v => /^en[-_]GB$/i.test(v.lang || ''));
+    const english = voices.filter(v => /^en(?:[-_]|$)/i.test(v.lang || ''));
+    state.speechVoice =
+      british.find(v => /Daniel|Serena|Martha|Siri/i.test(v.name || '')) ||
+      british.find(v => v.localService) || british[0] ||
+      english.find(v => v.localService) || english[0] || null;
+    return state.speechVoice;
+  }
+
+  function makeUtterance(text) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-GB';
+    u.rate = state.mode === 'cycle' ? 1.03 : 1.0;
+    u.pitch = 1;
+    u.volume = 1;
+    const voice = state.speechVoice || selectSpeechVoice();
+    if (voice) u.voice = voice;
+    return u;
+  }
+
+  function clearSpeechQueue({ cancelActive = false } = {}) {
+    state.speechQueue.length = 0;
+    if (cancelActive && speechSupported()) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+      state.speechActive = null;
+    }
+  }
+
+  function drainSpeechQueue() {
+    if (!speechSupported() || !state.voiceEnabled || state.speechActive || !state.speechQueue.length) return;
+    const item = state.speechQueue.shift();
+    const u = makeUtterance(item.text);
+    const token = ++state.speechSequence;
+    let started = false;
+    state.speechActive = { token, utterance: u, text: item.text };
+
+    const finish = () => {
+      if (state.speechActive?.token !== token) return;
+      state.speechActive = null;
+      setTimeout(drainSpeechQueue, 40);
+    };
+    u.onstart = () => {
+      started = true;
+      state.speechUnlocked = true;
+      state.speechFailureNotified = false;
+    };
+    u.onend = finish;
+    u.onerror = event => {
+      console.warn('Speech synthesis error', event.error || event);
+      finish();
+    };
+
     try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-GB'; u.rate = 1.02; u.pitch = 1;
+      window.speechSynthesis.resume?.();
       window.speechSynthesis.speak(u);
-    } catch (err) { console.warn('Speech unavailable', err); }
+    } catch (err) {
+      console.warn('Speech unavailable', err);
+      finish();
+      return;
+    }
+
+    // WebKit can silently reject speech without firing an error. Detect that
+    // case and tell the rider how to restore voice using the speaker button.
+    setTimeout(() => {
+      if (state.speechActive?.token !== token || started) return;
+      const synthSpeaking = Boolean(window.speechSynthesis.speaking || window.speechSynthesis.pending);
+      if (!synthSpeaking) {
+        state.speechActive = null;
+        state.speechUnlocked = false;
+        if (!state.speechFailureNotified && state.navigating) {
+          state.speechFailureNotified = true;
+          toast('Voice is silent — tap the speaker button once to restore it', 5000);
+        }
+        drainSpeechQueue();
+      }
+    }, 1200);
+    // Some WebKit failures leave an utterance permanently pending with no events.
+    // Never let that block every later turn instruction.
+    setTimeout(() => {
+      if (state.speechActive?.token !== token || started) return;
+      state.speechActive = null;
+      state.speechUnlocked = false;
+      if (!state.speechFailureNotified && state.navigating) {
+        state.speechFailureNotified = true;
+        toast('Voice needs a tap — press the speaker button to restore it', 5000);
+      }
+      drainSpeechQueue();
+    }, 4000);
+  }
+
+  function speak(text, { priority = 1, dedupeMs = 3500 } = {}) {
+    if (!state.voiceEnabled || !speechSupported() || !text) return;
+    const clean = String(text).replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const now = Date.now();
+    if (clean === state.lastSpokenText && now - state.lastSpokenAt < dedupeMs) return;
+    state.lastSpokenText = clean;
+    state.lastSpokenAt = now;
+
+    // Near-turn and reroute prompts supersede stale queued preview prompts.
+    if (priority >= 3) state.speechQueue = state.speechQueue.filter(x => x.priority >= 3);
+    state.speechQueue.push({ text: clean, priority, at: now });
+    state.speechQueue.sort((a, b) => b.priority - a.priority || a.at - b.at);
+    drainSpeechQueue();
+  }
+
+  function unlockSpeechFromGesture(message = 'Voice guidance ready.') {
+    if (!state.voiceEnabled || !speechSupported()) return false;
+    try {
+      clearSpeechQueue({ cancelActive: true });
+      selectSpeechVoice();
+      window.speechSynthesis.resume?.();
+      const u = makeUtterance(message);
+      const token = ++state.speechSequence;
+      let started = false;
+      state.speechActive = { token, utterance: u, text: message };
+      u.onstart = () => {
+        started = true;
+        state.speechUnlocked = true;
+        state.speechFailureNotified = false;
+      };
+      u.onend = () => {
+        if (state.speechActive?.token === token) state.speechActive = null;
+        drainSpeechQueue();
+      };
+      u.onerror = event => {
+        console.warn('Speech unlock failed', event.error || event);
+        if (state.speechActive?.token === token) state.speechActive = null;
+      };
+      // Crucially, this call occurs before startNavigation reaches its first await.
+      window.speechSynthesis.speak(u);
+      setTimeout(() => {
+        if (state.speechActive?.token !== token || started) return;
+        if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+          state.speechActive = null;
+          state.speechUnlocked = false;
+        }
+      }, 1200);
+      return true;
+    } catch (err) {
+      console.warn('Could not unlock speech', err);
+      return false;
+    }
+  }
+
+  if (speechSupported()) {
+    selectSpeechVoice();
+    window.speechSynthesis.addEventListener?.('voiceschanged', selectSpeechVoice);
   }
 
   function activeManeuver(progress) {
@@ -1396,14 +1679,15 @@
 
   function announceManeuver(m, index, dist) {
     if (!m || m.arrive) return;
-    const far = state.mode === 'cycle' ? 160 : 80;
-    const near = state.mode === 'cycle' ? 45 : 22;
+    const far = state.mode === 'cycle' ? 180 : 90;
+    const near = state.mode === 'cycle' ? 55 : 25;
     if (dist <= near && !state.announcedNear.has(index)) {
       state.announcedNear.add(index);
-      speak(`${formatTurnDistance(dist)}. ${m.instruction}.`);
+      // At the junction, lead with the action rather than repeating a short distance.
+      speak(`${m.instruction}.`, { priority: 3, dedupeMs: 1800 });
     } else if (dist <= far && !state.announcedFar.has(index)) {
       state.announcedFar.add(index);
-      speak(`${formatTurnDistance(dist)}. ${m.instruction}.`);
+      speak(`${formatSpokenTurnDistance(dist)}. ${m.instruction}.`, { priority: 1 });
     }
   }
 
@@ -1440,7 +1724,7 @@
     }
 
     if (remaining < 22) {
-      speak(`You have arrived at ${state.endLabel || 'your destination'}.`);
+      speak(`You have arrived at ${state.endLabel || 'your destination'}.`, { priority: 4, dedupeMs: 10000 });
       toast('You have arrived', 4000);
       stopNavigation({ keepRoute: true, arrived: true });
       return;
@@ -1458,7 +1742,7 @@
     if (!state.route || state.routing) return;
     state.lastRerouteAt = Date.now(); state.offRouteCount = 0;
     toast('Rerouting…');
-    speak('Rerouting.');
+    speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
     const parsed = state.route.parsed; const graph = state.route.graph;
     const starts = nearestCandidates(parsed, latlng, graph, 12, 900);
     const eId = state.route.endNodeId;
@@ -1473,7 +1757,7 @@
         state.start = latlng; state.startLabel = 'Your location';
         installRoute(parsed, graph, result, { start: result.startSnap, end: result.endSnap }, { fit: false });
         resetNavigationProgress();
-        speak(state.route.initialInstruction);
+        speak(state.route.initialInstruction, { priority: 3 });
         return;
       }
     }
@@ -1492,10 +1776,10 @@
     if (!state.route || state.navigating) return;
     if (!navigator.geolocation) { toast('Live navigation needs location access'); return; }
 
-    // User gesture unlocks speech synthesis on iOS.
-    if ('speechSynthesis' in window) {
-      try { window.speechSynthesis.cancel(); } catch (_) {}
-    }
+    // This must happen synchronously inside the Start-button tap. On iOS,
+    // waiting for GPS first loses the transient user activation and speech can
+    // then be silently blocked for the whole navigation session.
+    unlockSpeechFromGesture('Voice guidance ready.');
 
     const current = await acquireCurrentLocation().catch(() => null);
     if (!current) { toast('Allow location access to start navigation'); return; }
@@ -1531,7 +1815,7 @@
     el('turnDistance').textContent = 'Start';
     el('turnText').textContent = state.route.initialInstruction;
     el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
-    speak(`Navigation started. ${state.route.initialInstruction}.`);
+    speak(`Navigation started. ${state.route.initialInstruction}.`, { priority: 3, dedupeMs: 1000 });
 
     state.watchId = navigator.geolocation.watchPosition(
       updateNavigation,
@@ -1545,7 +1829,7 @@
     state.watchId = null; state.navigating = false; state.followUser = true;
     resetMapOrientation();
     userLayer.clearLayers();
-    if ('speechSynthesis' in window && !arrived) window.speechSynthesis.cancel();
+    if (!arrived) clearSpeechQueue({ cancelActive: true });
     if (!map.hasLayer(redwayLayer)) redwayLayer.addTo(map);
     redrawMarkers();
     if (keepRoute && state.route) {
@@ -1564,13 +1848,19 @@
   map.on('dragstart', () => { if (state.navigating) state.followUser = false; });
 
   el('voiceBtn').addEventListener('click', () => {
-    state.voiceEnabled = !state.voiceEnabled;
-    const b = el('voiceBtn');
-    b.classList.toggle('voice-on', state.voiceEnabled);
-    b.classList.toggle('voice-off', !state.voiceEnabled);
-    b.setAttribute('aria-label', state.voiceEnabled ? 'Mute voice guidance' : 'Enable voice guidance');
-    if (!state.voiceEnabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
-    else if (state.voiceEnabled) speak('Voice guidance on.');
+    // A speaker-button tap is a direct user gesture, so enabling voice here can
+    // also recover WebKit speech after backgrounding.
+    setVoiceEnabled(!state.voiceEnabled, { announce: !state.voiceEnabled });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !state.navigating || !state.voiceEnabled || !speechSupported()) return;
+    try { window.speechSynthesis.resume?.(); } catch (_) {}
+    // iOS can suspend PWA audio when backgrounded. We cannot manufacture a new
+    // user gesture, so leave the speaker button available as the recovery path.
+    if (isIOSStandalone && !state.speechUnlocked) {
+      toast('Tap the speaker button once to restore voice guidance', 4500);
+    }
   });
 
   // Offline MK basemap ------------------------------------------------------
@@ -1832,8 +2122,11 @@
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
   }
 
+  loadSettings();
   loadSavedPlaces();
   renderSavedPlaces();
+  syncVoiceControls();
+  syncUnitControls();
   updatePlannerFields();
   setStage('explore');
   loadRedways();
