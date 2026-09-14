@@ -124,3 +124,8 @@ On iOS Home Screen web apps, keep the app in the foreground for reliable spoken 
 The routing build no longer uses public Overpass servers for its normal OSM refresh. GitHub Actions downloads Geofabrik's small Buckinghamshire OSM PBF extract, parses it locally with pyosmium, and then matches the official Get Around MK route layers onto that graph. The extract is cached between builds. This avoids intermittent Overpass 504s, DNS failures and mirror certificate problems.
 
 If the Geofabrik refresh itself is unavailable, the last valid `data/network.json` remains the fallback.
+
+
+## v0.10.3 council-map extraction fix
+
+The GitHub build now captures the source URL used by Google Maps `KmlLayer` when Get Around MK toggles Redway, Leisure Route and Super Redway layers. It parses the source KML/KMZ directly rather than trying to infer geometry from Google Maps' internal vector-tile requests. The filter automation also explicitly clears existing filters and presses **Apply filters**.

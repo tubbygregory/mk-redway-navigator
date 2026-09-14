@@ -6,7 +6,8 @@ hard-coded API URL. A headless Chromium session loads the map, enables the three
 cycle-path categories, and captures route geometry from:
   * JSON/GeoJSON/KML network responses,
   * google.maps.Data layers, and
-  * google.maps.Polyline instances created by the page.
+  * google.maps.Polyline instances created by the page, and
+  * source KML/KMZ URLs used by google.maps.KmlLayer.
 
 The result is data/council_routes.geojson with route_class values:
   super_redway, redway, leisure.
@@ -17,10 +18,13 @@ use the website's copyright map data. Keep council attribution in DATA-LICENCE.m
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import math
 import re
+import zipfile
 from pathlib import Path
+from urllib.parse import urljoin
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -147,6 +151,41 @@ def extract_kml(text: str, context: str = "") -> list[dict]:
     return out
 
 
+def extract_kml_blob(blob: bytes, context: str = "") -> list[dict]:
+    """Extract KML features from either a plain KML response or a KMZ archive."""
+    if blob[:4] == b"PK\x03\x04":
+        out: list[dict] = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+                for name in zf.namelist():
+                    if name.lower().endswith(".kml"):
+                        out.extend(extract_kml(zf.read(name).decode("utf-8", "ignore"), f"{context} {name}"))
+        except Exception:
+            return []
+        return out
+    return extract_kml(blob.decode("utf-8", "ignore"), context)
+
+
+def find_kml_urls(text: str, base_url: str = URL) -> list[str]:
+    """Find literal KML/KMZ links in HTML/JS, including JSON-escaped URLs."""
+    if not text:
+        return []
+    cleaned = text.replace("\\/", "/").replace("\\u0026", "&")
+    found: list[str] = []
+    patterns = [
+        r"(?i)https?://[^\s\"'<>]+?\.(?:kml|kmz)(?:\?[^\s\"'<>]*)?",
+        r"(?i)[\"']([^\"']+?\.(?:kml|kmz)(?:\?[^\"']*)?)[\"']",
+    ]
+    for idx, pattern in enumerate(patterns):
+        for match in re.finditer(pattern, cleaned):
+            raw = match.group(0) if idx == 0 else match.group(1)
+            raw = raw.strip("\"' ").replace("&amp;", "&")
+            url = urljoin(base_url, raw)
+            if url not in found:
+                found.append(url)
+    return found
+
+
 def dedupe(features: list[dict]) -> list[dict]:
     seen = set()
     out = []
@@ -179,7 +218,7 @@ async def main() -> int:
     (() => {
       window.__mkCouncilPolylines = [];
       window.__mkCouncilDataFeatures = [];
-      let wrapped = false;
+      window.__mkCouncilKmlLayers = [];
       const copyPath = p => {
         try {
           const arr = p && typeof p.getArray === 'function' ? p.getArray() : p;
@@ -193,8 +232,7 @@ async def main() -> int:
       const timer = setInterval(() => {
         try {
           const gm = window.google && window.google.maps;
-          if (!gm || wrapped) return;
-          wrapped = true;
+          if (!gm) return;
           if (gm.Polyline && !gm.Polyline.__mkWrapped) {
             const Orig = gm.Polyline;
             function Wrapped(opts) {
@@ -220,6 +258,37 @@ async def main() -> int:
             };
             wrappedAdd.__mkWrapped = true;
             gm.Data.prototype.addGeoJson = wrappedAdd;
+          }
+          if (gm.KmlLayer && gm.KmlLayer.prototype && !gm.KmlLayer.__mkWrapped) {
+            const Orig = gm.KmlLayer;
+            const record = (obj, supplied, reason) => {
+              try {
+                const url = (typeof supplied === 'string' ? supplied : (supplied && supplied.url)) ||
+                            (obj && typeof obj.getUrl === 'function' ? obj.getUrl() : '');
+                if (url) window.__mkCouncilKmlLayers.push({url:String(url), reason, ts:Date.now()});
+              } catch (_) {}
+            };
+            if (Orig.prototype.setMap && !Orig.prototype.setMap.__mkWrapped) {
+              const origSetMap = Orig.prototype.setMap;
+              const wrappedSetMap = function(map) { record(this, null, map ? 'setMap:on' : 'setMap:off'); return origSetMap.call(this, map); };
+              wrappedSetMap.__mkWrapped = true;
+              Orig.prototype.setMap = wrappedSetMap;
+            }
+            if (Orig.prototype.setUrl && !Orig.prototype.setUrl.__mkWrapped) {
+              const origSetUrl = Orig.prototype.setUrl;
+              const wrappedSetUrl = function(url) { record(this, url, 'setUrl'); return origSetUrl.call(this, url); };
+              wrappedSetUrl.__mkWrapped = true;
+              Orig.prototype.setUrl = wrappedSetUrl;
+            }
+            function Wrapped(...args) {
+              const obj = Reflect.construct(Orig, args, Orig);
+              record(obj, args[0], 'constructor');
+              return obj;
+            }
+            Object.setPrototypeOf(Wrapped, Orig);
+            Wrapped.prototype = Orig.prototype;
+            Wrapped.__mkWrapped = true;
+            gm.KmlLayer = Wrapped;
           }
         } catch (_) {}
       }, 1);
@@ -284,15 +353,29 @@ async def main() -> int:
                     except Exception:
                         pass
 
-                baseline = await page.evaluate("() => ({p:(window.__mkCouncilPolylines||[]).length,d:(window.__mkCouncilDataFeatures||[]).length})")
+                # Start from a known filter state. The site can retain selections.
+                try:
+                    cleared = await page.evaluate(r"""() => {
+                      const clickable = Array.from(document.querySelectorAll('button,input[type=button],input[type=submit],a'));
+                      const norm = el => ((el.textContent || el.value || '') + '').replace(/\s+/g,' ').trim().toLowerCase();
+                      const el = clickable.find(x => norm(x) === 'clear all' || norm(x).includes('clear all'));
+                      if (!el) return false;
+                      el.click(); return true;
+                    }""")
+                    if cleared:
+                        await page.wait_for_timeout(600)
+                except Exception:
+                    pass
+
+                baseline = await page.evaluate("() => ({p:(window.__mkCouncilPolylines||[]).length,d:(window.__mkCouncilDataFeatures||[]).length,k:(window.__mkCouncilKmlLayers||[]).length})")
 
                 # Select exactly one official layer. This makes otherwise anonymous JSON or
                 # polyline payloads safely classifiable by the active website filter.
-                selected = await page.evaluate("""(label) => {
+                selected = await page.evaluate(r"""(label) => {
                   const els = Array.from(document.querySelectorAll('label, li, div, span'));
-                  const norm = s => (s || '').replace(/\\s+/g,' ').trim();
+                  const norm = s => (s || '').replace(/\s+/g,' ').trim();
                   const el = els.find(x => norm(x.textContent) === label) || els.find(x => norm(x.textContent).includes(label));
-                  if (!el) return false;
+                  if (!el) return null;
                   const labelEl = el.closest('label') || el;
                   let input = labelEl.querySelector && labelEl.querySelector('input[type=checkbox],input[type=radio]');
                   if (!input && labelEl.htmlFor) input = document.getElementById(labelEl.htmlFor);
@@ -302,32 +385,62 @@ async def main() -> int:
                   }
                   if (input) {
                     if (!input.checked) input.click();
-                    return true;
+                    return {found:true,id:input.id||'',name:input.name||'',value:input.value||'',checked:!!input.checked};
                   }
-                  labelEl.click(); return true;
+                  labelEl.click(); return {found:true,id:'',name:'',value:'',checked:null};
                 }""", label)
-                diagnostics["layers"][label] = {"selected": bool(selected)}
+                diagnostics["layers"][label] = {"selected": bool(selected), "filter": selected or {}}
                 if not selected:
                     raise RuntimeError(f"Could not find website filter '{label}'")
 
                 active["capture"] = True
                 applied = False
                 try:
-                    apply_btn = page.get_by_role("button", name=re.compile("Apply", re.I))
-                    if await apply_btn.count():
-                        await apply_btn.first.click(timeout=3000)
-                        applied = True
+                    applied = bool(await page.evaluate(r"""() => {
+                      const clickable = Array.from(document.querySelectorAll('button,input[type=button],input[type=submit],a'));
+                      const norm = el => ((el.textContent || el.value || '') + '').replace(/\s+/g,' ').trim().toLowerCase();
+                      const el = clickable.find(x => norm(x) === 'apply filters' || norm(x).startsWith('apply'));
+                      if (!el) return false;
+                      el.click(); return true;
+                    }"""))
                 except Exception:
                     pass
                 diagnostics["layers"][label]["apply_clicked"] = applied
-                await page.wait_for_timeout(9000)
+                await page.wait_for_timeout(12000)
+                diagnostics["layers"][label]["final_url"] = page.url
 
                 captured = await page.evaluate("""() => ({
                   polylines: window.__mkCouncilPolylines || [],
-                  dataFeatures: window.__mkCouncilDataFeatures || []
+                  dataFeatures: window.__mkCouncilDataFeatures || [],
+                  kmlLayers: window.__mkCouncilKmlLayers || []
                 })""")
                 for item in captured.get("dataFeatures", [])[baseline.get("d", 0):]:
                     layer_features.extend(extract_json(item.get("obj"), label))
+                # The council map uses Google Maps KmlLayer. When the selected layer is
+                # toggled on, setMap/getUrl exposes the original source KML/KMZ. Parse that
+                # directly instead of trying to decode Google's internal vector tiles.
+                kml_entries = captured.get("kmlLayers", [])[baseline.get("k", 0):]
+                kml_urls: list[str] = []
+                for entry in kml_entries:
+                    url = str((entry or {}).get("url") or "")
+                    if url and url not in kml_urls:
+                        kml_urls.append(url)
+                diagnostics["layers"][label]["kml_layers"] = kml_entries
+                diagnostics["layers"][label]["kml_urls"] = kml_urls
+                for kml_url in kml_urls:
+                    try:
+                        kr = await context.request.get(kml_url, timeout=30000)
+                        if kr.ok:
+                            blob = await kr.body()
+                            parsed = extract_kml_blob(blob, label)
+                            for f in parsed:
+                                f.setdefault("properties", {})["capture"] = "google.maps.KmlLayer source"
+                            layer_features.extend(parsed)
+                        else:
+                            diagnostics["errors"].append(f"KML {label} {kml_url}: HTTP {kr.status}")
+                    except Exception as exc:
+                        diagnostics["errors"].append(f"KML {label} {kml_url}: {exc}")
+
                 for item in captured.get("polylines", [])[baseline.get("p", 0):]:
                     path = item.get("path") or []
                     if line_in_mk(path):
