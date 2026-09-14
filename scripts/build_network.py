@@ -587,7 +587,11 @@ def existing_network_council_hash() -> str | None:
         return None
     try:
         with OUT.open("r", encoding="utf-8") as f:
-            return json.load(f).get("council_geometry_sha256")
+            data = json.load(f)
+            # A rejected extract must not mark the cached fallback as up to date.
+            if not data.get("council_geometry_features"):
+                return None
+            return data.get("council_geometry_sha256")
     except Exception:
         return None
 
@@ -656,7 +660,8 @@ def main() -> int:
     # We retain OSM relations/corridor inference only as fallback where the website extract
     # is unavailable or does not cover a particular edge.
     council_features = load_council_routes()
-    if len(council_features) > 80_000:
+    # The verified leisure source contains about 150,000 short fragments.
+    if len(council_features) > 200_000:
         print(
             f"Ignoring suspicious council extract with {len(council_features):,} lines; "
             "this indicates contaminated web-map vector data rather than cycle routes.",
