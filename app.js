@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
 
   const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
   const isIOS = /iP(?:hone|ad|od)/.test(navigator.userAgent);
@@ -53,6 +54,10 @@
     endAddress: '',
     route: null,
     routing: false,
+    routeRevision: 0,
+    pendingRoute: false,
+    alternatives: [],
+    editEndpoint: null,
     redwayReady: false,
     searchContext: 'destination',
     lastGeocodeAt: 0,
@@ -359,7 +364,13 @@
 
   function invalidateRoute() {
     routeLayer.clearLayers();
+    state.routeRevision++;
     state.route = null;
+    state.alternatives = [];
+    el('routeAlternatives').replaceChildren();
+    el('approachNote').hidden = true;
+    el('roadStat').textContent = '—';
+    el('retryRouteBtn').hidden = true;
     el('startNavBtn').disabled = true;
     el('timeStat').textContent = '—';
     el('distanceStat').textContent = '—';
@@ -389,6 +400,12 @@
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
+    const coordinates = /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/.exec(trimmed);
+    if (coordinates) {
+      const lat = Number(coordinates[1]), lon = Number(coordinates[2]);
+      if (lat < MK.south || lat > MK.north || lon < MK.west || lon > MK.east) return [];
+      return [{lat, lon, name:'Map coordinates', display_name:trimmed}];
+    }
     const elapsed = Date.now() - state.lastGeocodeAt;
     if (elapsed < 1050) await sleep(1050 - elapsed);
     state.lastGeocodeAt = Date.now();
@@ -403,9 +420,13 @@
       bounded: '1',
       'accept-language': 'en-GB'
     });
-    const response = await fetch(`${NOMINATIM}?${params.toString()}`, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error(`Search returned ${response.status}`);
-    return response.json();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(`${NOMINATIM}?${params.toString()}`, { headers: { Accept: 'application/json' }, signal: controller.signal });
+      if (!response.ok) throw new Error(`Search returned ${response.status}`);
+      return await response.json();
+    } finally { clearTimeout(timer); }
   }
 
   function showResults(results, context, query) {
@@ -585,6 +606,11 @@
 
   map.on('click', e => {
     if (state.navigating) return;
+    if (state.editEndpoint) {
+      const which = state.editEndpoint; state.editEndpoint = null;
+      setPoint(which, e.latlng, 'Chosen entrance', fmtCoord(e.latlng));
+      setStage('planner'); maybeCalculateRoute(); return;
+    }
     if (state.pendingSaveKind) {
       const place = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: 'Dropped pin', address: fmtCoord(e.latlng), lat: e.latlng.lat, lng: e.latlng.lng };
       if (state.pendingSaveKind === 'home') state.saved.home = place;
@@ -702,30 +728,13 @@
     return { nodes, ways };
   }
 
-  function parseBundledNetwork(data) {
-    if (!data || !['mk-redway-network-v1', 'mk-redway-network-v2', 'mk-redway-network-v3', 'mk-redway-network-v4'].includes(data.format) || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
-      throw new Error('Bundled routing network has an unsupported format');
-    }
-    const nodes = new Map();
-    for (const row of data.nodes) {
-      if (!Array.isArray(row) || row.length < 3) continue;
-      nodes.set(row[0], { id: row[0], lat: Number(row[1]), lon: Number(row[2]) });
-    }
-    const ways = [];
-    for (const row of data.ways) {
-      if (!Array.isArray(row) || row.length < 3 || !Array.isArray(row[1])) continue;
-      ways.push({ id: row[0], nodes: row[1], tags: row[2] || {} });
-    }
-    return { nodes, ways, generatedAt: data.generated_at || null };
-  }
-
   async function loadBundledNetwork() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch('./data/network.json', {
         headers: { Accept: 'application/json' },
-        cache: 'force-cache',
+        cache: 'no-cache',
         signal: controller.signal
       });
       if (!response.ok) throw new Error(`Bundled network returned ${response.status}`);
@@ -733,6 +742,7 @@
       if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Bundled routing network is incomplete');
       state.routingNetwork = parsed;
       state.networkSource = 'bundled';
+      document.documentElement.dataset.routingSource = 'bundled';
       state.graphCache.clear();
       return parsed;
     } finally {
@@ -746,6 +756,7 @@
       state.routingNetworkPromise = loadBundledNetwork().catch(err => {
         console.warn('Bundled routing network unavailable; live fallback will be used', err);
         state.networkSource = 'live-fallback';
+        state.routingNetworkPromise = null;
         return null;
       });
     }
@@ -784,101 +795,6 @@
     else setTimeout(warm, 700);
   }
 
-  function hav(a, b) {
-    const R = 6371000;
-    const p1 = a.lat * Math.PI / 180;
-    const p2 = b.lat * Math.PI / 180;
-    const dp = (b.lat - a.lat) * Math.PI / 180;
-    const dl = (b.lon - a.lon) * Math.PI / 180;
-    const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(h));
-  }
-
-  const isRedway = t => ['path', 'cycleway', 'footway'].includes(t.highway) && t.bicycle === 'designated' && t.foot === 'designated';
-  const taggedRouteClass = t => t._mk_class || '';
-
-  function allowed(t, mode) {
-    const h = t.highway || '';
-    if (['motorway', 'motorway_link', 'trunk', 'trunk_link'].includes(h)) return false;
-    if (t.access === 'private' || t.access === 'no') return false;
-    if (mode === 'cycle') {
-      if (t.bicycle === 'no' || t.bicycle === 'private' || h === 'steps') return false;
-      if (['footway', 'pedestrian'].includes(h) && !['yes', 'designated', 'permissive'].includes(t.bicycle)) return false;
-      if (h === 'path' && !['yes', 'designated', 'permissive'].includes(t.bicycle)) return false;
-    } else if (t.foot === 'no' || t.foot === 'private') return false;
-    return true;
-  }
-
-  function edgeClass(t) {
-    const h = t.highway || '';
-    const tagged = taggedRouteClass(t);
-    if (tagged === 'super_redway') return 'superredway';
-    if (tagged === 'leisure') return 'leisure';
-    if (isRedway(t)) return 'redway';
-    if (['cycleway', 'footway', 'path', 'pedestrian', 'bridleway', 'track'].includes(h)) return 'shared';
-    if (['living_street', 'residential', 'service'].includes(h)) return 'quiet';
-    if (h === 'unclassified') return 'road';
-    if (['tertiary', 'tertiary_link'].includes(h)) return 'tertiary';
-    if (['secondary', 'secondary_link'].includes(h)) return 'secondary';
-    if (['primary', 'primary_link'].includes(h)) return 'primary';
-    return 'road';
-  }
-
-  function multiplier(cls, pref, mode) {
-    if (mode === 'walk') {
-      return { superredway: .95, redway: .97, leisure: .99, shared: 1, quiet: 1.08, road: 1.12, tertiary: 1.18, secondary: 1.24, primary: 1.35 }[cls] || 1.2;
-    }
-    const table = {
-      maximum: { superredway: .62, redway: .72, leisure: .88, shared: .97, quiet: 4.0, road: 5.5, tertiary: 8, secondary: 13, primary: 24 },
-      balanced: { superredway: .76, redway: .84, leisure: .94, shared: 1.02, quiet: 1.7, road: 2.1, tertiary: 2.8, secondary: 4.3, primary: 9 },
-      fastest: { superredway: .96, redway: 1, leisure: 1.03, shared: 1.06, quiet: 1.10, road: 1.13, tertiary: 1.18, secondary: 1.3, primary: 1.6 }
-    };
-    return table[pref][cls] || 2;
-  }
-
-  function edgeDisplayName(tags, cls) {
-    if (cls === 'superredway' && tags._mk_route_name) return tags._mk_route_name;
-    if (tags.name) return tags.name;
-    if (tags._mk_route_name) return tags._mk_route_name;
-    if (tags.ref) return tags.ref;
-    if (cls === 'superredway') return 'Super Redway';
-    if (cls === 'redway') return 'Redway';
-    if (cls === 'leisure') return 'Leisure route';
-    if (cls === 'shared') return 'shared path';
-    return '';
-  }
-
-  function buildGraph(parsed, mode, pref) {
-    const graph = new Map();
-    const add = (id, edge) => {
-      if (!graph.has(id)) graph.set(id, []);
-      graph.get(id).push(edge);
-    };
-    for (const w of parsed.ways) {
-      const t = w.tags || {};
-      if (!allowed(t, mode)) continue;
-      const cls = edgeClass(t);
-      const reverse = t.oneway === '-1';
-      const oneWay = mode === 'cycle' && ['yes', '1', 'true', '-1'].includes(t.oneway) && t['oneway:bicycle'] !== 'no';
-      const name = edgeDisplayName(t, cls);
-      for (let i = 0; i < w.nodes.length - 1; i++) {
-        const ida = w.nodes[i];
-        const idb = w.nodes[i + 1];
-        const a = parsed.nodes.get(ida);
-        const b = parsed.nodes.get(idb);
-        if (!a || !b) continue;
-        const d = hav(a, b);
-        const base = { d, cost: d * multiplier(cls, pref, mode), cls, name, wayId: w.id };
-        if (!oneWay) {
-          add(ida, { ...base, to: idb });
-          add(idb, { ...base, to: ida });
-        } else if (reverse) add(idb, { ...base, to: ida });
-        else add(ida, { ...base, to: idb });
-      }
-    }
-    return graph;
-  }
-
   function getGraph(parsed, mode, pref) {
     if (parsed === state.routingNetwork) {
       const key = `${mode}:${pref}`;
@@ -893,257 +809,12 @@
     return buildGraph(parsed, mode, pref);
   }
 
-  function nearestCandidates(parsed, latlng, graph, limit = 10, maxDistance = 900) {
-    const origin = { lat: latlng.lat, lon: latlng.lng };
-    const best = [];
-    for (const id of graph.keys()) {
-      const n = parsed.nodes.get(id);
-      if (!n) continue;
-      const d = hav(origin, n);
-      if (d > maxDistance && best.length >= limit) continue;
-      if (best.length < limit || d < best[best.length - 1].d) {
-        best.push({ id, d });
-        best.sort((a, b) => a.d - b.d);
-        if (best.length > limit) best.length = limit;
-      }
-    }
-    return best.filter(x => x.d <= maxDistance);
-  }
-
-  function aStarMulti(parsed, graph, startCandidates, endCandidates, targetLatLng) {
-    if (!startCandidates.length || !endCandidates.length) return null;
-    const open = new MinHeap();
-    const g = new Map();
-    const prev = new Map();
-    const prevEdge = new Map();
-    const sourceSnap = new Map();
-    const closed = new Set();
-    const goals = new Map(endCandidates.map(x => [x.id, x.d]));
-    const target = { lat: targetLatLng.lat, lon: targetLatLng.lng };
-    const connectorFactor = 1.12;
-
-    for (const s of startCandidates) {
-      const initial = s.d * connectorFactor;
-      if (initial < (g.get(s.id) ?? Infinity)) {
-        g.set(s.id, initial);
-        sourceSnap.set(s.id, s.d);
-        const n = parsed.nodes.get(s.id);
-        open.push(s.id, initial + (n ? hav(n, target) * .65 : 0));
-      }
-    }
-
-    let bestGoal = null;
-    let bestTotal = Infinity;
-    let loops = 0;
-    while (open.length && loops++ < 900000) {
-      const cur = open.pop();
-      if (closed.has(cur)) continue;
-      const curG = g.get(cur);
-      if (goals.has(cur)) {
-        const total = curG + goals.get(cur) * connectorFactor;
-        if (total < bestTotal) { bestTotal = total; bestGoal = cur; }
-        if (open.peekPriority >= bestTotal) break;
-      }
-      closed.add(cur);
-      for (const e of graph.get(cur) || []) {
-        if (closed.has(e.to)) continue;
-        const ng = curG + e.cost;
-        if (ng < (g.get(e.to) ?? Infinity)) {
-          g.set(e.to, ng);
-          prev.set(e.to, cur);
-          prevEdge.set(e.to, e);
-          sourceSnap.set(e.to, sourceSnap.get(cur));
-          const n = parsed.nodes.get(e.to);
-          open.push(e.to, ng + (n ? hav(n, target) * .65 : 0));
-        }
-      }
-    }
-    if (bestGoal == null) return null;
-
-    const ids = [bestGoal];
-    const edges = [];
-    let c = bestGoal;
-    while (prev.has(c)) {
-      edges.push(prevEdge.get(c));
-      c = prev.get(c);
-      ids.push(c);
-    }
-    ids.reverse();
-    edges.reverse();
-    return {
-      ids,
-      edges,
-      startSnap: sourceSnap.get(bestGoal) ?? startCandidates[0].d,
-      endSnap: goals.get(bestGoal) ?? endCandidates[0].d
-    };
-  }
-
-  function nearestNode(parsed, latlng, graph) {
-    let best = null;
-    let bd = Infinity;
-    for (const [id, n] of parsed.nodes) {
-      if (!graph.has(id)) continue;
-      const d = hav({ lat: latlng.lat, lon: latlng.lng }, n);
-      if (d < bd) { bd = d; best = id; }
-    }
-    return { id: best, d: bd };
-  }
-
-  class MinHeap {
-    constructor() { this.a = []; }
-    push(x, p) {
-      const n = { x, p }; this.a.push(n);
-      let i = this.a.length - 1;
-      while (i) {
-        const q = (i - 1) >> 1;
-        if (this.a[q].p <= p) break;
-        this.a[i] = this.a[q]; i = q;
-      }
-      this.a[i] = n;
-    }
-    pop() {
-      if (!this.a.length) return null;
-      const root = this.a[0]; const last = this.a.pop();
-      if (this.a.length) {
-        let i = 0;
-        while (true) {
-          const l = i * 2 + 1; const r = l + 1;
-          if (l >= this.a.length) break;
-          const c = r < this.a.length && this.a[r].p < this.a[l].p ? r : l;
-          if (this.a[c].p >= last.p) break;
-          this.a[i] = this.a[c]; i = c;
-        }
-        this.a[i] = last;
-      }
-      return root.x;
-    }
-    get length() { return this.a.length; }
-    get peekPriority() { return this.a.length ? this.a[0].p : Infinity; }
-  }
-
-  function aStar(parsed, graph, startId, endId) {
-    const open = new MinHeap();
-    const g = new Map([[startId, 0]]);
-    const prev = new Map();
-    const prevEdge = new Map();
-    const closed = new Set();
-    const goal = parsed.nodes.get(endId);
-    open.push(startId, 0);
-    let loops = 0;
-    while (open.length && loops++ < 750000) {
-      const cur = open.pop();
-      if (closed.has(cur)) continue;
-      if (cur === endId) break;
-      closed.add(cur);
-      for (const e of graph.get(cur) || []) {
-        if (closed.has(e.to)) continue;
-        const ng = g.get(cur) + e.cost;
-        if (ng < (g.get(e.to) ?? Infinity)) {
-          g.set(e.to, ng); prev.set(e.to, cur); prevEdge.set(e.to, e);
-          const n = parsed.nodes.get(e.to);
-          open.push(e.to, ng + hav(n, goal) * .70);
-        }
-      }
-    }
-    if (!prev.has(endId) && startId !== endId) return null;
-    const ids = [endId]; const edges = [];
-    let c = endId;
-    while (c !== startId) {
-      edges.push(prevEdge.get(c)); c = prev.get(c);
-      if (c == null) return null;
-      ids.push(c);
-    }
-    ids.reverse(); edges.reverse();
-    return { ids, edges };
-  }
-
   function corridorBBox(a, b) {
     const minLat = Math.min(a.lat, b.lat); const maxLat = Math.max(a.lat, b.lat);
     const minLon = Math.min(a.lng, b.lng); const maxLon = Math.max(a.lng, b.lng);
     const straight = hav({ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng });
     const pad = Math.max(.018, Math.min(.055, straight / 110000 * .5));
     return { s: minLat - pad, w: minLon - pad, n: maxLat + pad, e: maxLon + pad };
-  }
-
-  function bearing(a, b) {
-    const p1 = a[0] * Math.PI / 180; const p2 = b[0] * Math.PI / 180;
-    const dl = (b[1] - a[1]) * Math.PI / 180;
-    const y = Math.sin(dl) * Math.cos(p2);
-    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
-    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-  }
-
-  function angleDiff(a, b) { return ((b - a + 540) % 360) - 180; }
-  function cardinal(deg) {
-    const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
-    return dirs[Math.round(deg / 45) % 8];
-  }
-
-  function buildCumulative(coords) {
-    const c = [0];
-    for (let i = 1; i < coords.length; i++) {
-      c.push(c[i - 1] + hav({ lat: coords[i - 1][0], lon: coords[i - 1][1] }, { lat: coords[i][0], lon: coords[i][1] }));
-    }
-    return c;
-  }
-
-  function targetPhrase(edge) {
-    if (edge?.name && !['Super Redway', 'Redway', 'Leisure route', 'shared path'].includes(edge.name)) return ` onto ${edge.name}`;
-    if (edge?.cls === 'superredway') return ' onto the Super Redway';
-    if (edge?.cls === 'redway') return ' onto the Redway';
-    if (edge?.cls === 'leisure') return ' onto the leisure route';
-    if (edge?.cls === 'shared') return ' onto the shared path';
-    return '';
-  }
-
-  function buildManeuvers(coords, edges, cumulative) {
-    const maneuvers = [];
-    let lastAt = -1000;
-    for (let i = 1; i < coords.length - 1; i++) {
-      const before = bearing(coords[i - 1], coords[i]);
-      const after = bearing(coords[i], coords[i + 1]);
-      const delta = angleDiff(before, after);
-      const abs = Math.abs(delta);
-      const incoming = edges[i - 1];
-      const outgoing = edges[i];
-      const enteredRedway = ['superredway', 'redway'].includes(outgoing?.cls) && !['superredway', 'redway'].includes(incoming?.cls);
-      const changedName = outgoing?.name && outgoing.name !== incoming?.name;
-      if (abs < 28 && !enteredRedway && !changedName) continue;
-      if (cumulative[i] - lastAt < 28) continue;
-
-      let icon = '↑';
-      let instruction = '';
-      if (abs >= 150) {
-        icon = '↶'; instruction = `Make a U-turn${targetPhrase(outgoing)}`;
-      } else if (abs >= 58) {
-        const right = delta > 0; icon = right ? '↱' : '↰';
-        instruction = `Turn ${right ? 'right' : 'left'}${targetPhrase(outgoing)}`;
-      } else if (abs >= 28) {
-        const right = delta > 0; icon = right ? '↗' : '↖';
-        instruction = `Bear ${right ? 'right' : 'left'}${targetPhrase(outgoing)}`;
-      } else if (enteredRedway) {
-        icon = '↑'; instruction = 'Continue onto the Redway';
-      } else {
-        icon = '↑'; instruction = `Continue${targetPhrase(outgoing)}`;
-      }
-      maneuvers.push({ index: i, at: cumulative[i], icon, instruction });
-      lastAt = cumulative[i];
-    }
-    const endAt = cumulative[cumulative.length - 1] || 0;
-    maneuvers.push({ index: coords.length - 1, at: endAt, icon: '●', instruction: `Arrive at ${state.endLabel || 'your destination'}`, arrive: true });
-    return maneuvers;
-  }
-
-  function initialInstruction(coords, edges) {
-    if (coords.length < 2) return 'Follow the route';
-    const dir = cardinal(bearing(coords[0], coords[1]));
-    const e = edges[0];
-    if (e?.name && !['Super Redway', 'Redway', 'Leisure route', 'shared path'].includes(e.name)) return `Head ${dir} on ${e.name}`;
-    if (e?.cls === 'superredway') return `Head ${dir} on the Super Redway`;
-    if (e?.cls === 'redway') return `Head ${dir} on the Redway`;
-    if (e?.cls === 'leisure') return `Head ${dir} on the leisure route`;
-    if (e?.cls === 'shared') return `Head ${dir} on the shared path`;
-    return `Head ${dir}`;
   }
 
   function formatDistance(m) {
@@ -1191,17 +862,17 @@
     if (!state.route) return;
     el('distanceStat').textContent = formatDistance(state.route.dist);
     if (!state.navigating) {
-      setRouteStatus(`Route ready · start/end snapped ${formatDistance(state.route.snaps.start)} and ${formatDistance(state.route.snaps.end)} to the mapped network.`, 'good');
+      setRouteStatus(routeReadyStatus(), 'good');
+      renderApproachNote(); renderAlternatives();
     } else {
-      const total = state.route.cumulative[state.route.cumulative.length - 1] || state.route.dist;
-      const remaining = Math.max(0, total - state.navProgressMeters);
-      const speed = state.mode === 'cycle' ? 4.17 : 1.34;
-      const mins = remaining / speed / 60;
+      const current = state.userLatLng || state.start;
+      const journey = remainingJourney(state.route, state.navProgressMeters, current, state.start, state.end, state.mode);
+      const remaining = journey.distance, mins = journey.mins;
       el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(remaining)} remaining`;
       const { maneuver } = activeManeuver(state.navProgressMeters);
       if (maneuver) {
         const d = Math.max(0, maneuver.at - state.navProgressMeters);
-        el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Arriving' : formatTurnDistance(d);
+        el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Approaching' : formatTurnDistance(d);
       }
     }
   }
@@ -1242,64 +913,81 @@
     routeLayer.clearLayers();
     L.polyline(coords, { className: 'route-casing', interactive: false }).addTo(routeLayer);
     L.polyline(coords, { className: 'route-line', interactive: false }).addTo(routeLayer);
-    if (fit) setTimeout(() => fitRouteBounds(coords), 30);
+    if (state.route && coords.length) {
+      for (const pair of [[state.start, coords[0]], [state.end, coords.at(-1)]]) {
+        if (pair[0]) L.polyline([pair[0], pair[1]], {color:'#a05b00',weight:3,dashArray:'5 7',interactive:false}).addTo(routeLayer);
+      }
+    }
+    if (fit) setTimeout(() => fitRouteBounds([...coords, state.start, state.end].filter(Boolean)), 30);
   }
 
-  function installRoute(parsed, graph, result, snaps, { fit = true } = {}) {
-    const coords = result.ids.map(id => {
-      const n = parsed.nodes.get(id);
-      return [n.lat, n.lon];
-    });
-    const cumulative = buildCumulative(coords);
-    const mix = { superredway: 0, redway: 0, leisure: 0, shared: 0, road: 0 };
-    for (const ed of result.edges) {
-      if (Object.prototype.hasOwnProperty.call(mix, ed.cls)) mix[ed.cls] += ed.d;
-      else mix.road += ed.d;
-    }
-    const tf = mix.superredway + mix.redway + mix.leisure + mix.shared;
-    const redwayDistance = mix.superredway + mix.redway;
-    const dist = result.edges.reduce((sum, ed) => sum + ed.d, 0);
-    const speed = state.mode === 'cycle' ? 4.17 : 1.34;
-    const mins = Math.max(1, dist / speed / 60);
-    const maneuvers = buildManeuvers(coords, result.edges, cumulative);
+  function routeReadyStatus() {
+    const source = state.networkSource === 'bundled' ? 'Using downloaded routing data' : 'Using online fallback data';
+    return `Route ready · ${source}`;
+  }
 
-    state.route = {
-      parsed, graph, result, coords, cumulative, maneuvers, dist, tf, mix, mins,
-      startNodeId: result.ids[0], endNodeId: result.ids[result.ids.length - 1],
-      initialInstruction: initialInstruction(coords, result.edges),
-      snaps
-    };
-    drawRoute(coords, fit);
-    el('timeStat').textContent = formatDuration(mins);
-    el('arrivalStat').textContent = `Arrive ${arrivalTime(mins)}`;
-    el('distanceStat').textContent = formatDistance(dist);
-    el('redwayStat').textContent = `${Math.round((redwayDistance / Math.max(1, dist)) * 100)}%`;
+  function renderAlternatives() {
+    const container = el('routeAlternatives'); container.replaceChildren();
+    if (state.mode !== 'cycle') return;
+    for (const option of state.alternatives) {
+      const button = document.createElement('button'); button.type = 'button';
+      button.className = 'route-option' + (option.pref === state.pref ? ' selected' : '');
+      button.setAttribute('aria-pressed', String(option.pref === state.pref));
+      const title = document.createElement('strong'); title.textContent = PREF_LABEL[option.pref];
+      const detail = document.createElement('span');
+      detail.textContent = option.error ? 'No route' : `${formatDistance(option.dist)} · ${formatDuration(option.mins)} · ${option.roadPercent}% road`;
+      button.append(title, detail); button.disabled = Boolean(option.error) || state.routing;
+      button.addEventListener('click', () => {
+        state.pref = option.pref; el('prefLabel').textContent = PREF_LABEL[option.pref];
+        document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('active', b.dataset.pref === option.pref));
+        invalidateRoute(); maybeCalculateRoute();
+      });
+      container.append(button);
+    }
+  }
+
+  function renderApproachNote() {
+    const route = state.route, note = el('approachNote');
+    note.hidden = !route || route.approachDist < 5;
+    if (!route) return;
+    note.textContent = `Approaches: ${formatDistance(route.snaps.start)} at the start, ${formatDistance(route.snaps.end)} at the destination. Dashed lines are unverified gaps, not mapped paths. Totals include an estimated walking approach. Choose an entrance if needed.`;
+  }
+
+  function installRoute(plan, { fit = true } = {}) {
+    state.route = plan;
+    drawRoute(plan.coords, fit);
+    el('timeStat').textContent = formatDuration(plan.mins);
+    el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
+    el('distanceStat').textContent = formatDistance(plan.dist);
+    el('redwayStat').textContent = `${plan.redwayPercent}%`;
+    el('roadStat').textContent = `${plan.roadPercent}%`;
     el('startNavBtn').disabled = false;
-    setRouteStatus(`Route ready · start/end snapped ${formatDistance(snaps.start)} and ${formatDistance(snaps.end)} to the mapped network.`, 'good');
+    renderApproachNote();
+    setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
   }
 
-  function solveRouteOnNetwork(parsed, { fit = true } = {}) {
-    const graph = getGraph(parsed, state.mode, state.pref);
-    let starts = nearestCandidates(parsed, state.start, graph, 10, 900);
-    let ends = nearestCandidates(parsed, state.end, graph, 10, 900);
-    if (!starts.length || !ends.length) {
-      throw new Error('No usable walking/cycling network was found near one of the selected points.');
+  async function solveRouteOnNetwork(parsed, { fit = true } = {}) {
+    const revision = state.routeRevision;
+    const {start, end, mode, pref, endLabel} = state;
+    const choices = mode === 'cycle' && !state.navigating ? ['maximum', 'balanced', 'fastest'] : [pref];
+    const alternatives = []; let selected = null, selectedError;
+    for (const choice of choices) {
+      await sleep(0);
+      if (revision !== state.routeRevision) return;
+      try {
+        const plan = planRoute(parsed, getGraph(parsed, mode, choice), start, end, mode, endLabel);
+        alternatives.push({pref:choice, dist:plan.dist, mins:plan.mins, roadPercent:plan.roadPercent});
+        if (choice === pref) selected = plan;
+      } catch (err) {
+        alternatives.push({pref:choice,error:true});
+        if (choice === pref) selectedError = err;
+      }
     }
-
-    let result = aStarMulti(parsed, graph, starts, ends, state.end);
-    if (!result) {
-      // A nearest path node can belong to an isolated car park, driveway or mapping
-      // fragment. Widen the candidate set before declaring the route impossible.
-      starts = nearestCandidates(parsed, state.start, graph, 24, 1500);
-      ends = nearestCandidates(parsed, state.end, graph, 24, 1500);
-      result = aStarMulti(parsed, graph, starts, ends, state.end);
-    }
-    if (!result) throw new Error('No connected Redway route was found between these points. Try Fastest or move one of the pins slightly.');
-    if (result.startSnap > 1000 || result.endSnap > 1000) {
-      throw new Error('One selected point is too far from the mapped walking/cycling network.');
-    }
-    installRoute(parsed, graph, result, { start: result.startSnap, end: result.endSnap }, { fit });
-    return true;
+    if (revision !== state.routeRevision) return;
+    state.graphCache.clear(); // Keep only the selected plan's graph after comparing routes.
+    state.alternatives = alternatives;
+    if (!selected) throw selectedError || new Error('No route');
+    installRoute(selected, {fit}); renderAlternatives();
   }
 
   function expandedBox(box, factor = 1.8) {
@@ -1322,8 +1010,11 @@
   }
 
   async function calculateRoute({ fit = true, quiet = false } = {}) {
-    if (!state.start || !state.end || state.routing) return;
+    if (!state.start || !state.end) return;
+    if (state.routing) { state.pendingRoute = true; return; }
     state.routing = true;
+    const revision = state.routeRevision;
+    el('retryRouteBtn').hidden = true;
     el('startNavBtn').disabled = true;
     if (!quiet) setRouteStatus('Finding the best Redway route…');
     const started = performance.now();
@@ -1331,8 +1022,9 @@
       // Normal path: one versioned network file is generated during the GitHub Pages
       // deployment, served from the same CDN as the app and cached on the phone.
       const bundled = await ensureRoutingNetwork();
+      if (revision !== state.routeRevision) return;
       if (bundled) {
-        solveRouteOnNetwork(bundled, { fit });
+        await solveRouteOnNetwork(bundled, { fit });
         const elapsed = performance.now() - started;
         console.info(`Route calculated from bundled network in ${Math.round(elapsed)} ms`);
         return;
@@ -1344,19 +1036,24 @@
       const firstBox = corridorBBox(state.start, state.end);
       let parsed = await fetchLiveRoutingNetwork(firstBox);
       try {
-        solveRouteOnNetwork(parsed, { fit });
+        await solveRouteOnNetwork(parsed, { fit });
       } catch (firstErr) {
         console.warn('First live corridor could not connect route; widening it', firstErr);
         if (!quiet) setRouteStatus('Checking a wider Redway area…');
         parsed = await fetchLiveRoutingNetwork(expandedBox(firstBox, 2.0));
-        solveRouteOnNetwork(parsed, { fit });
+        await solveRouteOnNetwork(parsed, { fit });
       }
     } catch (err) {
       console.error(err);
-      setRouteStatus(err.message || 'Routing failed. Try again shortly.', 'warn');
-      toast('Could not calculate route');
+      if (revision === state.routeRevision) {
+        setRouteStatus(routeErrorMessage(err), 'warn');
+        el('retryRouteBtn').hidden = false;
+        toast('Could not calculate route');
+      }
     } finally {
       state.routing = false;
+      renderAlternatives();
+      if (state.pendingRoute) { state.pendingRoute = false; maybeCalculateRoute(); }
     }
   }
 
@@ -1367,8 +1064,18 @@
     else setRouteStatus('Search for a destination.');
   }
 
+  el('retryRouteBtn').addEventListener('click', () => calculateRoute());
+  for (const which of ['start','end']) {
+    el(which === 'start' ? 'moveStartBtn' : 'moveEndBtn').addEventListener('click', () => {
+      state.editEndpoint = which;
+      setRouteStatus(`Tap an accessible ${which === 'start' ? 'starting point' : 'destination entrance'} on the map.`, 'warn');
+      toast('Tap the map to place the entrance', 5000);
+    });
+  }
+
   el('clearBtn').addEventListener('click', () => {
     stopNavigation({ keepRoute: false });
+    state.editEndpoint = null;
     state.start = null; state.end = null; state.startLabel = ''; state.endLabel = ''; state.endAddress = '';
     invalidateRoute(); markerLayer.clearLayers(); userLayer.clearLayers();
     el('homeSearch').value = ''; el('startSearch').value = ''; el('endSearch').value = '';
@@ -1730,27 +1437,35 @@
     const progress = Math.max(state.navProgressMeters, snap.progress);
     state.navProgressMeters = progress;
 
-    const total = state.route.cumulative[state.route.cumulative.length - 1] || state.route.dist;
+    const total = state.route.networkDist;
     const remaining = Math.max(0, total - progress);
-    const speed = state.mode === 'cycle' ? 4.17 : 1.34;
-    const mins = remaining / speed / 60;
+    const journey = remainingJourney(state.route, progress, latlng, state.start, state.end, state.mode);
+    const mins = journey.mins;
     el('navEta').textContent = arrivalTime(mins);
-    el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(remaining)} remaining`;
+    el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(journey.distance)} remaining`;
 
     const { maneuver, index, next } = activeManeuver(progress);
     if (maneuver) {
       const d = Math.max(0, maneuver.at - progress);
       el('turnIcon').textContent = maneuver.icon;
-      el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Arriving' : formatTurnDistance(d);
+      el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Approaching' : formatTurnDistance(d);
       el('turnText').textContent = maneuver.instruction;
       el('nextTurnText').textContent = next && !maneuver.arrive ? `Then ${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}` : '';
       announceManeuver(maneuver, index, d);
     }
 
-    if (remaining < 22) {
+    if (hasArrived(position, state.end, remaining)) {
       speak(`You have arrived at ${state.endLabel || 'your destination'}.`, { priority: 4, dedupeMs: 10000 });
       toast('You have arrived', 4000);
       stopNavigation({ keepRoute: true, arrived: true });
+      return;
+    }
+
+    if (remaining < 22) {
+      el('turnDistance').textContent = formatDistance(journey.distance);
+      el('turnText').textContent = 'Mapped route ends here. Check the approach to your destination.';
+      el('nextTurnText').textContent = 'Arrival is confirmed near your destination with an accurate GPS fix.';
+      if (state.followUser) followNavigationView(latlng, heading, true);
       return;
     }
 
@@ -1765,30 +1480,13 @@
   async function rerouteFromPosition(latlng) {
     if (!state.route || state.routing) return;
     state.lastRerouteAt = Date.now(); state.offRouteCount = 0;
-    toast('Rerouting…');
-    speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
-    const parsed = state.route.parsed; const graph = state.route.graph;
-    const starts = nearestCandidates(parsed, latlng, graph, 12, 900);
-    const eId = state.route.endNodeId;
-    const endNode = eId != null ? parsed.nodes.get(eId) : null;
-    if (starts.length && eId != null && endNode) {
-      const result = aStarMulti(
-        parsed, graph, starts,
-        [{ id: eId, d: state.route.snaps?.end || 0 }],
-        state.end || L.latLng(endNode.lat, endNode.lon)
-      );
-      if (result) {
-        state.start = latlng; state.startLabel = 'Your location';
-        installRoute(parsed, graph, result, { start: result.startSnap, end: result.endSnap }, { fit: false });
-        resetNavigationProgress();
-        speak(state.route.initialInstruction, { priority: 3 });
-        return;
-      }
-    }
-    // Fall back to a fresh corridor query if the cached graph can no longer connect us.
+    toast('Rerouting…'); speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
     state.start = latlng; state.startLabel = 'Your location';
-    await calculateRoute({ fit: false, quiet: true });
+    invalidateRoute();
+    await calculateRoute({fit:false,quiet:true});
     resetNavigationProgress();
+    if (state.route) speak(state.route.initialInstruction, { priority:3 });
+    else { stopNavigation({keepRoute:false}); setStage('planner'); }
   }
 
   function resetNavigationProgress() {
@@ -1976,7 +1674,7 @@
 
   async function cacheOfflineDependencies(cache) {
     const urls = [
-      './data/network.json', './index.html', './styles.css', './app.js', './manifest.webmanifest',
+      './data/network.json', './index.html', './styles.css', './app.js', './routing.js', './manifest.webmanifest',
       './icons/app-logo.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
       'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
       'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',

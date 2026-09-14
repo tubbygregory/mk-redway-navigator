@@ -1,4 +1,11 @@
-# MK Redway Navigator v0.10.2
+# MK Redway Navigator v0.11.0
+
+Release checks now exercise the real frontend against the generated v5 network before Pages publication. Run `node --test tests/routing.test.cjs` with `data/network.json` present. The browser gate is `python3 tests/browser_smoke.py` (Playwright/Chromium required).
+
+This release honours all three council classes, snaps to path segments while retaining one-way restrictions, blocks pins over 150 m from the usable network, and includes explicitly unverified approach gaps in distance/time estimates. Choose destination entrances with the pin controls. Coordinate searches (`latitude,longitude`) also work offline within MK.
+
+Cycling previews compare all three preferences by distance, estimated time and road share (including residential/service roads). Instructions focus on junction decisions and sharp bends. Arrival requires an accurate GPS fix near the actual destination. Timeout errors offer a retry action. App-shell cache version 17 includes the shared routing engine.
+
 
 Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
 

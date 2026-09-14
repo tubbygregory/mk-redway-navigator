@@ -104,6 +104,18 @@ jobs:
             echo "::warning::No offline basemap was generated. Online mapping will still work."
           fi
 
+      - name: Test routing against generated network
+        run: node --test tests/routing.test.cjs
+
+      - name: Install browser release checks
+        run: |
+          python3 -m pip install --disable-pip-version-check playwright
+          python3 -m playwright install --with-deps chromium
+
+      - name: Verify frontend routes before publication
+        timeout-minutes: 5
+        run: python3 tests/browser_smoke.py
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

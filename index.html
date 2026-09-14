@@ -139,9 +139,18 @@
           <span id="distanceStat">—</span>
           <span class="meta-separator">•</span>
           <span><b id="redwayStat">—</b> Redway</span>
+          <span>· <b id="roadStat">—</b> road</span>
         </div>
       </div>
+      <div id="routeAlternatives" class="route-alternatives" role="group" aria-label="Compare cycling routes"></div>
+      <small class="road-share-note">Road share includes residential and service roads; percentages cover the mapped route.</small>
+      <p id="approachNote" class="approach-note" hidden></p>
+      <div class="endpoint-actions">
+        <button id="moveStartBtn" type="button">Move start pin</button>
+        <button id="moveEndBtn" type="button">Choose destination entrance</button>
+      </div>
       <div id="routeStatus" class="route-status" aria-live="polite">Choose a start and destination.</div>
+      <button id="retryRouteBtn" class="secondary-action" type="button" hidden>Retry route</button>
       <div class="route-actions">
         <button id="startNavBtn" class="primary-action nav-start" type="button" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 18-7-4-7 4 7-18Z"></path></svg>
@@ -290,6 +299,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js"></script>
   <script src="https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js"></script>
+  <script src="./routing.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

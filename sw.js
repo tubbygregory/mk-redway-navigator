@@ -1,10 +1,11 @@
-const SHELL_CACHE = 'mk-redway-shell-v16';
+const SHELL_CACHE = 'mk-redway-shell-v17';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './routing.js',
   './manifest.webmanifest',
   './icons/app-logo.svg',
   './icons/icon-192.png',
@@ -125,7 +126,7 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request).then(response => {
+    caches.open(SHELL_CACHE).then(cache => cache.match(request)).then(cached => cached || fetch(request).then(response => {
       const copy = response.clone();
       caches.open(SHELL_CACHE).then(cache => cache.put(request, copy));
       return response;
