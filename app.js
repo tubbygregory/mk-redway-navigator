@@ -703,7 +703,7 @@
   }
 
   function parseBundledNetwork(data) {
-    if (!data || !['mk-redway-network-v1', 'mk-redway-network-v2'].includes(data.format) || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
+    if (!data || !['mk-redway-network-v1', 'mk-redway-network-v2', 'mk-redway-network-v3', 'mk-redway-network-v4'].includes(data.format) || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
       throw new Error('Bundled routing network has an unsupported format');
     }
     const nodes = new Map();
@@ -837,6 +837,7 @@
   }
 
   function edgeDisplayName(tags, cls) {
+    if (cls === 'superredway' && tags._mk_route_name) return tags._mk_route_name;
     if (tags.name) return tags.name;
     if (tags._mk_route_name) return tags._mk_route_name;
     if (tags.ref) return tags.ref;

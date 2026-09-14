@@ -1,4 +1,4 @@
-# MK Redway Navigator v0.9.3
+# MK Redway Navigator v0.10.1
 
 Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
 
@@ -19,17 +19,21 @@ Installable GitHub Pages proof of concept for Redway-first walking and cycling n
 
 Home, Work and up to 30 favourites are stored locally in the browser using `localStorage`; no account or server is involved. Open **Saved** from the main map. Home/Work can be set by search or by tapping a point on the map; selected destinations can be saved directly as favourites.
 
-### Better MK route classification
+### Official MK route classification
 
-The deployment build distinguishes:
+The deployment build now treats **Get Around MK** as the authority for the route categories and the city's **13 Super Redway corridors**. The official corridor references are maintained in `scripts/official_route_rules.json` and matched onto OpenStreetMap geometry at build time. This means an incomplete OSM bicycle-route relation no longer creates a gap in a Super Redway where the underlying Redway runs alongside the corresponding H/V grid-road corridor.
 
-- **Super Redway** — best-effort from OSM bicycle-route relations explicitly identifying Super Redways/Super Routes.
+The build distinguishes:
+
+- **Super Redway** — the 13 official Get Around MK Super Route corridors, matched onto OSM Redway geometry using route relations, H/V references and grid-road corridor proximity.
 - **Redway** — shared paths mapped with `foot=designated` and `bicycle=designated`, consistent with MK OSM mapping practice.
-- **Leisure route** — best-effort from named local leisure/cultural bicycle-route relations.
+- **Leisure route** — OSM route metadata where available, using the same category terminology shown by the official Get Around MK interactive map.
 - **Shared path** — other usable traffic-free/shared paths.
 - ordinary/quiet/major roads remain separate routing classes.
 
 Super Redways receive the strongest preference for cycling, followed by Redways, leisure routes and other shared paths. The map overlay uses different styling for the classified path types.
+
+The public Get Around MK cycling map includes Ordnance Survey/Crown-copyright cartography and does not provide an openly reusable raw GIS download on the public page. For that reason this project **does not copy council/OS map geometry**: official classification facts come from Get Around MK, while routable geometry remains OpenStreetMap-derived.
 
 ### Offline Milton Keynes map + routing
 
@@ -42,6 +46,31 @@ Address/place search still uses Nominatim and therefore needs an internet connec
 The app does **not** bulk-download tiles from `tile.openstreetmap.org`; OSM's public raster tile service does not permit offline-prefetch features.
 
 
+
+## v0.10.1 — direct Get Around MK map integration
+
+With Milton Keynes City Council permission confirmed by the project owner, the build now reads the three official cycle-path layers directly from the Get Around MK interactive map. GitHub Actions opens the council map in headless Chromium, enables **Redway Super Routes**, **Redway Routes** and **Leisure Routes** independently, and saves the resulting official line classification as `data/council_routes.geojson`.
+
+`build_network.py` then matches those official council lines onto the detailed OpenStreetMap routing topology. Council classification takes priority; OSM bicycle relations and the previous H/V Super Route corridor matcher remain fallback logic only. A last-known-good council extract is cached so a temporary council-site outage does not break deployment.
+
+The deployment log should contain an **Extract official Get Around MK cycle-path layers** step followed by output similar to:
+
+```text
+Wrote data/council_routes.geojson: ... lines — {'super_redway': ..., 'redway': ..., 'leisure': ...}
+Loaded ... official Get Around MK line features.
+Official website geometry matched ... Super Redway, ... Redway and ... leisure OSM ways.
+```
+
+## v0.10.0 — official Get Around MK Super Route classification
+
+The build now anchors Super Redway classification to the official Get Around MK 13-route network rather than trusting OSM relation naming alone. It recognises the official H/V route references and road-name aliases, uses mapped bicycle relations where present, and fills relation gaps by matching Redway geometry running alongside the corresponding grid-road corridor.
+
+Official source pages:
+
+- `https://getaroundmk.org.uk/cycling/where-to-ride/super-redways`
+- `https://getaroundmk.org.uk/interactive-map`
+
+The generated `network.json` is now format `mk-redway-network-v3` and records the classification sources and official route references used by the build.
 
 ## v0.9.3 — settings moved to the logo
 
@@ -78,7 +107,7 @@ See `DATA-LICENCE.md`.
 ## Proof-of-concept limitations
 
 - Saved places are device/browser-local and do not sync between devices.
-- Super Redway and leisure-route classification depends on what has been mapped in OpenStreetMap route relations; the normal Redway classification remains available even where relation metadata is incomplete.
+- Super Redway classification now uses the official Get Around MK 13-corridor designation matched to OSM geometry. Leisure-route geometry still depends on reusable OSM metadata because the public council map does not expose an open raw GIS layer.
 - Browser/PWA background GPS on iOS remains more restricted than a native iOS navigation app.
 - Nominatim place/address search is online-only.
 

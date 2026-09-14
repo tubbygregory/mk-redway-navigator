@@ -1,0 +1,106 @@
+{
+  "version": 2,
+  "sources": {
+    "super_redways": "https://getaroundmk.org.uk/cycling/where-to-ride/super-redways",
+    "interactive_map": "https://getaroundmk.org.uk/interactive-map"
+  },
+  "classification_note": "Get Around MK interactive-map geometry is authoritative for Redway Routes, Leisure Routes and Redway Super Routes when a current website extract is available. These corridor aliases are retained for naming and fallback classification.",
+  "super_routes": [
+    {
+      "ref": "H2",
+      "aliases": [
+        "H2",
+        "Millers Way"
+      ]
+    },
+    {
+      "ref": "H4",
+      "aliases": [
+        "H4",
+        "Dansteed Way"
+      ]
+    },
+    {
+      "ref": "H5",
+      "aliases": [
+        "H5",
+        "Portway"
+      ]
+    },
+    {
+      "ref": "H6",
+      "aliases": [
+        "H6",
+        "Childs Way"
+      ]
+    },
+    {
+      "ref": "H8",
+      "aliases": [
+        "H8",
+        "Standing Way"
+      ]
+    },
+    {
+      "ref": "H10",
+      "aliases": [
+        "H10",
+        "Bletcham Way"
+      ]
+    },
+    {
+      "ref": "V2",
+      "aliases": [
+        "V2",
+        "Tattenhoe Street"
+      ]
+    },
+    {
+      "ref": "V4",
+      "aliases": [
+        "V4",
+        "Watling Street"
+      ]
+    },
+    {
+      "ref": "V6",
+      "aliases": [
+        "V6",
+        "Grafton Street"
+      ]
+    },
+    {
+      "ref": "V7",
+      "aliases": [
+        "V7",
+        "Saxon Street"
+      ]
+    },
+    {
+      "ref": "V8",
+      "aliases": [
+        "V8",
+        "Marlborough Street"
+      ]
+    },
+    {
+      "ref": "V10",
+      "aliases": [
+        "V10",
+        "Brickhill Street"
+      ]
+    },
+    {
+      "ref": "V11",
+      "aliases": [
+        "V11",
+        "Tongwell Street"
+      ]
+    }
+  ],
+  "official_cycle_path_categories": [
+    "Redway Routes",
+    "Leisure Routes",
+    "Redway Super Routes"
+  ]
+}
