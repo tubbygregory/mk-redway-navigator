@@ -299,7 +299,7 @@
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'saved-favourite-open';
-      open.innerHTML = '<span class="saved-kind-icon" aria-hidden="true">★</span><span class="saved-row-copy"><strong></strong><small></small></span>';
+      open.innerHTML = '<span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"></path></svg></span><span class="saved-row-copy"><strong></strong><small></small></span>';
       open.querySelector('strong').textContent = place.name;
       open.querySelector('small').textContent = place.address || '';
       open.addEventListener('click', () => openSavedPlace(place));
@@ -307,7 +307,7 @@
       remove.type = 'button';
       remove.className = 'saved-remove';
       remove.setAttribute('aria-label', `Remove ${place.name}`);
-      remove.textContent = '×';
+      remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path></svg>';
       remove.addEventListener('click', () => {
         state.saved.favourites = state.saved.favourites.filter(x => x.id !== place.id);
         persistSavedPlaces();
@@ -765,6 +765,13 @@
 
   function drawRedwaysFromParsed(parsed) {
     redwayLayer.clearLayers();
+    const updateNetworkZoom = () => {
+      document.documentElement.dataset.networkZoom = map.getZoom() < 13 ? 'city' : map.getZoom() < 15 ? 'district' : 'street';
+    };
+    if (state.networkZoomHandler) map.off('zoomend', state.networkZoomHandler);
+    state.networkZoomHandler = updateNetworkZoom;
+    map.on('zoomend', updateNetworkZoom);
+    updateNetworkZoom();
     const groups = { superredway: [], redway: [], leisure: [], shared: [] };
     for (const w of parsed.ways) {
       const cls = edgeClass(w.tags || {});
@@ -1674,12 +1681,12 @@
 
   async function cacheOfflineDependencies(cache) {
     const urls = [
-      './data/network.json', './index.html', './styles.css', './app.js', './routing.js', './manifest.webmanifest',
+      './data/network.json', './data/data-meta.json', './about.js', './index.html', './styles.css', './app.js', './routing.js', './manifest.webmanifest',
       './icons/app-logo.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
-      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-      'https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js',
-      'https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js'
+      './vendor/leaflet.css',
+      './vendor/leaflet.js',
+      './vendor/leaflet-rotate.umd.min.js',
+      './vendor/protomaps-leaflet.js'
     ];
     for (const url of urls) {
       try {

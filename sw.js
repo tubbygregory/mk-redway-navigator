@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'mk-redway-shell-v17';
+const SHELL_CACHE = 'mk-redway-shell-v18';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',
@@ -6,6 +6,18 @@ const SHELL = [
   './styles.css',
   './app.js',
   './routing.js',
+  './about.js',
+  './data/data-meta.json',
+  './DATA-LICENCE.md',
+  './vendor/leaflet.css',
+  './vendor/leaflet.js',
+  './vendor/leaflet-rotate.umd.min.js',
+  './vendor/protomaps-leaflet.js',
+  './vendor/images/layers.png',
+  './vendor/images/layers-2x.png',
+  './vendor/images/marker-icon.png',
+  './vendor/images/marker-icon-2x.png',
+  './vendor/images/marker-shadow.png',
   './manifest.webmanifest',
   './icons/app-logo.svg',
   './icons/icon-192.png',
@@ -13,12 +25,7 @@ const SHELL = [
   './icons/apple-touch-icon.png',
   './icons/iphone16-splash.png'
 ];
-const EXTERNAL_ASSETS = new Set([
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js',
-  'https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js'
-]);
+
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(SHELL_CACHE).then(cache => cache.addAll(SHELL)));
@@ -108,18 +115,6 @@ self.addEventListener('fetch', event => {
         return response;
       }).catch(async () => (await caches.match(request)) || Response.error())
     );
-    return;
-  }
-
-  if (EXTERNAL_ASSETS.has(url.href)) {
-    event.respondWith((async () => {
-      const offline = await caches.open(OFFLINE_CACHE);
-      const cached = await offline.match(request) || await caches.match(request);
-      if (cached) return cached;
-      const response = await fetch(request);
-      if (response.ok) (await caches.open(SHELL_CACHE)).put(request, response.clone());
-      return response;
-    })());
     return;
   }
 

@@ -8,6 +8,7 @@ Super Redway, Redway, leisure route and other shared paths.
 from __future__ import annotations
 
 import datetime as dt
+from data_validation import validate_network, validate_council, council_digest
 import hashlib
 import json
 import math
@@ -575,11 +576,10 @@ def existing_network_age_days() -> float | None:
 def council_routes_sha256() -> str | None:
     if not COUNCIL_ROUTES.exists():
         return None
-    h = hashlib.sha256()
-    with COUNCIL_ROUTES.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    data = json.loads(COUNCIL_ROUTES.read_text())
+    validate_council(data)
+    return council_digest(data)
+
 
 
 def existing_network_council_hash() -> str | None:
@@ -770,6 +770,7 @@ def main() -> int:
         "nodes": compact_nodes,
         "ways": compact_ways,
     }
+    validate_network(payload)
     with TMP.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(TMP, OUT)

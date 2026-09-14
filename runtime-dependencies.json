@@ -1,0 +1,38 @@
+[
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+    "path": "vendor/leaflet.css"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+    "path": "vendor/leaflet.js"
+  },
+  {
+    "url": "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js",
+    "path": "vendor/leaflet-rotate.umd.min.js"
+  },
+  {
+    "url": "https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js",
+    "path": "vendor/protomaps-leaflet.js"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/layers.png",
+    "path": "vendor/images/layers.png"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/layers-2x.png",
+    "path": "vendor/images/layers-2x.png"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    "path": "vendor/images/marker-icon.png"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    "path": "vendor/images/marker-icon-2x.png"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    "path": "vendor/images/marker-shadow.png"
+  }
+]

@@ -9,6 +9,8 @@ Keep council attribution in DATA-LICENCE.md.
 from __future__ import annotations
 
 import io
+import datetime as dt
+from data_validation import validate_council, council_digest, source_class
 import json
 import re
 import zipfile
@@ -19,6 +21,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "council_routes.geojson"
+META = ROOT / "data" / "council-meta.json"
 DIAG = ROOT / "data" / "council-route-extract-diagnostics.json"
 URL = "https://getaroundmk.org.uk/interactive-map"
 BBOX = (-0.94, 51.93, -0.57, 52.18)  # west,south,east,north; generous MK envelope
@@ -90,6 +93,8 @@ def extract_kml_blob(blob: bytes, context: str = "") -> list[dict]:
         out: list[dict] = []
         try:
             with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+                if sum(item.file_size for item in zf.infolist()) > 100_000_000:
+                    raise ValueError("Council KMZ expands beyond 100 MB")
                 for name in zf.namelist():
                     if name.lower().endswith(".kml"):
                         out.extend(extract_kml(zf.read(name).decode("utf-8", "ignore"), f"{context} {name}"))
@@ -154,6 +159,7 @@ def discover_sources(texts: list[str]) -> dict[str, str]:
         for url in find_kml_urls(text):
             name = urlparse(url).path.rsplit("/", 1)[-1]
             if name in SOURCE_FILES:
+                source_class(url)
                 if name in found and found[name] != url:
                     raise ValueError(f"Conflicting source URLs for {name}")
                 found[name] = url
@@ -166,6 +172,8 @@ def discover_sources(texts: list[str]) -> dict[str, str]:
 def download(url: str) -> bytes:
     from urllib.request import Request, urlopen
     with urlopen(Request(url, headers={"User-Agent": "MK-Redway-Navigator/1.0"}), timeout=45) as response:
+        if urlparse(response.url).hostname != urlparse(URL).hostname:
+            raise ValueError("Unexpected council download redirect")
         body = response.read(20_000_001)
     if len(body) > 20_000_000:
         raise ValueError(f"Council response exceeds 20 MB: {url}")
@@ -225,7 +233,9 @@ def main() -> int:
             "permission": "Used with permission from Milton Keynes City Council as confirmed by the project owner.",
             "features": features,
         }
+        validate_council(payload)
         OUT.parent.mkdir(parents=True, exist_ok=True)
+        META.write_text(json.dumps({"status": "fresh", "extracted_at": dt.datetime.now(dt.timezone.utc).isoformat(), "geometry_sha256": council_digest(payload)}))
         tmp = OUT.with_suffix(".geojson.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         tmp.replace(OUT)
@@ -233,7 +243,18 @@ def main() -> int:
         return 0
     except Exception as exc:
         diagnostics["errors"].append(str(exc))
-        print(f"Council-map extraction failed: {exc}; retaining any cached extract.")
+        status = "fallback"
+        try:
+            cached = json.loads(OUT.read_text())
+            validate_council(cached)
+            status = "cached"
+        except (OSError, ValueError, KeyError, TypeError):
+            OUT.unlink(missing_ok=True)
+        previous = json.loads(META.read_text()) if META.exists() else {}
+        OUT.parent.mkdir(parents=True, exist_ok=True)
+        META.write_text(json.dumps({**previous, "status": status,
+                                   "checked_at": dt.datetime.now(dt.timezone.utc).isoformat()}))
+        print(f"::warning::Council extraction failed: {exc}; classification source: {status}.")
         return 2
     finally:
         DIAG.parent.mkdir(parents=True, exist_ok=True)

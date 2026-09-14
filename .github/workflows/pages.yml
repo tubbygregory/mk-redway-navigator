@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "professionalism-release"]
   workflow_dispatch:
 
 permissions:
@@ -15,11 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -27,7 +24,9 @@ jobs:
       - name: Restore last council cycle-path extract
         uses: actions/cache@v4
         with:
-          path: data/council_routes.geojson
+          path: |
+            data/council_routes.geojson
+            data/council-meta.json
           key: mk-redway-council-v2-${{ github.run_number }}
           restore-keys: |
             mk-redway-council-v2-
@@ -61,7 +60,7 @@ jobs:
             mk-redway-basemap-v1-
 
       - name: Install routing-data parser
-        run: python3 -m pip install --disable-pip-version-check osmium
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Extract official Get Around MK cycle-path layers
         continue-on-error: true
@@ -86,44 +85,72 @@ jobs:
         timeout-minutes: 15
         run: bash scripts/build_offline_map.sh
 
-      - name: Verify offline data
+      - name: Validate data and build runtime-only artifact
+        run: python3 scripts/build_site.py
+
+      - name: Test data validation and JavaScript syntax
         run: |
-          if [ -f data/council_routes.geojson ]; then
-            echo "Official council cycle-path extract is present ($(du -h data/council_routes.geojson | cut -f1))."
-          else
-            echo "::warning::No council cycle-path extract is present. The router will use its OSM/corridor fallback classification."
-          fi
-          if [ -f data/network.json ]; then
-            echo "Bundled routing network is present ($(du -h data/network.json | cut -f1))."
-          else
-            echo "::warning::No bundled routing network was generated. The app will use its slower live fallback."
-          fi
-          if [ -f data/mk-basemap.pmtiles ]; then
-            echo "Offline basemap is present ($(du -h data/mk-basemap.pmtiles | cut -f1))."
-          else
-            echo "::warning::No offline basemap was generated. Online mapping will still work."
-          fi
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          node --check app.js
+          node --check about.js
+          node --check routing.js
+          node --check sw.js
 
       - name: Test routing against generated network
         run: node --test tests/routing.test.cjs
 
       - name: Install browser release checks
         run: |
-          python3 -m pip install --disable-pip-version-check playwright
           python3 -m playwright install --with-deps chromium
 
       - name: Verify frontend routes before publication
-        timeout-minutes: 5
-        run: python3 tests/browser_smoke.py
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+        timeout-minutes: 10
+        run: |
+          python3 tests/browser_smoke.py
+          python3 tests/pwa_smoke.py
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: dist
 
+      - name: Upload browser captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-review
+          path: test-results/
+          if-no-files-found: warn
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  live-review:
+    if: github.ref == 'refs/heads/main'
+    needs: deploy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          python3 -m pip install -r requirements.txt
+          python3 -m playwright install --with-deps chromium
+      - name: Review deployed mobile application
+        timeout-minutes: 10
+        env:
+          LIVE_URL: https://mkredway.co.uk/
+        run: python3 tests/pwa_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-mobile-review
+          path: test-results/

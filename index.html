@@ -15,8 +15,7 @@
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
   <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
-  <link rel="preconnect" href="https://unpkg.com" crossorigin />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="./vendor/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -199,14 +198,14 @@
 
       <div class="saved-specials">
         <button id="homeSavedRow" class="saved-row" type="button">
-          <span class="saved-kind-icon" aria-hidden="true">⌂</span>
+          <span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg></span>
           <span class="saved-row-copy"><strong>Home</strong><small id="homeSavedLabel">Not set</small></span>
-          <span class="saved-chevron" aria-hidden="true">›</span>
+          <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
         <button id="workSavedRow" class="saved-row" type="button">
-          <span class="saved-kind-icon" aria-hidden="true">▣</span>
+          <span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18M10 12v3h4v-3"></path></svg></span>
           <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Not set</small></span>
-          <span class="saved-chevron" aria-hidden="true">›</span>
+          <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
       </div>
       <div class="saved-set-actions">
@@ -278,6 +277,29 @@
           <button type="button" data-units="imperial">Miles &amp; yards <small>mi · yd</small></button>
         </div>
       </div>
+      <details id="aboutData" class="about-data">
+        <summary>About &amp; Data</summary>
+        <h2>MK Redway Navigator</h2>
+        <p id="aboutVersion">Loading version…</p>
+        <dl class="data-details">
+          <dt>Routing data</dt><dd id="aboutNetwork">Checking…</dd>
+          <dt>Map built</dt><dd id="aboutMap">Checking…</dd>
+          <dt>Council classification</dt><dd id="aboutCouncil">Checking…</dd>
+          <dt>Offline map</dt><dd id="aboutOffline">Checking…</dd>
+        </dl>
+        <p>Download the map from Saved → Offline Milton Keynes before travelling without signal. Browser storage can be cleared by your device.</p>
+        <h3>Your privacy</h3>
+        <p>Home, Work, favourites and settings stay in this browser. Routes are calculated on your device using the downloaded network. Live location is used for navigation.</p>
+        <p>Online place and address searches are sent to OpenStreetMap’s Nominatim service. Map and data downloads contact their hosting providers; if bundled data is unavailable, the app can request map data from external services. There are no user accounts or application backend.</p>
+        <h3>Map and route data</h3>
+        <p>Official route classification: Milton Keynes City Council / Get Around MK, used with permission. Routable topology: © OpenStreetMap contributors (ODbL). Basemap: Protomaps and its data contributors.</p>
+        <p>MK Redway Navigator is an independent project and is not an official Milton Keynes City Council service.</p>
+        <nav class="about-links" aria-label="Project information">
+          <a href="./DATA-LICENCE.md">Data licences &amp; attribution</a>
+          <a href="https://github.com/tubbygregory/mk-redway-navigator" target="_blank" rel="noopener noreferrer">Project source</a>
+          <a href="https://github.com/tubbygregory/mk-redway-navigator/issues/new" target="_blank" rel="noopener noreferrer">Report a problem</a>
+        </nav>
+      </details>
     </section>
 
     <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
@@ -296,10 +318,11 @@
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   </main>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js"></script>
-  <script src="https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js"></script>
+  <script src="./vendor/leaflet.js" crossorigin=""></script>
+  <script src="./vendor/leaflet-rotate.umd.min.js"></script>
+  <script src="./vendor/protomaps-leaflet.js"></script>
   <script src="./routing.js"></script>
   <script src="./app.js"></script>
+  <script src="./about.js"></script>
 </body>
 </html>

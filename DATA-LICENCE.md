@@ -1,44 +1,33 @@
-# Map and route data
+# Data sources and licences
 
-MK Redway Navigator combines two data sources for different purposes.
+The application code's MIT licence does not replace the licences or permissions governing map data and third-party software.
 
 ## Milton Keynes City Council / Get Around MK
 
-The official route classification and line geometry for **Redway Routes**, **Leisure Routes** and **Redway Super Routes** is obtained from the Get Around MK interactive map:
+Official Super Redway, Redway and Leisure Route classifications are obtained from the selected KML/KMZ sources referenced by the [Get Around MK interactive map](https://getaroundmk.org.uk/interactive-map). Official corridor references also use [Get Around MK Super Redways](https://getaroundmk.org.uk/cycling/where-to-ride/super-redways).
 
-- https://getaroundmk.org.uk/interactive-map
-- https://getaroundmk.org.uk/cycling/where-to-ride/super-redways
-
-The project owner has confirmed that **Milton Keynes City Council has granted permission to use the copyright data** in this project. The GitHub build therefore loads the public Get Around MK interactive map and produces `data/council_routes.geojson` from the three official cycle-path layers. The app does not need the council website at runtime.
-
-Retain this attribution when redistributing the project:
+The project owner has confirmed permission from Milton Keynes City Council to use this data in this project. The permission document and detailed redistribution terms are not published in this repository; this statement does not grant a separate licence to other users. Retain the project attribution:
 
 > Official Milton Keynes Redway classifications/geometry: Milton Keynes City Council / Get Around MK, used with permission.
 
-Any third-party rights or attribution requirements that form part of the council's permission should also be retained. The project owner should keep a copy of the written permission with the project records.
+Council geometry is a build input, matched onto connected OSM ways. Raw extraction and diagnostic files are not part of the website artifact. Generic Google Maps rendering data is not used as route geometry.
 
-## OpenStreetMap
+## OpenStreetMap and Geofabrik
 
-OpenStreetMap remains the source of the detailed **routable network topology** used by the navigation engine. The council lines are matched to OSM ways so that official MK classifications are combined with connected, routable geometry.
+Routing topology is derived from © OpenStreetMap contributors via the [Geofabrik Buckinghamshire extract](https://download.geofabrik.de/europe/united-kingdom/england/buckinghamshire.html).
 
-- Routing topology: derived from OpenStreetMap data by `scripts/build_network.py`.
-- Online fallback map: OpenStreetMap tiles, subject to the OpenStreetMap tile usage policy.
-- Offline basemap: a Milton Keynes extract of Protomaps Basemap, derived from OpenStreetMap and distributed as an ODbL Produced Work.
-- Required map attribution: `© OpenStreetMap contributors`.
+OpenStreetMap data is licensed under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution and applicable share-alike obligations continue to apply to derived data. See [OpenStreetMap copyright and licence information](https://www.openstreetmap.org/copyright). The generated network is not covered solely by the application's MIT licence.
 
-OpenStreetMap data is available under the Open Database License (ODbL).
+The online raster fallback uses OpenStreetMap's tile service, subject to its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). The app does not bulk-download that service for offline use.
 
-## Build-time extraction
+## Protomaps basemap
 
-`scripts/extract_council_routes.py` opens the public Get Around MK interactive map in a headless browser and enables these layers independently:
+The offline map is an MK extract from the [Protomaps daily basemap builds](https://build.protomaps.com/). Retain Protomaps and OpenStreetMap attribution, together with applicable upstream data notices. PMTiles is a file format, not a licence for its contents. Consult the [Protomaps basemap documentation](https://docs.protomaps.com/basemaps/) for source and attribution details.
 
-1. Redway Super Routes
-2. Redway Routes
-3. Leisure Routes
+## Browser libraries
 
-It captures the line data loaded/rendered by the website and stores a compact GeoJSON copy for build-time classification. If the website is temporarily unavailable or its implementation changes, GitHub Actions retains the previous successful council extract and the router falls back to its existing OSM/corridor classification rather than breaking the deployed app.
+Leaflet 1.9.4, Leaflet Rotate 0.2.4 and Protomaps Leaflet 5.1.0 are self-hosted in the deployment. Their upstream copyright and licence notices apply independently of the application licence. Versioned download sources are recorded in `runtime-dependencies.json`.
 
+## Independence
 
-## OSM build source
-
-The routing topology is refreshed from the Geofabrik Buckinghamshire OpenStreetMap PBF extract and remains subject to the OpenStreetMap ODbL. The build clips that regional extract to the Milton Keynes application extent before publishing `data/network.json`.
+MK Redway Navigator is an independent project and is not an official Milton Keynes City Council service. Source attribution does not imply endorsement.

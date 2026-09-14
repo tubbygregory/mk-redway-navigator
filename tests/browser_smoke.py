@@ -9,7 +9,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from playwright.sync_api import sync_playwright, expect
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1] / "dist"
 
 
 def plan(page, start, end):
@@ -61,6 +61,12 @@ def main():
                 assert not errors, errors
                 assert not fallbacks, fallbacks
                 print(f'PASS browser {width}x{height}: bundled v5, route choices, walking, blocked endpoint')
+                page.get_by_role('button', name='Clear', exact=True).click()
+                page.get_by_role('button', name='Open settings', exact=True).click()
+                page.locator('#aboutData summary').click()
+                expect(page.locator('#aboutVersion')).to_contain_text('0.12.0')
+                expect(page.locator('#aboutNetwork')).not_to_have_text('Checking…')
+                expect(page.locator('#aboutData')).to_contain_text('independent project')
                 context.close()
             browser.close()
     finally:

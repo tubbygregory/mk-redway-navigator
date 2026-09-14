@@ -1,143 +1,93 @@
-# MK Redway Navigator v0.11.0
+# MK Redway Navigator
 
-Release checks now exercise the real frontend against the generated v5 network before Pages publication. Run `node --test tests/routing.test.cjs` with `data/network.json` present. The browser gate is `python3 tests/browser_smoke.py` (Playwright/Chromium required).
+Walking and cycling navigation for Milton Keynes, with a preference for the Redway network. An installable, independent web app currently in beta.
 
-This release honours all three council classes, snaps to path segments while retaining one-way restrictions, blocks pins over 150 m from the usable network, and includes explicitly unverified approach gaps in distance/time estimates. Choose destination entrances with the pin controls. Coordinate searches (`latitude,longitude`) also work offline within MK.
+**[Open MK Redway Navigator — mkredway.co.uk](https://mkredway.co.uk)**
 
-Cycling previews compare all three preferences by distance, estimated time and road share (including residential/service roads). Instructions focus on junction decisions and sharp bends. Arrival requires an accurate GPS fix near the actual destination. Timeout errors offer a retry action. App-shell cache version 17 includes the shared routing engine.
+## What it does
 
+Plan a journey around Milton Keynes, compare cycling routes and follow location-based instructions. No account is required.
 
-Installable GitHub Pages proof of concept for Redway-first walking and cycling navigation in Milton Keynes.
+## Key features
 
-## Core features
+- Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode.
+- Route previews with distance, estimated time and road share.
+- Live navigation, spoken guidance and automatic rerouting.
+- Home, Work and favourites saved on this device.
+- Downloadable Milton Keynes map and routing data.
+- Mobile portrait/landscape layouts and Home Screen installation.
 
-- Search by place, address or postcode.
-- Walking and cycling route profiles.
-- Maximum Redway / Balanced / Fastest preferences.
-- Locally hosted MK routing graph generated during deployment.
-- Multi-point network snapping to avoid isolated-path routing failures.
-- Live GPS navigation, heading-up map, spoken turn instructions and automatic rerouting.
-- Responsive portrait/landscape PWA interface.
-- Home Screen / PWA installation helper.
+## Routing philosophy
 
-## Existing v0.9 features
+OpenStreetMap supplies connected topology and access restrictions. Council route classifications influence preferences; they do not establish legal access. Maximum Redway favours classified paths, Balanced trades preference against distance, and Fastest prioritises estimated travel time.
 
-### Saved places
+Endpoints snap to usable path segments while retaining one-way restrictions. Gaps up to 150 metres are shown as unverified approaches and included in estimates; larger gaps block navigation. Choose the actual entrance when a destination pin is away from a path. Estimates cannot account for every closure, surface condition or crossing.
 
-Home, Work and up to 30 favourites are stored locally in the browser using `localStorage`; no account or server is involved. Open **Saved** from the main map. Home/Work can be set by search or by tapping a point on the map; selected destinations can be saved directly as favourites.
+## Official MK route classification
 
-### Official MK route classification
+The build reads six explicitly selected Get Around MK KML/KMZ sources for Super Redway, Redway and Leisure Route geometry, then matches them onto OSM ways. It does not treat generic Google Maps rendering traffic as council routes.
 
-The deployment build now treats **Get Around MK** as the authority for the route categories and the city's **13 Super Redway corridors**. The official corridor references are maintained in `scripts/official_route_rules.json` and matched onto OpenStreetMap geometry at build time. This means an incomplete OSM bicycle-route relation no longer creates a gap in a Super Redway where the underlying Redway runs alongside the corresponding H/V grid-road corridor.
+Council classifications take priority where matched. OSM tags, route relations and official corridor rules provide fallback classifications elsewhere. Validated cached data can be retained during source outages. About & Data and the build metadata identify this state.
 
-The build distinguishes:
+## Offline operation
 
-- **Super Redway** — the 13 official Get Around MK Super Route corridors, matched onto OSM Redway geometry using route relations, H/V references and grid-road corridor proximity.
-- **Redway** — shared paths mapped with `foot=designated` and `bicycle=designated`, consistent with MK OSM mapping practice.
-- **Leisure route** — OSM route metadata where available, using the same category terminology shown by the official Get Around MK interactive map.
-- **Shared path** — other usable traffic-free/shared paths.
-- ordinary/quiet/major roads remain separate routing classes.
+Choose **Saved → Offline Milton Keynes → Download** before leaving signal. Saved destinations, map browsing and local routing work offline after the required files are cached. Address/place searches use Nominatim and require connectivity; use saved places, coordinates or a map pin offline.
 
-Super Redways receive the strongest preference for cycling, followed by Redways, leisure routes and other shared paths. The map overlay uses different styling for the classified path types.
+Browser storage can be evicted or cleared. iOS can suspend GPS and speech when the app is backgrounded or the screen is locked.
 
-The public Get Around MK cycling map includes Ordnance Survey/Crown-copyright cartography and does not provide an openly reusable raw GIS download on the public page. For that reason this project **does not copy council/OS map geometry**: official classification facts come from Get Around MK, while routable geometry remains OpenStreetMap-derived.
+## Architecture
 
-### Offline Milton Keynes map + routing
+- `index.html`, `styles.css`, `app.js`: interface, map and navigation lifecycle.
+- `routing.js`: shared routing engine used by the browser and regression tests.
+- `about.js`: independent data and privacy presentation.
+- `sw.js`: app-shell caching and offline PMTiles range responses.
+- `scripts/`: council extraction, OSM network generation, basemap extraction and validated site packaging.
+- `data/data-meta.json`: generated runtime provenance, format, hashes and freshness.
+- `dist/`: generated browser-only deployment artifact.
 
-GitHub Actions attempts to create `data/mk-basemap.pmtiles` from a recent Protomaps daily OpenStreetMap-derived vector basemap. The app normally displays that same-origin PMTiles map when available.
+Leaflet, Leaflet Rotate and Protomaps Leaflet are version-pinned and self-hosted in the deployed artifact. The app shell makes no runtime request to unpkg.
 
-In **Saved → Offline Milton Keynes**, choose **Download** to keep the complete MK basemap, routing graph and app dependencies in browser storage. Once downloaded, map browsing, saved-place selection, route calculation and live navigation can work without a data connection.
+The remaining map/navigation lifecycle stays together deliberately. Further extraction of search, storage and voice modules should be incremental and retain browser regression coverage.
 
-Address/place search still uses Nominatim and therefore needs an internet connection. When offline, use a saved destination or tap the map.
+## Data sources and attribution
 
-The app does **not** bulk-download tiles from `tile.openstreetmap.org`; OSM's public raster tile service does not permit offline-prefetch features.
+Official classification: Milton Keynes City Council / Get Around MK, used with permission as confirmed by the project owner. Routing: © OpenStreetMap contributors, supplied through Geofabrik. Basemap: Protomaps and its upstream data contributors.
 
+See [DATA-LICENCE.md](DATA-LICENCE.md) for source links and licensing boundaries. This is not an official Milton Keynes City Council service.
 
+## Development / local testing
 
-## v0.10.2 — direct Get Around MK map integration
+Use Python 3.12, Node.js and Docker (for basemap extraction).
 
-With Milton Keynes City Council permission confirmed by the project owner, the build now reads the three official cycle-path layers directly from the Get Around MK interactive map. GitHub Actions opens the council map in headless Chromium, enables **Redway Super Routes**, **Redway Routes** and **Leisure Routes** independently, and saves the resulting official line classification as `data/council_routes.geojson`.
-
-`build_network.py` then matches those official council lines onto the detailed OpenStreetMap routing topology. Council classification takes priority; OSM bicycle relations and the previous H/V Super Route corridor matcher remain fallback logic only. A last-known-good council extract is cached so a temporary council-site outage does not break deployment.
-
-The deployment log should contain an **Extract official Get Around MK cycle-path layers** step followed by output similar to:
-
-```text
-Wrote data/council_routes.geojson: ... lines — {'super_redway': ..., 'redway': ..., 'leisure': ...}
-Loaded ... official Get Around MK line features.
-Official website geometry matched ... Super Redway, ... Redway and ... leisure OSM ways.
+```sh
+python3 -m pip install -r requirements.txt
+python3 -m playwright install --with-deps chromium
+python3 scripts/extract_council_routes.py
+python3 scripts/build_network.py
+bash scripts/build_offline_map.sh
+python3 scripts/build_site.py
+python3 -m unittest discover -s tests -p 'test_*.py'
+node --test tests/routing.test.cjs
+python3 tests/browser_smoke.py
+python3 -m http.server 8000 --directory dist
 ```
 
-## v0.10.0 — official Get Around MK Super Route classification
+Data generation requires internet access and can take several minutes. Generated data, downloads and Python caches are not committed. Runtime dependency downloads occur during packaging, not in the user's browser.
 
-The build now anchors Super Redway classification to the official Get Around MK 13-route network rather than trusting OSM relation naming alone. It recognises the official H/V route references and road-name aliases, uses mapped bicycle relations where present, and fills relation gaps by matching Redway geometry running alongside the corresponding grid-road corridor.
+## Deployment
 
-Official source pages:
+`.github/workflows/pages.yml` builds and validates data, packages an explicit runtime allowlist into `dist/`, runs routing/browser release gates, and publishes that directory to GitHub Pages. A failed gate prevents publication, leaving the previous deployment available.
 
-- `https://getaroundmk.org.uk/cycling/where-to-ride/super-redways`
-- `https://getaroundmk.org.uk/interactive-map`
+Use GitHub Actions as the Pages source. Runtime paths are relative so a project subpath and custom-domain root can use the same artifact. Source-only files and council diagnostics are excluded from Pages; diagnostics are separate Actions artifacts.
 
-The generated `network.json` is now format `mk-redway-network-v3` and records the classification sources and official route references used by the build.
+## Known limitations
 
-## v0.9.3 — settings moved to the logo
+- MK coverage is bounded; this is not a national route planner.
+- Mapping and council classifications can be incomplete or older than current conditions.
+- Online geocoding depends on an external service.
+- Saved places stay in one browser; there is no account or cloud sync.
+- Browser emulation cannot establish real-world GPS, speech, battery or iOS background behaviour.
 
-The separate **Settings** map pill has been removed. Tap the **MK Redway logo at the left of the search bar** to open Settings. A one-time coachmark explains this on the first launch after updating to v0.9.3, then stores a local flag so it does not appear again on that browser/device.
+## Licence
 
-## v0.9.2 — voice and distance settings
-
-A new **Settings** sheet adds persistent controls for:
-
-- **Voice guidance** — turn spoken instructions on or off. The navigation speaker button stays in sync with this preference. Re-enabling voice from Settings or navigation also provides the direct user gesture iOS may require to restart speech.
-- **Distance units** — choose **Metric (km / m)** or **Miles & yards (mi / yd)**. The choice applies to route length, remaining distance, turn-distance banners, route snap distances and spoken advance instructions.
-
-Settings are stored locally with `localStorage`; no account or server is involved.
-
-## Deploy
-
-1. Upload the contents of this project to the root of your GitHub repository.
-2. In **Settings → Pages**, set **Source** to **GitHub Actions**.
-3. Commit to `main`.
-4. Open **Actions → Deploy to GitHub Pages**.
-5. The first v0.9 deployment has two data-build steps:
-   - `Build current MK routing network`
-   - `Build offline Milton Keynes basemap`
-6. Both data steps are resilient: if a refresh fails and a previous cached file exists, the previous file is kept. If the PMTiles build fails on the very first deployment, online mapping still works and the Offline button reports that the package is unavailable.
-
-The PMTiles extract may add several minutes to a cold deployment. GitHub Actions caches it and the build script refreshes it roughly monthly.
-
-## Data and attribution
-
-Routing and basemap data are derived from OpenStreetMap. Keep the visible **© OpenStreetMap contributors** attribution in the app. The Protomaps basemap is distributed as an ODbL Produced Work and is suitable for a self-hosted/offline extract with attribution.
-
-See `DATA-LICENCE.md`.
-
-## Proof-of-concept limitations
-
-- Saved places are device/browser-local and do not sync between devices.
-- Super Redway classification now uses the official Get Around MK 13-corridor designation matched to OSM geometry. Leisure-route geometry still depends on reusable OSM metadata because the public council map does not expose an open raw GIS layer.
-- Browser/PWA background GPS on iOS remains more restricted than a native iOS navigation app.
-- Nominatim place/address search is online-only.
-
-
-## v0.9.1 — reliable spoken navigation
-
-Voice guidance is now initialised synchronously from the **Start** button tap so it satisfies iOS user-activation requirements. Spoken prompts use a persistent queue instead of cancelling the Web Speech synthesizer for every instruction. Navigation announces an advance warning and a junction instruction, plus rerouting and arrival messages. The speaker button can re-initialise speech after iOS has suspended the PWA.
-
-On iOS Home Screen web apps, keep the app in the foreground for reliable spoken guidance; iOS/WebKit can suspend web-app audio when backgrounded or the screen is locked.
-
-
-## v0.10.2 routing-build reliability
-
-The routing build no longer uses public Overpass servers for its normal OSM refresh. GitHub Actions downloads Geofabrik's small Buckinghamshire OSM PBF extract, parses it locally with pyosmium, and then matches the official Get Around MK route layers onto that graph. The extract is cached between builds. This avoids intermittent Overpass 504s, DNS failures and mirror certificate problems.
-
-If the Geofabrik refresh itself is unavailable, the last valid `data/network.json` remains the fallback.
-
-
-## v0.10.3 council-map extraction fix
-
-The GitHub build now captures the source URL used by Google Maps `KmlLayer` when Get Around MK toggles Redway, Leisure Route and Super Redway layers. It parses the source KML/KMZ directly rather than trying to infer geometry from Google Maps' internal vector-tile requests. The filter automation also explicitly clears existing filters and presses **Apply filters**.
-
-
-## v0.10.4 council extractor / matcher performance fix
-
-The council extractor now prioritises the selected Get Around MK Google Maps KmlLayer source and discards unrelated Google Maps vector/API traffic. Extracts above 80,000 lines are rejected as contaminated. The routing matcher also deduplicates official geometry by one-metre segment fingerprints before building its spatial index. Council cache v2 and routing cache v7 force a clean rebuild.
+Application code is [MIT licensed](LICENSE). Data and bundled third-party libraries retain their own licences; the MIT licence does not relicense them. See [data documentation](DATA-LICENCE.md) and [CHANGELOG.md](CHANGELOG.md).

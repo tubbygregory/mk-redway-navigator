@@ -1051,3 +1051,33 @@ html.ios-standalone .toast {
 .endpoint-actions button { flex: 1; min-height: 36px; border: 1px solid #ddd; border-radius: 8px; background: #f4f4f4; color: #333; font-size: 11px; padding: 5px; }
 .route-status { display: block; max-height: none; overflow: visible; }
 @media (orientation: landscape) { .route-sheet { max-height: calc(100dvh - 12px); } }
+
+/* Context network: selected route retains the existing strong casing. */
+.leaflet-pane .superredway-casing,
+.leaflet-pane .redway-casing,
+.leaflet-pane .leisure-casing { stroke-width: 3.6; opacity: .28; }
+.leaflet-pane .superredway-line { stroke-width: 2.4; opacity: .62; }
+.leaflet-pane .redway-line { stroke-width: 1.8; opacity: .48; }
+.leaflet-pane .leisure-line { stroke-width: 1.5; opacity: .42; }
+[data-network-zoom="city"] .leaflet-pane .superredway-line { stroke-width: 1.5; opacity: .42; }
+[data-network-zoom="city"] .leaflet-pane .redway-line { stroke-width: 1; opacity: .25; }
+[data-network-zoom="city"] .leaflet-pane .leisure-line { stroke-width: 1; opacity: .22; }
+[data-network-zoom="city"] .leaflet-pane [class$="-casing"]:not(.route-casing) { opacity: 0; }
+[data-network-zoom="city"] .leaflet-pane .shared-line { opacity: .12; }
+[data-network-zoom="street"] .leaflet-pane .superredway-line { opacity: .76; }
+[data-network-zoom="street"] .leaflet-pane .redway-line { opacity: .62; }
+[data-network-zoom="street"] .leaflet-pane .leisure-line { opacity: .55; }
+.saved-kind-icon svg, .saved-chevron svg, .saved-remove svg {
+  width: 22px; height: 22px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.about-data { margin-top: 20px; border-top: 1px solid #e3e1de; padding-top: 4px; color: #32312f; }
+.about-data summary { min-height: 48px; display: list-item; align-content: center; cursor: pointer; font-weight: 700; }
+.about-data h2 { font-size: 18px; margin: 16px 0 6px; }
+.about-data h3 { font-size: 15px; margin: 20px 0 8px; }
+.about-data p, .data-details { font-size: 13px; line-height: 1.55; }
+.data-details { display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px; }
+.data-details dt { color: #64615e; }
+.data-details dd { margin: 0; overflow-wrap: anywhere; }
+.about-links { display: grid; gap: 4px; }
+.about-links a { min-height: 44px; display: flex; align-items: center; color: #95251e; text-underline-offset: 3px; }
