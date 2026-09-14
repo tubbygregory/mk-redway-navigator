@@ -31,3 +31,5 @@ Leaflet 1.9.4, Leaflet Rotate 0.2.4 and Protomaps Leaflet 5.1.0 are self-hosted 
 ## Independence
 
 MK Redway Navigator is an independent project and is not an official Milton Keynes City Council service. Source attribution does not imply endorsement.
+
+The deployed `vendor/` directory includes upstream licence notices for these libraries.

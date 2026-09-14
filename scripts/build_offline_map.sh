@@ -60,4 +60,5 @@ fi
 
 mv "$TMP" "$OUT"
 date -u +%Y-%m-%d > "$STAMP"
+printf '%s\\n' "$build_date" > "$DATA/mk-basemap-source-date.txt"
 echo "Offline MK basemap ready: $(du -h "$OUT" | cut -f1)."

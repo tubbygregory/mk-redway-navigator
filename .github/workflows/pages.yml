@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: "pages-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -55,6 +55,7 @@ jobs:
           path: |
             data/mk-basemap.pmtiles
             data/mk-basemap-build.txt
+            data/mk-basemap-source-date.txt
           key: mk-redway-basemap-v1-${{ github.run_number }}
           restore-keys: |
             mk-redway-basemap-v1-

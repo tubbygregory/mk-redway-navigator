@@ -24,7 +24,8 @@
     try {
       const cache = await caches.open('mk-redway-offline-v1');
       const saved = await cache.match(new URL('./data/mk-basemap.pmtiles', location.href).href);
-      text('aboutOffline', saved ? 'Downloaded on this device' : 'Not downloaded');
+      const network = await caches.match(new URL('./data/network.json', location.href).href);
+      text('aboutOffline', saved && network ? 'Downloaded on this device' : 'Not downloaded');
     } catch (_) { text('aboutOffline', 'Storage unavailable'); }
   }
   document.getElementById('aboutData').addEventListener('toggle', event => {

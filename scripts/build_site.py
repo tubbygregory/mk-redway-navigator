@@ -45,7 +45,7 @@ def main():
                     "geometry_sha256": network.get("council_geometry_sha256"),
                     "source": network.get("council_geometry_source"), "matches_latest_extract": linked},
         "basemap": {"built_on": stamp.read_text().strip() if stamp.exists() else None,
-                    "source": "https://build.protomaps.com/", "source_date": None, "sha256": sha(basemap)}
+                    "source": "https://build.protomaps.com/", "source_date": (data / "mk-basemap-source-date.txt").read_text().strip() if (data / "mk-basemap-source-date.txt").exists() else None, "sha256": sha(basemap)}
     }
     if status != "fresh" or age >= 7 or not linked:
         print(f"::warning::Publishing validated last-known-good data: council={status}, network age={age:.1f} days, latest classification matched={linked}")

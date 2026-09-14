@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from data_validation import validate_network, source_class, council_digest
+from data_validation import validate_network, validate_council, source_class, council_digest
 
 class DataValidationTests(unittest.TestCase):
     def network(self):
@@ -32,3 +32,9 @@ class DataValidationTests(unittest.TestCase):
         self.assertEqual(council_digest(data), council_digest(other))
         other["features"][0]["properties"]["route_class"] = "leisure"
         self.assertNotEqual(council_digest(data), council_digest(other))
+
+    def test_council_rejects_contaminated_and_missing_categories(self):
+        for data in ({"type": "FeatureCollection", "features": []},
+                     {"type": "FeatureCollection", "features": [{}] * 200001}):
+            with self.assertRaises(ValueError):
+                validate_council(data)

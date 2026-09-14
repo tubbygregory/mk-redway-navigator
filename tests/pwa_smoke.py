@@ -20,6 +20,8 @@ def capture(page, name):
 
 def review(browser, url, live=False):
     context = browser.new_context(viewport={"width": 390, "height": 844},
+                                  is_mobile=True, has_touch=True,
+                                  user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
                                   permissions=["geolocation"], geolocation={"latitude": 52.0467, "longitude": -.7378})
     page = context.new_page()
     page.set_default_timeout(45000)
@@ -33,10 +35,20 @@ def review(browser, url, live=False):
     page.evaluate("async () => { await navigator.serviceWorker.ready; if (!navigator.serviceWorker.controller) await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, {once:true})); }")
     assert page.evaluate("navigator.serviceWorker.controller !== null")
     capture(page, "map")
+    page.get_by_role("button", name="Install MK Redway as an app", exact=True).click()
+    expect(page.locator("#installSheet")).to_be_visible()
+    capture(page, "install")
+    page.get_by_role("button", name="Close install instructions", exact=True).click()
+    if live:
+        page.get_by_role("searchbox", name="Search for a destination", exact=True).fill("Milton Keynes Central")
+        page.get_by_role("button", name="Search", exact=True).click()
+        expect(page.locator(".result-item").first).to_be_visible()
+        capture(page, "search")
+        page.get_by_role("button", name="Close search results", exact=True).click()
     plan(page, "52.0467,-0.7378", "52.025,-0.783")
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     capture(page, "route")
-    for name in ("Balanced", "Fastest", "Maximum Redway"):
+    for name in ("Balanced", "Fastest", "Max Redway"):
         page.locator(".route-option").filter(has_text=name).click()
         expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Walk", exact=True).click()
@@ -50,6 +62,11 @@ def review(browser, url, live=False):
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text("0.12.0")
     capture(page, "about")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
+    page.set_viewport_size({"width": 844, "height": 390})
+    expect(page.get_by_role("button", name="Close settings", exact=True)).to_be_visible()
+    capture(page, "landscape-settings")
+    page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_role("button", name="Close settings", exact=True).click()
     page.get_by_role("button", name="Open saved places", exact=True).click()
     capture(page, "saved")

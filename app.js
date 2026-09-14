@@ -29,7 +29,7 @@
   }).setView([52.0406, -0.7594], 12);
   let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
-    attribution: '© OpenStreetMap contributors'
+    attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
   }).addTo(map);
   let offlineVectorLayer = null;
   const OFFLINE_MAP_URL = './data/mk-basemap.pmtiles';
@@ -1603,7 +1603,7 @@
     if (!('caches' in window)) return false;
     try {
       const cache = await caches.open(OFFLINE_CACHE);
-      return Boolean(await cache.match(new URL(OFFLINE_MAP_URL, location.href).href));
+      return Boolean(await cache.match(new URL(OFFLINE_MAP_URL, location.href).href)) && Boolean(await caches.match(new URL("./data/network.json", location.href).href));
     } catch (_) { return false; }
   }
 
@@ -1651,7 +1651,7 @@
         url: OFFLINE_MAP_URL,
         flavor: 'light',
         lang: 'en',
-        attribution: '© OpenStreetMap contributors'
+        attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · <a href="https://protomaps.com/">Protomaps</a>'
       });
       const previousLayer = baseLayer;
       let switched = false;
@@ -1664,7 +1664,6 @@
       offlineVectorLayer.on?.('tileload', finishSwitch);
       offlineVectorLayer.on?.('load', finishSwitch);
       offlineVectorLayer.addTo(map);
-      map.attributionControl.addAttribution('© OpenStreetMap contributors');
       setTimeout(() => {
         if (!switched && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
           // Leave the proven online layer in place if the PMTiles renderer never produced a tile.

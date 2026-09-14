@@ -64,7 +64,7 @@ def download_geofabrik_pbf() -> Path:
     for attempt in range(3):
         try:
             print(f"Downloading current Buckinghamshire OSM extract from Geofabrik (attempt {attempt + 1}/3)…", flush=True)
-            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator-PoC/0.10.4 GitHub-Pages-build"})
+            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator/0.12.0 GitHub-Pages-build"})
             with urllib.request.urlopen(req, timeout=180) as r, tmp.open("wb") as out:
                 while True:
                     chunk = r.read(1024 * 1024)
@@ -610,6 +610,18 @@ def main() -> int:
     age = existing_network_age_days()
     current_council_hash = council_routes_sha256()
     cached_council_hash = existing_network_council_hash()
+    # Migrate a byte-identical legacy extract to the semantic hash without
+    # pretending its network was newly generated.
+    if (COUNCIL_ROUTES.exists() and cached_council_hash
+            and cached_council_hash == hashlib.sha256(COUNCIL_ROUTES.read_bytes()).hexdigest()
+            and existing_network_format() == "mk-redway-network-v5"):
+        previous = json.loads(OUT.read_text())
+        validate_network(previous)
+        previous["council_geometry_sha256"] = current_council_hash
+        TMP.write_text(json.dumps(previous, ensure_ascii=False, separators=(",", ":")))
+        os.replace(TMP, OUT)
+        cached_council_hash = current_council_hash
+        print("Migrated provenance hash for byte-identical council geometry; network generation date retained.", flush=True)
     if (
         existing_network_is_valid()
         and existing_network_format() == "mk-redway-network-v5"
@@ -637,6 +649,8 @@ def main() -> int:
     cycle_relations: dict = {"elements": []}
     try:
         pbf = download_geofabrik_pbf()
+        with osmium.io.Reader(str(pbf)) as reader:
+            osm_updated_at = reader.header().get("osmosis_replication_timestamp") or None
         nodes_by_osm, ways_by_osm, cycle_relations = load_osm_from_pbf(pbf)
     except Exception as exc:  # noqa: BLE001
         print(f"Geofabrik routing refresh failed: {exc}", file=sys.stderr)
@@ -761,6 +775,7 @@ def main() -> int:
         "bbox": [SOUTH, WEST, NORTH, EAST],
         "classification": "Get Around MK interactive-map Redway/Super Redway/Leisure geometry matched to Geofabrik/OSM routable geometry; OSM/corridor rules are fallback only",
         "osm_source": GEOFABRIK_URL,
+        "osm_updated_at": osm_updated_at,
         "council_geometry_source": "https://getaroundmk.org.uk/interactive-map?cycle-paths=1",
         "council_geometry_features": len(council_features),
         "council_geometry_sha256": current_council_hash,

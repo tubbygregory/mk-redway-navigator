@@ -1,38 +1,59 @@
 [
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
-    "path": "vendor/leaflet.css"
+    "path": "vendor/leaflet.css",
+    "sha256": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
-    "path": "vendor/leaflet.js"
+    "path": "vendor/leaflet.js",
+    "sha256": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   },
   {
-    "url": "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js",
-    "path": "vendor/leaflet-rotate.umd.min.js"
+    "path": "vendor/leaflet-rotate.umd.min.js",
+    "sha256": "543dab62fed6b85c11d1141687c2524992c7f294388e986645020ac6afc3ceec",
+    "url": "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js"
   },
   {
-    "url": "https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js",
-    "path": "vendor/protomaps-leaflet.js"
+    "path": "vendor/protomaps-leaflet.js",
+    "sha256": "26af014f7b1af308ec120b791cff76657bb9c3383633b52033e6edf9e5e4cdb5",
+    "url": "https://unpkg.com/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/layers.png",
-    "path": "vendor/images/layers.png"
+    "path": "vendor/images/layers.png",
+    "sha256": "1dbbe9d028e292f36fcba8f8b3a28d5e8932754fc2215b9ac69e4cdecf5107c6",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/layers.png"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/layers-2x.png",
-    "path": "vendor/images/layers-2x.png"
+    "path": "vendor/images/layers-2x.png",
+    "sha256": "066daca850d8ffbef007af00b06eac0015728dee279c51f3cb6c716df7c42edf",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/layers-2x.png"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-    "path": "vendor/images/marker-icon.png"
+    "path": "vendor/images/marker-icon.png",
+    "sha256": "574c3a5cca85f4114085b6841596d62f00d7c892c7b03f28cbfa301deb1dc437",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-    "path": "vendor/images/marker-icon-2x.png"
+    "path": "vendor/images/marker-icon-2x.png",
+    "sha256": "00179c4c1ee830d3a108412ae0d294f55776cfeb085c60129a39aa6fc4ae2528",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png"
   },
   {
-    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-    "path": "vendor/images/marker-shadow.png"
+    "path": "vendor/images/marker-shadow.png",
+    "sha256": "264f5c640339f042dd729062cfc04c17f8ea0f29882b538e3848ed8f10edb4da",
+    "url": "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
+  },
+  {
+    "url": "https://unpkg.com/leaflet@1.9.4/LICENSE",
+    "path": "vendor/leaflet-LICENSE.txt"
+  },
+  {
+    "url": "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/LICENSE",
+    "path": "vendor/leaflet-rotate-LICENSE.txt"
+  },
+  {
+    "url": "https://unpkg.com/protomaps-leaflet@5.1.0/LICENSE",
+    "path": "vendor/protomaps-leaflet-LICENSE.txt"
   }
 ]
