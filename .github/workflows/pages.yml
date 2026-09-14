@@ -36,11 +36,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/network.json
-          key: mk-redway-routing-v5-${{ github.run_number }}
+          key: mk-redway-routing-v6-${{ github.run_number }}
           restore-keys: |
+            mk-redway-routing-v6-
             mk-redway-routing-v5-
             mk-redway-routing-v4-
-            mk-redway-routing-v3-
 
       - name: Restore cached Geofabrik OSM extract
         uses: actions/cache@v4
