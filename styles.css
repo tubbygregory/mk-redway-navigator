@@ -1114,3 +1114,22 @@ html.ios-standalone .toast {
   }
   .leaflet-control-attribution { max-width: 260px; }
 }
+
+/* Endpoint editing has one foreground sheet; the route remains on the map. */
+#startSearchForm { grid-template-columns: 18px minmax(0, 1fr) auto auto; }
+#endSearchForm { grid-template-columns: 18px minmax(0, 1fr) auto; }
+.results-sheet { display: flex; flex-direction: column; max-height: min(58dvh, calc(var(--visual-height, 100dvh) - 150px)); }
+.results-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.route-sheet-handle {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; min-height: 44px; padding: 3px 0 7px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--muted); touch-action: none; cursor: ns-resize;
+}
+.route-sheet-handle .grabber { display: block; margin: 0 0 4px; }
+.sheet-handle-label { font-size: 11px; }
+.route-sheet.is-collapsed > :not(.route-sheet-handle):not(.route-summary) { display: none; }
+.route-sheet.is-collapsed { overflow: hidden; }
+.route-sheet.is-collapsed .route-summary { padding-top: 0; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .results-sheet { max-height: calc(var(--visual-height, 100dvh) - 20px); }
+}

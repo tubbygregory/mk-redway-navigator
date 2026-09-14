@@ -57,6 +57,7 @@
           <span class="planner-dot start-dot" aria-hidden="true"></span>
           <label class="sr-only" for="startSearch">Starting location</label>
           <input id="startSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Your location or starting point" />
+          <button class="inline-icon" type="submit" aria-label="Search starting location"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg></button>
           <button id="useLocationBtn" class="inline-icon" type="button" aria-label="Use current location">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path><circle cx="12" cy="12" r="4"></circle></svg>
           </button>
@@ -66,6 +67,7 @@
           <span class="planner-dot end-dot" aria-hidden="true"></span>
           <label class="sr-only" for="endSearch">Destination</label>
           <input id="endSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Destination" />
+        <button class="inline-icon" type="submit" aria-label="Search destination"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg></button>
         </form>
       </div>
     </section>
@@ -108,7 +110,7 @@
 
     <!-- Compact route preview. -->
     <section id="routeSheet" class="bottom-sheet route-sheet" aria-label="Route preview" hidden>
-      <div class="grabber" aria-hidden="true"></div>
+      <button id="routeSheetHandle" class="route-sheet-handle" type="button" aria-expanded="true" aria-label="Collapse route details"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
       <div class="mode-row" role="group" aria-label="Travel mode">
         <button id="cycleBtn" class="mode-chip active" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"></circle><circle cx="18" cy="17" r="3"></circle><path d="m6 17 4-8h4l4 8M9 11h6M11 6h3"></path></svg>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.3
+
+- Give starting-point and destination search an unobstructed view and explicit search buttons.
+- Prevent dismissed or superseded search responses from reopening results.
+- Make the route-panel handle work with swipe gestures, taps and keyboard activation.
+
 ## 0.12.2
 
 - Keep the navigation location marker anchored while heading-up rotation settles; verify its screen position in browser gates.

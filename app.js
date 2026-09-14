@@ -17,6 +17,7 @@
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 
   const el = id => document.getElementById(id);
+  let searchRevision = 0;
   const map = L.map('map', {
     zoomControl: false,
     attributionControl: true,
@@ -137,6 +138,8 @@
 
   function setStage(stage) {
     state.stage = stage;
+    state.plannerSearchOpen = false;
+    searchRevision += 1;
     el('app').dataset.stage = stage;
     el('exploreUI').hidden = stage !== 'explore';
     el('plannerUI').hidden = stage !== 'planner';
@@ -459,17 +462,44 @@
     el('resultsSheet').hidden = false;
   }
 
+  function openPlannerSearch(context) {
+    if (state.stage !== 'planner') return;
+    searchRevision += 1;
+    setRouteSheetCollapsed(false);
+    state.plannerSearchOpen = true;
+    state.searchContext = context;
+    el('routeSheet').hidden = true;
+    el('resultsSheet').hidden = false;
+    el('resultsTitle').textContent = context === 'start' ? 'Choose a starting point' : 'Choose a destination';
+    el('resultsList').innerHTML = '<div class="result-message">Enter a place, address or postcode, then tap Search or use the keyboard’s search key.</div>';
+  }
+
+  function closeSearch() {
+    searchRevision += 1;
+    state.plannerSearchOpen = false;
+    el('resultsSheet').hidden = true;
+    el('routeSheet').hidden = state.stage !== 'planner';
+  }
+
+  for (const [id, context] of [['startSearch', 'start'], ['endSearch', 'end']]) {
+    el(id).addEventListener('focus', () => openPlannerSearch(context));
+  }
+
   async function runSearch(context, input) {
     const query = input.value.trim();
     if (!query) { input.focus(); return; }
+    if (context === 'start' || context === 'end') openPlannerSearch(context);
+    const revision = ++searchRevision;
     input.blur();
     el('resultsSheet').hidden = false;
     el('resultsTitle').textContent = 'Searching…';
     el('resultsList').innerHTML = '<div class="result-message">Searching Milton Keynes…</div>';
     try {
       const results = await geocode(query);
+      if (revision !== searchRevision) return;
       showResults(results, context, query);
     } catch (err) {
+      if (revision !== searchRevision) return;
       console.error(err);
       el('resultsTitle').textContent = 'Search unavailable';
       el('resultsList').innerHTML = '<div class="result-message">The public address-search service is temporarily unavailable. Try again shortly.</div>';
@@ -482,7 +512,7 @@
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     const primary = conciseResultName(result);
     const secondary = resultSecondary(result, primary);
-    el('resultsSheet').hidden = true;
+    closeSearch();
 
     if (context === 'save-home' || context === 'save-work' || context === 'save-favourite') {
       const place = savedPlaceFromResult(result);
@@ -523,6 +553,38 @@
     setStage('place');
   }
 
+
+  // Drag only the handle: the sheet body keeps native scrolling on touch devices.
+  const routeHandle = el('routeSheetHandle');
+  let routeHandleDrag = null;
+  let suppressHandleClick = false;
+  function setRouteSheetCollapsed(collapsed) {
+    el('routeSheet').classList.toggle('is-collapsed', collapsed);
+    routeHandle.setAttribute('aria-expanded', String(!collapsed));
+    routeHandle.setAttribute('aria-label', collapsed ? 'Expand route details' : 'Collapse route details');
+    routeHandle.querySelector('.sheet-handle-label').textContent = collapsed ? 'Show route details' : 'Hide details';
+  }
+  routeHandle.addEventListener('click', () => {
+    if (suppressHandleClick) { suppressHandleClick = false; return; }
+    setRouteSheetCollapsed(!el('routeSheet').classList.contains('is-collapsed'));
+  });
+  routeHandle.addEventListener('pointerdown', event => {
+    if (!event.isPrimary || event.button !== 0) return;
+    suppressHandleClick = false;
+    routeHandleDrag = {id: event.pointerId, y: event.clientY};
+    routeHandle.setPointerCapture(event.pointerId);
+  });
+  routeHandle.addEventListener('pointerup', event => {
+    if (!routeHandleDrag || routeHandleDrag.id !== event.pointerId) return;
+    const dy = event.clientY - routeHandleDrag.y;
+    routeHandleDrag = null;
+    if (Math.abs(dy) >= 35) {
+      suppressHandleClick = true;
+      setRouteSheetCollapsed(dy > 0);
+    }
+  });
+  routeHandle.addEventListener('pointercancel', () => { routeHandleDrag = null; suppressHandleClick = false; });
+
   el('homeSearchForm').addEventListener('submit', e => {
     e.preventDefault();
     const context = state.pendingSaveKind ? `save-${state.pendingSaveKind}` : 'destination';
@@ -537,7 +599,7 @@
     runSearch('end', el('endSearch'));
   });
   el('closeResults').addEventListener('click', () => {
-    el('resultsSheet').hidden = true;
+    closeSearch();
     if (state.pendingSaveKind) { finishSavedSearch(); renderSavedPlaces(); el('savedSheet').hidden = false; }
   });
   el('closePlace').addEventListener('click', () => {
@@ -963,6 +1025,7 @@
 
   function installRoute(plan, { fit = true } = {}) {
     state.route = plan;
+    setRouteSheetCollapsed(false);
     drawRoute(plan.coords, fit);
     el('timeStat').textContent = formatDuration(plan.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;

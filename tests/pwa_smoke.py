@@ -49,6 +49,52 @@ def review(browser, url, live=False):
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     assert page.locator("#timeStat").bounding_box()["height"] < 40, "Journey time wraps"
     capture(page, "route")
+
+    # Edit an explicit start while a route panel is already visible.
+    search = page.get_by_role("searchbox", name="Starting location", exact=True)
+    search.fill("John Lewis" if live else "Test station start")
+    expect(page.locator("#routeSheet")).to_be_hidden()
+    expect(page.locator("#resultsSheet")).to_be_visible()
+    if not live:
+        page.route("**/nominatim.openstreetmap.org/search?*", lambda route: route.fulfill(
+            json=[{"lat": "52.0345", "lon": "-0.774", "name": "Test station start",
+                   "display_name": "Test station start, Milton Keynes", "type": "station"}]))
+    page.get_by_role("button", name="Search starting location", exact=True).click()
+    expect(page.locator(".result-item").first).to_be_visible()
+    expect(page.locator("#routeSheet")).to_be_hidden()
+    capture(page, "start-search")
+    page.locator(".result-item").first.click()
+    expect(page.locator("#routeSheet")).to_be_visible()
+    expect(page.locator("#resultsSheet")).to_be_hidden()
+    if not live:
+        expect(search).to_have_value("Test station start")
+        page.unroute("**/nominatim.openstreetmap.org/search?*")
+    # Restore the deterministic journey before testing navigation.
+    search.fill("52.0467,-0.7378")
+    page.get_by_role("button", name="Search starting location", exact=True).click()
+    page.get_by_role("button", name="Map coordinates", exact=False).click()
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    # Use actual touch input on the handle; body scrolling remains native.
+    touch = context.new_cdp_session(page)
+    def swipe_handle(dy):
+        box = page.locator("#routeSheetHandle").bounding_box()
+        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        touch.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+        touch.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x, "y": y + dy}]})
+        touch.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    swipe_handle(55)
+    expect(page.locator("#routeSheetHandle")).to_have_attribute("aria-expanded", "false")
+    expect(page.locator("#timeStat")).to_be_visible()
+    expect(page.locator("#routeAlternatives")).to_be_hidden()
+    capture(page, "route-collapsed")
+    swipe_handle(-55)
+    expect(page.locator("#routeSheetHandle")).to_have_attribute("aria-expanded", "true")
+    expect(page.locator("#routeAlternatives")).to_be_visible()
+    page.get_by_role("button", name="Collapse route details", exact=True).click()
+    page.get_by_role("button", name="Expand route details", exact=True).press("Enter")
+    expect(page.locator("#routeAlternatives")).to_be_visible()
+    touch.detach()
+
     for name in ("Balanced", "Fastest", "Max Redway"):
         page.locator(".route-option").filter(has_text=name).click()
         expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
