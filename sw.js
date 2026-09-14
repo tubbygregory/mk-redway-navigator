@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'mk-redway-shell-v15';
+const SHELL_CACHE = 'mk-redway-shell-v16';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',

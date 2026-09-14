@@ -24,7 +24,7 @@ import math
 import re
 import zipfile
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -310,6 +310,7 @@ async def main() -> int:
             page = await context.new_page()
             await page.add_init_script(capture_script)
             active = {"capture": False}
+            response_features: list[dict] = []
             layer_features: list[dict] = []
 
             async def on_response(resp, _label=label):
@@ -318,7 +319,15 @@ async def main() -> int:
                 url = resp.url
                 try:
                     ct = (resp.headers.get("content-type") or "").lower()
-                    interesting = any(x in ct for x in ("json", "geojson", "xml", "kml")) or any(x in url.lower() for x in ("geojson", ".kml", "ajax", "api", "map", "route", "cycle", "redway"))
+                    # Ignore Google Maps' internal vector-tile/API traffic. It contains
+                    # hundreds of thousands of unrelated basemap lines and must never be
+                    # treated as council route geometry merely because a filter is active.
+                    parsed = urlparse(url)
+                    host = (parsed.hostname or "").lower()
+                    path_l = parsed.path.lower()
+                    explicit_route_payload = path_l.endswith((".kml", ".kmz", ".geojson", ".json"))
+                    trusted_host = host.endswith("getaroundmk.org.uk")
+                    interesting = (trusted_host and any(x in ct for x in ("json", "geojson", "xml", "kml"))) or explicit_route_payload
                     if not interesting:
                         return
                     body = await resp.body()
@@ -329,11 +338,11 @@ async def main() -> int:
                     context_text = f"{_label} {url}"
                     if "json" in ct or text.lstrip().startswith(("{", "[")):
                         try:
-                            layer_features.extend(extract_json(json.loads(text), context_text))
+                            response_features.extend(extract_json(json.loads(text), context_text))
                         except Exception:
                             pass
                     if "kml" in ct or "xml" in ct or "<kml" in text[:1000].lower():
-                        layer_features.extend(extract_kml(text, context_text))
+                        response_features.extend(extract_kml(text, context_text))
                 except Exception as exc:
                     diagnostics["errors"].append(f"response {_label} {url}: {exc}")
 
@@ -414,11 +423,14 @@ async def main() -> int:
                   dataFeatures: window.__mkCouncilDataFeatures || [],
                   kmlLayers: window.__mkCouncilKmlLayers || []
                 })""")
+
+                fallback_features: list[dict] = []
                 for item in captured.get("dataFeatures", [])[baseline.get("d", 0):]:
-                    layer_features.extend(extract_json(item.get("obj"), label))
-                # The council map uses Google Maps KmlLayer. When the selected layer is
-                # toggled on, setMap/getUrl exposes the original source KML/KMZ. Parse that
-                # directly instead of trying to decode Google's internal vector tiles.
+                    fallback_features.extend(extract_json(item.get("obj"), label))
+
+                # The council map uses Google Maps KmlLayer. The original KML/KMZ source
+                # is the clean authoritative payload; if it is available, deliberately
+                # ignore all generic map responses and rendered polylines.
                 kml_entries = captured.get("kmlLayers", [])[baseline.get("k", 0):]
                 kml_urls: list[str] = []
                 for entry in kml_entries:
@@ -427,15 +439,17 @@ async def main() -> int:
                         kml_urls.append(url)
                 diagnostics["layers"][label]["kml_layers"] = kml_entries
                 diagnostics["layers"][label]["kml_urls"] = kml_urls
+
+                kml_features: list[dict] = []
                 for kml_url in kml_urls:
                     try:
                         kr = await context.request.get(kml_url, timeout=30000)
                         if kr.ok:
                             blob = await kr.body()
-                            parsed = extract_kml_blob(blob, label)
-                            for f in parsed:
+                            parsed_features = extract_kml_blob(blob, label)
+                            for f in parsed_features:
                                 f.setdefault("properties", {})["capture"] = "google.maps.KmlLayer source"
-                            layer_features.extend(parsed)
+                            kml_features.extend(parsed_features)
                         else:
                             diagnostics["errors"].append(f"KML {label} {kml_url}: HTTP {kr.status}")
                     except Exception as exc:
@@ -445,7 +459,7 @@ async def main() -> int:
                     path = item.get("path") or []
                     if line_in_mk(path):
                         opts = item.get("options") or {}
-                        layer_features.append({
+                        fallback_features.append({
                             "type": "Feature",
                             "properties": {
                                 "route_class": target_class,
@@ -454,6 +468,16 @@ async def main() -> int:
                             },
                             "geometry": {"type": "LineString", "coordinates": path},
                         })
+
+                if kml_features:
+                    layer_features = kml_features
+                    diagnostics["layers"][label]["method"] = "KmlLayer source"
+                elif fallback_features:
+                    layer_features = fallback_features
+                    diagnostics["layers"][label]["method"] = "Google Maps rendered/data fallback"
+                else:
+                    layer_features = response_features
+                    diagnostics["layers"][label]["method"] = "trusted website response fallback"
                 # Because only one layer is enabled, any line extracted from that layer's
                 # response is authoritatively assigned to the selected website category.
                 for f in layer_features:
@@ -472,13 +496,18 @@ async def main() -> int:
     features = dedupe(features)
     counts = {c: sum(1 for f in features if f["properties"].get("route_class") == c) for c in ("super_redway", "redway", "leisure")}
     diagnostics["feature_counts"] = counts
+    diagnostics["total_features"] = len(features)
     DIAG.parent.mkdir(parents=True, exist_ok=True)
     DIAG.write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
 
     # Require all three website layers. A partial scrape is worse than the last known-good
     # council extract because it could silently declassify valid paths.
-    if len(features) < 20 or any(counts[c] == 0 for c in counts):
-        print(f"Council-map extraction incomplete: {len(features)} usable lines ({counts}); retaining any cached extract.")
+    # MK's cycle network cannot plausibly contain hundreds of thousands of distinct
+    # route lines. Treat such a result as contaminated Google basemap/vector data rather
+    # than feeding it into the OSM matcher and timing out the build.
+    if len(features) < 20 or len(features) > 80_000 or any(counts[c] == 0 for c in counts):
+        reason = "implausibly large / contaminated" if len(features) > 80_000 else "incomplete"
+        print(f"Council-map extraction {reason}: {len(features):,} usable lines ({counts}); retaining any cached extract.")
         return 2
 
     payload = {

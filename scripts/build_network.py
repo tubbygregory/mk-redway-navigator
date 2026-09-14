@@ -63,7 +63,7 @@ def download_geofabrik_pbf() -> Path:
     for attempt in range(3):
         try:
             print(f"Downloading current Buckinghamshire OSM extract from Geofabrik (attempt {attempt + 1}/3)…", flush=True)
-            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator-PoC/0.10.2 GitHub-Pages-build"})
+            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator-PoC/0.10.4 GitHub-Pages-build"})
             with urllib.request.urlopen(req, timeout=180) as r, tmp.open("wb") as out:
                 while True:
                     chunk = r.read(1024 * 1024)
@@ -365,22 +365,41 @@ def load_council_routes() -> list[dict]:
 
 
 def build_council_route_index(features: list[dict]) -> dict[tuple[int, int], list[tuple[float, float, float, float, str, dict]]]:
-    """Spatial index of official website line geometry for matching to OSM ways."""
+    """Spatial index of official website line geometry for matching to OSM ways.
+
+    Segment-level deduplication is essential because web-map sources can repeat the
+    same geometry across placemarks or tiles. The matcher only needs one copy.
+    """
     cell = 120.0
-    index: dict[tuple[int, int], list[tuple[float, float, float, float, str, dict]]] = {}
+    index_sets: dict[tuple[int, int], dict[tuple, tuple[float, float, float, float, str, dict]]] = {}
+    seen_segments: set[tuple] = set()
+    input_segments = 0
     for feature in features:
         cls = feature["class"]
         props = feature.get("properties") or {}
         pts = feature["points"]
         for a, b in zip(pts, pts[1:]):
+            input_segments += 1
             ax, ay = xy_m(*a)
             bx, by = xy_m(*b)
+            # One-metre endpoint fingerprint, direction independent.
+            p1 = (round(ax), round(ay)); p2 = (round(bx), round(by))
+            key = (cls, min(p1, p2), max(p1, p2))
+            if key in seen_segments:
+                continue
+            seen_segments.add(key)
             minx, maxx = min(ax, bx) - 45, max(ax, bx) + 45
             miny, maxy = min(ay, by) - 45, max(ay, by) + 45
             seg = (ax, ay, bx, by, cls, props)
             for gx in range(math.floor(minx / cell), math.floor(maxx / cell) + 1):
                 for gy in range(math.floor(miny / cell), math.floor(maxy / cell) + 1):
-                    index.setdefault((gx, gy), []).append(seg)
+                    index_sets.setdefault((gx, gy), {})[key] = seg
+    index = {cell_key: list(items.values()) for cell_key, items in index_sets.items()}
+    print(
+        f"Council geometry index: {input_segments:,} input segments -> "
+        f"{len(seen_segments):,} unique segments in {len(index):,} spatial cells.",
+        flush=True,
+    )
     return index
 
 
@@ -637,6 +656,13 @@ def main() -> int:
     # We retain OSM relations/corridor inference only as fallback where the website extract
     # is unavailable or does not cover a particular edge.
     council_features = load_council_routes()
+    if len(council_features) > 80_000:
+        print(
+            f"Ignoring suspicious council extract with {len(council_features):,} lines; "
+            "this indicates contaminated web-map vector data rather than cycle routes.",
+            flush=True,
+        )
+        council_features = []
     council_index = build_council_route_index(council_features)
     council_matched = {"super_redway": 0, "redway": 0, "leisure": 0}
     council_props: dict[int, dict] = {}

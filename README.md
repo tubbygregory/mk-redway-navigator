@@ -129,3 +129,8 @@ If the Geofabrik refresh itself is unavailable, the last valid `data/network.jso
 ## v0.10.3 council-map extraction fix
 
 The GitHub build now captures the source URL used by Google Maps `KmlLayer` when Get Around MK toggles Redway, Leisure Route and Super Redway layers. It parses the source KML/KMZ directly rather than trying to infer geometry from Google Maps' internal vector-tile requests. The filter automation also explicitly clears existing filters and presses **Apply filters**.
+
+
+## v0.10.4 council extractor / matcher performance fix
+
+The council extractor now prioritises the selected Get Around MK Google Maps KmlLayer source and discards unrelated Google Maps vector/API traffic. Extracts above 80,000 lines are rejected as contaminated. The routing matcher also deduplicates official geometry by one-metre segment fingerprints before building its spatial index. Council cache v2 and routing cache v7 force a clean rebuild.
