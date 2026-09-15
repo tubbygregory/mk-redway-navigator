@@ -23,6 +23,15 @@ def check_panel_handle(page, context, panel_id, body_selector):
     panel = page.locator("#" + panel_id)
     handle = panel.locator(".sheet-handle")
     body = panel.locator(body_selector)
+    page.evaluate("""() => {
+      window.handleEvents = [];
+      for (const name of ['pointerdown', 'pointerup', 'pointercancel', 'click']) {
+        document.addEventListener(name, e => window.handleEvents.push({
+          type: e.type, target: e.target.closest('button')?.id, id: e.pointerId,
+          primary: e.isPrimary, button: e.button, detail: e.detail
+        }), true);
+      }
+    }""")
     touch = context.new_cdp_session(page)
     def swipe(dy):
         box = handle.bounding_box()
@@ -39,6 +48,7 @@ def check_panel_handle(page, context, panel_id, body_selector):
     expect(handle).to_have_attribute("aria-expanded", "true")
     expect(body).to_be_visible()
     handle.tap()
+    print("HANDLE_TRACE", panel_id, page.evaluate("window.handleEvents"), flush=True)
     expect(body).to_be_hidden()
     handle.press("Enter")
     expect(body).to_be_visible()
