@@ -18,6 +18,32 @@ def capture(page, name):
     if os.environ.get("LIVE_URL"):
         print("REVIEW_IMAGE_" + name + "=" + base64.b64encode(path.read_bytes()).decode(), flush=True)
 
+
+def check_panel_handle(page, context, panel_id, body_selector):
+    panel = page.locator("#" + panel_id)
+    handle = panel.locator(".sheet-handle")
+    body = panel.locator(body_selector)
+    touch = context.new_cdp_session(page)
+    def swipe(dy):
+        box = handle.bounding_box()
+        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        touch.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+        touch.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x, "y": y + dy}]})
+        touch.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    swipe(55)
+    expect(handle).to_have_attribute("aria-expanded", "false")
+    expect(body).to_be_hidden()
+    expect(panel.locator(".sheet-summary")).to_be_visible()
+    capture(page, panel_id + "-collapsed")
+    swipe(-55)
+    expect(handle).to_have_attribute("aria-expanded", "true")
+    expect(body).to_be_visible()
+    handle.tap()
+    expect(body).to_be_hidden()
+    handle.press("Enter")
+    expect(body).to_be_visible()
+    touch.detach()
+
 def review(browser, url, live=False):
     context = browser.new_context(viewport={"width": 390, "height": 844},
                                   is_mobile=True, has_touch=True,
@@ -37,6 +63,7 @@ def review(browser, url, live=False):
     capture(page, "map")
     page.get_by_role("button", name="Install MK Redway as an app", exact=True).click()
     expect(page.locator("#installSheet")).to_be_visible()
+    check_panel_handle(page, context, "installSheet", "#installSteps")
     capture(page, "install")
     page.get_by_role("button", name="Close install instructions", exact=True).click()
     if live:
@@ -45,6 +72,13 @@ def review(browser, url, live=False):
         expect(page.locator(".result-item").first).to_be_visible()
         capture(page, "search")
         page.get_by_role("button", name="Close search results", exact=True).click()
+    page.get_by_role("searchbox", name="Search for a destination", exact=True).fill("52.025,-0.783")
+    page.get_by_role("button", name="Search", exact=True).click()
+    expect(page.locator(".result-item").first).to_be_visible()
+    check_panel_handle(page, context, "resultsSheet", "#resultsList")
+    page.locator(".result-item").first.click()
+    check_panel_handle(page, context, "placeSheet", ".place-actions")
+    page.get_by_role("button", name="Close destination", exact=True).click()
     plan(page, "52.0467,-0.7378", "52.025,-0.783")
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     assert page.locator("#timeStat").bounding_box()["height"] < 40, "Journey time wraps"
@@ -111,6 +145,7 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="Exit", exact=True).click()
     page.get_by_role("button", name="Clear", exact=True).click()
     page.get_by_role("button", name="Open settings", exact=True).click()
+    check_panel_handle(page, context, "settingsSheet", ".setting-row")
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
     capture(page, "about")
@@ -124,6 +159,7 @@ def review(browser, url, live=False):
     page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_role("button", name="Close settings", exact=True).click()
     page.get_by_role("button", name="Open saved places", exact=True).click()
+    check_panel_handle(page, context, "savedSheet", ".saved-specials")
     capture(page, "saved")
     page.locator("#offlineDownloadBtn").click()
     expect(page.locator("#offlineStatus")).to_contain_text("available offline", timeout=120000)

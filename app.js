@@ -554,36 +554,48 @@
   }
 
 
-  // Drag only the handle: the sheet body keeps native scrolling on touch devices.
-  const routeHandle = el('routeSheetHandle');
-  let routeHandleDrag = null;
-  let suppressHandleClick = false;
-  function setRouteSheetCollapsed(collapsed) {
-    el('routeSheet').classList.toggle('is-collapsed', collapsed);
-    routeHandle.setAttribute('aria-expanded', String(!collapsed));
-    routeHandle.setAttribute('aria-label', collapsed ? 'Expand route details' : 'Collapse route details');
-    routeHandle.querySelector('.sheet-handle-label').textContent = collapsed ? 'Show route details' : 'Hide details';
+  // All visible sheet handles share touch, mouse and keyboard behaviour.
+  function setSheetCollapsed(sheet, collapsed) {
+    const handle = sheet.querySelector('.sheet-handle');
+    sheet.classList.toggle('is-collapsed', collapsed);
+    handle.setAttribute('aria-expanded', String(!collapsed));
+    handle.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${handle.dataset.panelLabel}`);
+    handle.querySelector('.sheet-handle-label').textContent = collapsed ? 'Show details' : 'Hide details';
+    sheet.scrollTop = 0;
   }
-  routeHandle.addEventListener('click', () => {
-    if (suppressHandleClick) { suppressHandleClick = false; return; }
-    setRouteSheetCollapsed(!el('routeSheet').classList.contains('is-collapsed'));
+  function setRouteSheetCollapsed(collapsed) {
+    setSheetCollapsed(el('routeSheet'), collapsed);
+  }
+  document.querySelectorAll('.sheet-handle').forEach(handle => {
+    const sheet = handle.closest('.bottom-sheet');
+    let drag = null;
+    let suppressClickUntil = 0;
+    handle.addEventListener('click', event => {
+      // A completed swipe may generate a pointer click; keyboard clicks still work.
+      if (event.detail > 0 && performance.now() < suppressClickUntil) return;
+      setSheetCollapsed(sheet, !sheet.classList.contains('is-collapsed'));
+    });
+    handle.addEventListener('pointerdown', event => {
+      if (!event.isPrimary || event.button !== 0) return;
+      suppressClickUntil = 0;
+      drag = {id: event.pointerId, y: event.clientY};
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener('pointerup', event => {
+      if (!drag || drag.id !== event.pointerId) return;
+      const dy = event.clientY - drag.y;
+      drag = null;
+      if (Math.abs(dy) >= 35) {
+        suppressClickUntil = performance.now() + 500;
+        setSheetCollapsed(sheet, dy > 0);
+      }
+    });
+    handle.addEventListener('pointercancel', () => { drag = null; suppressClickUntil = 0; });
+    // Reopening a panel always reveals its controls and any new content.
+    new MutationObserver(() => {
+      if (!sheet.hidden) setSheetCollapsed(sheet, false);
+    }).observe(sheet, {attributes: true, attributeFilter: ['hidden']});
   });
-  routeHandle.addEventListener('pointerdown', event => {
-    if (!event.isPrimary || event.button !== 0) return;
-    suppressHandleClick = false;
-    routeHandleDrag = {id: event.pointerId, y: event.clientY};
-    routeHandle.setPointerCapture(event.pointerId);
-  });
-  routeHandle.addEventListener('pointerup', event => {
-    if (!routeHandleDrag || routeHandleDrag.id !== event.pointerId) return;
-    const dy = event.clientY - routeHandleDrag.y;
-    routeHandleDrag = null;
-    if (Math.abs(dy) >= 35) {
-      suppressHandleClick = true;
-      setRouteSheetCollapsed(dy > 0);
-    }
-  });
-  routeHandle.addEventListener('pointercancel', () => { routeHandleDrag = null; suppressHandleClick = false; });
 
   el('homeSearchForm').addEventListener('submit', e => {
     e.preventDefault();

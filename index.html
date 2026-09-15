@@ -74,8 +74,8 @@
 
     <!-- Contextual search results sheet. -->
     <section id="resultsSheet" class="bottom-sheet results-sheet" aria-label="Search results" hidden>
-      <div class="grabber" aria-hidden="true"></div>
-      <div class="sheet-heading">
+      <button id="resultsSheetHandle" class="sheet-handle" type="button" data-panel-label="search results" aria-expanded="true" aria-label="Collapse search results"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <div class="sheet-heading sheet-summary">
         <strong id="resultsTitle">Search results</strong>
         <button id="closeResults" class="icon-button small-icon" type="button" aria-label="Close search results">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
@@ -86,8 +86,8 @@
 
     <!-- Selected destination, before calculating directions. -->
     <section id="placeSheet" class="bottom-sheet place-sheet" aria-label="Selected destination" hidden>
-      <div class="grabber" aria-hidden="true"></div>
-      <div class="place-title-row">
+      <button id="placeSheetHandle" class="sheet-handle" type="button" data-panel-label="destination details" aria-expanded="true" aria-label="Collapse destination details"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <div class="place-title-row sheet-summary">
         <div class="place-copy">
           <strong id="placeName">Destination</strong>
           <span id="placeAddress"></span>
@@ -110,7 +110,7 @@
 
     <!-- Compact route preview. -->
     <section id="routeSheet" class="bottom-sheet route-sheet" aria-label="Route preview" hidden>
-      <button id="routeSheetHandle" class="route-sheet-handle" type="button" aria-expanded="true" aria-label="Collapse route details"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <button id="routeSheetHandle" class="sheet-handle" type="button" data-panel-label="route details" aria-expanded="true" aria-label="Collapse route details"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
       <div class="mode-row" role="group" aria-label="Travel mode">
         <button id="cycleBtn" class="mode-chip active" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"></circle><circle cx="18" cy="17" r="3"></circle><path d="m6 17 4-8h4l4 8M9 11h6M11 6h3"></path></svg>
@@ -131,7 +131,7 @@
         <button type="button" data-pref="fastest">Fastest</button>
       </div>
 
-      <div class="route-summary">
+      <div class="route-summary sheet-summary">
         <div>
           <strong id="timeStat">—</strong>
           <span id="arrivalStat">Route preview</span>
@@ -190,8 +190,8 @@
     </section>
 
     <section id="savedSheet" class="bottom-sheet saved-sheet" aria-label="Saved places and offline maps" hidden>
-      <div class="grabber" aria-hidden="true"></div>
-      <div class="sheet-heading">
+      <button id="savedSheetHandle" class="sheet-handle" type="button" data-panel-label="saved places" aria-expanded="true" aria-label="Collapse saved places"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <div class="sheet-heading sheet-summary">
         <strong>Saved places</strong>
         <button id="closeSaved" class="icon-button small-icon" type="button" aria-label="Close saved places">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
@@ -251,8 +251,8 @@
     </div>
 
     <section id="settingsSheet" class="bottom-sheet settings-sheet" aria-label="Settings" hidden>
-      <div class="grabber" aria-hidden="true"></div>
-      <div class="sheet-heading">
+      <button id="settingsSheetHandle" class="sheet-handle" type="button" data-panel-label="settings" aria-expanded="true" aria-label="Collapse settings"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <div class="sheet-heading sheet-summary">
         <strong>Settings</strong>
         <button id="closeSettings" class="icon-button small-icon" type="button" aria-label="Close settings">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
@@ -305,8 +305,8 @@
     </section>
 
     <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
-      <div class="grabber" aria-hidden="true"></div>
-      <div class="install-heading">
+      <button id="installSheetHandle" class="sheet-handle" type="button" data-panel-label="install instructions" aria-expanded="true" aria-label="Collapse install instructions"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <div class="install-heading sheet-summary">
         <img src="./icons/apple-touch-icon.png" width="64" height="64" alt="" aria-hidden="true" />
         <div><strong>Install MK Redway</strong><span>Keep it on your Home Screen like an app.</span></div>
         <button id="closeInstall" class="icon-button small-icon" type="button" aria-label="Close install instructions">

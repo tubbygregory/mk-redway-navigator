@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.4
+
+- Make every panel handle support swipe, tap and keyboard collapse/expand: search results, destination, route, Saved, Settings and installation.
+- Keep panel titles or route summaries visible when collapsed and expand panels when reopened.
+- Verify every handle using touch input in mobile browser release checks.
+
 ## 0.12.3
 
 - Give starting-point and destination search an unobstructed view and explicit search buttons.
