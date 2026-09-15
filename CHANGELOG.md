@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.5
+
+- Prevent delayed current-location responses from replacing a manually searched starting point or interrupting endpoint searches.
+- Cancel obsolete location requests when leaving the planner or moving the start pin.
+- Preserve endpoint search text while results are open and verify delayed-location behaviour in mobile browser tests.
+
 ## 0.12.4
 
 - Make every panel handle support swipe, tap and keyboard collapse/expand: search results, destination, route, Saved, Settings and installation.

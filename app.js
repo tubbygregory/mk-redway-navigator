@@ -18,6 +18,11 @@
 
   const el = id => document.getElementById(id);
   let searchRevision = 0;
+  let startLocationRevision = 0;
+  function cancelStartLocation() {
+    startLocationRevision += 1;
+    el('useLocationBtn').disabled = false;
+  }
   let sheetGestureUntil = 0;
   const map = L.map('map', {
     zoomControl: false,
@@ -138,6 +143,7 @@
   window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 
   function setStage(stage) {
+    if (stage !== 'planner') cancelStartLocation();
     state.stage = stage;
     state.plannerSearchOpen = false;
     searchRevision += 1;
@@ -339,6 +345,7 @@
   }
 
   function setPoint(which, latlng, label = '', address = '') {
+    if (which === 'start') cancelStartLocation();
     state[which] = L.latLng(latlng.lat, latlng.lng);
     state[`${which}Label`] = label || fmtCoord(state[which]);
     if (which === 'end') state.endAddress = address || label || '';
@@ -348,10 +355,10 @@
   }
 
   function updatePlannerFields() {
-    if (document.activeElement !== el('startSearch')) {
+    if (document.activeElement !== el('startSearch') && !(state.plannerSearchOpen && state.searchContext === 'start')) {
       el('startSearch').value = state.start ? (state.startLabel || 'Your location') : '';
     }
-    if (document.activeElement !== el('endSearch')) {
+    if (document.activeElement !== el('endSearch') && !(state.plannerSearchOpen && state.searchContext === 'end')) {
       el('endSearch').value = state.end ? state.endLabel : '';
     }
   }
@@ -465,6 +472,7 @@
 
   function openPlannerSearch(context) {
     if (state.stage !== 'planner') return;
+    if (context === 'start') cancelStartLocation();
     searchRevision += 1;
     setRouteSheetCollapsed(false);
     state.plannerSearchOpen = true;
@@ -722,21 +730,26 @@
   }
 
   async function useCurrentLocation({ calculate = true } = {}) {
+    if (state.plannerSearchOpen) closeSearch();
+    const revision = ++startLocationRevision;
     el('useLocationBtn').disabled = true;
     setRouteStatus('Getting your current location…');
     try {
       const pos = await acquireCurrentLocation();
+      // A manual search, pin, newer request or departure from the planner wins.
+      if (revision !== startLocationRevision || state.stage !== 'planner') return false;
       setPoint('start', pos.latlng, 'Your location');
       map.setView(pos.latlng, 15);
       if (calculate) maybeCalculateRoute();
-      return pos.latlng;
+      return true;
     } catch (err) {
+      if (revision !== startLocationRevision || state.stage !== 'planner') return false;
       console.error(err);
       setRouteStatus('Location unavailable. Search for the starting address or postcode instead.', 'warn');
       toast('Location unavailable — enter a starting point');
-      return null;
+      return true;
     } finally {
-      el('useLocationBtn').disabled = false;
+      if (revision === startLocationRevision) el('useLocationBtn').disabled = false;
     }
   }
 
@@ -745,8 +758,8 @@
   el('directionsBtn').addEventListener('click', async () => {
     setStage('planner');
     updatePlannerFields();
-    if (!state.start) await useCurrentLocation({ calculate: false });
-    maybeCalculateRoute();
+    if (!state.start && !await useCurrentLocation({ calculate: false })) return;
+    if (state.stage === 'planner' && !state.plannerSearchOpen) maybeCalculateRoute();
   });
 
   el('plannerBack').addEventListener('click', () => {
@@ -1159,6 +1172,7 @@
   el('retryRouteBtn').addEventListener('click', () => calculateRoute());
   for (const which of ['start','end']) {
     el(which === 'start' ? 'moveStartBtn' : 'moveEndBtn').addEventListener('click', () => {
+      if (which === 'start') cancelStartLocation();
       state.editEndpoint = which;
       setRouteStatus(`Tap an accessible ${which === 'start' ? 'starting point' : 'destination entrance'} on the map.`, 'warn');
       toast('Tap the map to place the entrance', 5000);

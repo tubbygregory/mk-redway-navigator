@@ -181,11 +181,72 @@ def review(browser, url, live=False):
     print("PASS PWA: " + url + " mobile, settings, modes, navigation, SW and offline routing/map")
     context.close()
 
+
+def review_delayed_location(browser, url):
+    """A late GPS result must never replace a manually chosen start."""
+    context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+    context.add_init_script("""(() => {
+      const pending = [];
+      Object.defineProperty(navigator.geolocation, 'getCurrentPosition', {
+        value: (success, failure) => pending.push({success, failure})
+      });
+      window.finishTestLocation = (succeeded) => {
+        const request = pending.shift();
+        if (!request) throw new Error('No pending location request');
+        if (succeeded) request.success({coords: {latitude: 52.0467, longitude: -.7378, accuracy: 10}});
+        else request.failure({code: 1, message: 'Test location denied'});
+      };
+    })();""")
+    page = context.new_page()
+    page.set_default_timeout(45000)
+    page.route("**/nominatim.openstreetmap.org/search?*", lambda route: route.fulfill(
+        json=[{"lat": "52.0345", "lon": "-0.774", "name": "Station entrance",
+               "display_name": "Station entrance, Milton Keynes"}]))
+    page.goto(url, wait_until="networkidle")
+    page.get_by_role("button", name="Got it", exact=True).click()
+    expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
+    page.get_by_role("searchbox", name="Search for a destination", exact=True).fill("52.025,-0.783")
+    page.get_by_role("button", name="Search", exact=True).click()
+    page.get_by_role("button", name="Map coordinates", exact=False).click()
+    page.get_by_role("button", name="Directions", exact=True).click()
+    start = page.get_by_role("searchbox", name="Starting location", exact=True)
+    start.fill("Station entrance")
+    page.get_by_role("button", name="Search starting location", exact=True).click()
+    page.locator(".result-item").first.click()
+    expect(start).to_have_value("Station entrance")
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    page.evaluate("window.finishTestLocation(true)")
+    expect(start).to_have_value("Station entrance")
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    capture(page, "manual-start-preserved")
+
+    # A late failure must also leave a new query and its results alone.
+    page.get_by_role("button", name="Use current location", exact=True).click()
+    start.fill("Another station")
+    page.get_by_role("button", name="Search starting location", exact=True).click()
+    expect(page.locator(".result-item").first).to_be_visible()
+    page.evaluate("window.finishTestLocation(false)")
+    expect(start).to_have_value("Another station")
+    expect(page.locator(".result-item").first).to_be_visible()
+    expect(page.locator("#routeSheet")).to_be_hidden()
+
+    # Leaving the planner cancels any outstanding current-location update.
+    page.get_by_role("button", name="Close search results", exact=True).click()
+    page.get_by_role("button", name="Use current location", exact=True).click()
+    page.get_by_role("button", name="Back", exact=True).click()
+    page.evaluate("window.finishTestLocation(true)")
+    expect(page.locator("#placeSheet")).to_be_visible()
+    expect(page.locator("#routeSheet")).to_be_hidden()
+    assert start.input_value() != "Your location"
+    print("PASS manual start: delayed GPS success/failure and leaving planner: " + url)
+    context.close()
+
 def main():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         if os.environ.get("LIVE_URL"):
             review(browser, os.environ["LIVE_URL"], True)
+            review_delayed_location(browser, os.environ["LIVE_URL"])
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 (Path(tmp) / "mk-redway-navigator").symlink_to(ROOT / "dist", target_is_directory=True)
@@ -194,6 +255,7 @@ def main():
                     Thread(target=server.serve_forever, daemon=True).start()
                     try:
                         review(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
+                        review_delayed_location(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
                     finally:
                         server.shutdown()
         browser.close()
