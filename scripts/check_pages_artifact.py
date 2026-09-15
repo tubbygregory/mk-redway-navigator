@@ -15,7 +15,7 @@ with tarfile.open(sys.argv[1]) as archive:
     for member in members:
         if member.isfile() and member.name.endswith((".html", ".md", ".json")):
             content = archive.extractfile(member).read().decode("utf-8")
-            if re.search(r"used with[^.\\n]{0,100}permission|permission[^.\\n]{0,100}confirmed|council_geometry_permission", content, re.I):
+            if re.search(r"used with[^.]{0,100}permission|permission[^.]{0,100}confirmed|council_geometry_permission", content, re.I):
                 raise ValueError(f"Obsolete council source notice in Pages artifact: {member.name}")
 if actual != expected:
     raise ValueError(f"Pages archive differs from validated runtime files: {actual ^ expected}")
