@@ -764,7 +764,7 @@ def main() -> int:
             if route_refs.get(way_id):
                 tags["_mk_route_ref"] = route_refs[way_id]
             if way_id in council_props:
-                tags["_mk_class_source"] = "Get Around MK interactive map (used with council permission) + OSM routable geometry"
+                tags["_mk_class_source"] = "Get Around MK interactive map + OSM routable geometry"
             else:
                 tags["_mk_class_source"] = "Get Around MK designation + OSM geometry" if route_classes[way_id] == "super_redway" else "OSM route metadata"
         compact_ways.append([way_id, compact, tags])
@@ -779,7 +779,6 @@ def main() -> int:
         "council_geometry_source": "https://getaroundmk.org.uk/interactive-map?cycle-paths=1",
         "council_geometry_features": len(council_features),
         "council_geometry_sha256": current_council_hash,
-        "council_geometry_permission": "Used with permission from Milton Keynes City Council as confirmed by the project owner.",
         "classification_sources": rules.get("sources", {}),
         "official_super_routes": [r.get("ref") for r in rules.get("super_routes", [])],
         "nodes": compact_nodes,

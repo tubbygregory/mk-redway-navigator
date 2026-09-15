@@ -6,9 +6,9 @@ The application code's MIT licence does not replace the licences or permissions 
 
 Official Super Redway, Redway and Leisure Route classifications are obtained from the selected KML/KMZ sources referenced by the [Get Around MK interactive map](https://getaroundmk.org.uk/interactive-map). Official corridor references also use [Get Around MK Super Redways](https://getaroundmk.org.uk/cycling/where-to-ride/super-redways).
 
-The project owner has confirmed permission from Milton Keynes City Council to use this data in this project. The permission document and detailed redistribution terms are not published in this repository; this statement does not grant a separate licence to other users. Retain the project attribution:
+Source attribution:
 
-> Official Milton Keynes Redway classifications/geometry: Milton Keynes City Council / Get Around MK, used with permission.
+> Official route classification: Milton Keynes City Council / Get Around MK.
 
 Council geometry is a build input, matched onto connected OSM ways. Raw extraction and diagnostic files are not part of the website artifact. Generic Google Maps rendering data is not used as route geometry.
 

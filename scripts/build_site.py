@@ -2,6 +2,7 @@
 import datetime as dt
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 from urllib.request import urlopen
@@ -15,8 +16,27 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 def read_optional(path):
     return json.loads(path.read_text()) if path.exists() else {}
+def clean_source_notices(value):
+    """Remove obsolete source notices from restored build caches, not geometry."""
+    if isinstance(value, dict):
+        return {key: clean_source_notices(item) for key, item in value.items()
+                if key not in {"permission", "council_geometry_permission"}}
+    if isinstance(value, list):
+        return [clean_source_notices(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"\s*\(used with council [^)]*\)", "", value)
+    return value
+
 def main():
     data = ROOT / "data"
+    for name in ("network.json", "council_routes.geojson", "council-meta.json"):
+        path = data / name
+        if path.exists():
+            original = json.loads(path.read_text())
+            cleaned = clean_source_notices(original)
+            if cleaned != original:
+                path.write_text(json.dumps(cleaned, separators=(",", ":")) + "\n")
+                print(f"Removed obsolete source notices from cached {name}; geometry unchanged.")
     network = json.loads((data / "network.json").read_text())
     counts = validate_network(network)
     council = read_optional(data / "council-meta.json")
