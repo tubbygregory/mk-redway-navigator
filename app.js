@@ -569,16 +569,13 @@
   document.querySelectorAll('.sheet-handle').forEach(handle => {
     const sheet = handle.closest('.bottom-sheet');
     let drag = null;
-    let suppressClickUntil = 0;
-    let swipePointerId = null;
     handle.addEventListener('click', event => {
-      // A completed swipe may generate a pointer click; keyboard clicks still work.
-      if (event.detail > 0 && event.pointerId === swipePointerId && performance.now() < suppressClickUntil) return;
-      setSheetCollapsed(sheet, !sheet.classList.contains('is-collapsed'));
+      // Pointer taps are handled on release: touch browsers may omit click after a swipe.
+      // Native keyboard and assistive activation still use click (detail zero).
+      if (event.detail === 0) setSheetCollapsed(sheet, !sheet.classList.contains('is-collapsed'));
     });
     handle.addEventListener('pointerdown', event => {
       if (!event.isPrimary || event.button !== 0) return;
-      suppressClickUntil = 0;
       drag = {id: event.pointerId, y: event.clientY};
       handle.setPointerCapture(event.pointerId);
     });
@@ -586,13 +583,9 @@
       if (!drag || drag.id !== event.pointerId) return;
       const dy = event.clientY - drag.y;
       drag = null;
-      if (Math.abs(dy) >= 35) {
-        swipePointerId = event.pointerId;
-        suppressClickUntil = performance.now() + 500;
-        setSheetCollapsed(sheet, dy > 0);
-      }
+      setSheetCollapsed(sheet, Math.abs(dy) >= 35 ? dy > 0 : !sheet.classList.contains('is-collapsed'));
     });
-    handle.addEventListener('pointercancel', () => { drag = null; suppressClickUntil = 0; });
+    handle.addEventListener('pointercancel', () => { drag = null; });
     // Reopening a panel always reveals its controls and any new content.
     new MutationObserver(() => {
       if (!sheet.hidden) setSheetCollapsed(sheet, false);
