@@ -570,9 +570,10 @@
     const sheet = handle.closest('.bottom-sheet');
     let drag = null;
     let suppressClickUntil = 0;
+    let swipePointerId = null;
     handle.addEventListener('click', event => {
       // A completed swipe may generate a pointer click; keyboard clicks still work.
-      if (event.detail > 0 && performance.now() < suppressClickUntil) return;
+      if (event.detail > 0 && event.pointerId === swipePointerId && performance.now() < suppressClickUntil) return;
       setSheetCollapsed(sheet, !sheet.classList.contains('is-collapsed'));
     });
     handle.addEventListener('pointerdown', event => {
@@ -586,6 +587,7 @@
       const dy = event.clientY - drag.y;
       drag = null;
       if (Math.abs(dy) >= 35) {
+        swipePointerId = event.pointerId;
         suppressClickUntil = performance.now() + 500;
         setSheetCollapsed(sheet, dy > 0);
       }
