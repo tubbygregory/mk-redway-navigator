@@ -18,6 +18,7 @@
 
   const el = id => document.getElementById(id);
   let searchRevision = 0;
+  let sheetGestureUntil = 0;
   const map = L.map('map', {
     zoomControl: false,
     attributionControl: true,
@@ -579,17 +580,24 @@
       // Resizing moves the sheet away from the finger. Suppress compatibility
       // mouse events so they cannot activate the newly exposed map underneath.
       event.preventDefault();
+      sheetGestureUntil = performance.now() + 700;
       handle.focus({preventScroll: true});
       drag = {id: event.pointerId, y: event.clientY};
       handle.setPointerCapture(event.pointerId);
     });
     handle.addEventListener('pointerup', event => {
       if (!drag || drag.id !== event.pointerId) return;
+      sheetGestureUntil = performance.now() + 700;
       const dy = event.clientY - drag.y;
       drag = null;
       setSheetCollapsed(sheet, Math.abs(dy) >= 35 ? dy > 0 : !sheet.classList.contains('is-collapsed'));
     });
     handle.addEventListener('pointercancel', () => { drag = null; });
+    handle.addEventListener('touchstart', event => event.stopPropagation(), {passive: true});
+    handle.addEventListener('touchend', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    }, {passive: false});
     // Reopening a panel always reveals its controls and any new content.
     new MutationObserver(() => {
       if (!sheet.hidden) setSheetCollapsed(sheet, false);
@@ -680,6 +688,8 @@
   });
 
   map.on('click', e => {
+    // Mobile map libraries may synthesise a delayed click after sheet resizing.
+    if (performance.now() < sheetGestureUntil || e.originalEvent?.target?.closest?.('.bottom-sheet')) return;
     if (state.navigating) return;
     if (state.editEndpoint) {
       const which = state.editEndpoint; state.editEndpoint = null;
