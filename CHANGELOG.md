@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.6
+
+- Remove unsupported council-permission claims while retaining source attribution and the independent-project notice.
+- Add a concise route/navigation bug-report template with a privacy reminder.
+- Prepare the first formal beta release; navigation behaviour remains unchanged.
+
 ## 0.12.5
 
 - Check for updates when the app resumes or reconnects; provide a Settings update check and explicit reload without interrupting navigation.
@@ -64,7 +70,7 @@ Parse council KML/KMZ sources instead of interpreting Google internal vector tra
 
 ## 0.10.2
 
-Integrate council geometry with permission confirmed by the project owner. Use Geofabrik Buckinghamshire data for local OSM builds and retain last-known-good data on source outages.
+Integrate council geometry. Use Geofabrik Buckinghamshire data for local OSM builds and retain last-known-good data on source outages.
 
 ## 0.10.0
 

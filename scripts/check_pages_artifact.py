@@ -1,6 +1,7 @@
 """Check the actual upload-pages-artifact tar before permitting deployment."""
 from pathlib import Path
 import sys
+import re
 import tarfile
 
 root = Path(__file__).resolve().parents[1] / "dist"
@@ -11,6 +12,11 @@ with tarfile.open(sys.argv[1]) as archive:
     if any(not (member.isfile() or member.isdir()) for member in members):
         raise ValueError("Unexpected links or special files in Pages artifact")
     actual = {member.name.removeprefix("./") for member in members if member.isfile()}
+    for member in members:
+        if member.isfile() and member.name.endswith((".html", ".md", ".json")):
+            content = archive.extractfile(member).read().decode("utf-8")
+            if re.search(r"used with[^.]{0,100}permission|permission[^.]{0,100}confirmed|council_geometry_permission", content, re.I):
+                raise ValueError(f"Obsolete council source notice in Pages artifact: {member.name}")
 if actual != expected:
     raise ValueError(f"Pages archive differs from validated runtime files: {actual ^ expected}")
 print(f"PASS actual Pages archive: {len(actual)} runtime files; no build/source inputs")

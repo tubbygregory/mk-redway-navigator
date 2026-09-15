@@ -230,7 +230,6 @@ def main() -> int:
             "type": "FeatureCollection",
             "name": "Get Around MK official cycle-path classifications",
             "source": URL,
-            "permission": "Used with permission from Milton Keynes City Council as confirmed by the project owner.",
             "features": features,
         }
         validate_council(payload)

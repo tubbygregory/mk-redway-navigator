@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "professionalism-release"]
+    branches: ["main", "professionalism-release", "cleanup-v0.12.6"]
   workflow_dispatch:
 
 permissions:
@@ -158,3 +158,28 @@ jobs:
         with:
           name: live-mobile-review
           path: test-results/
+
+  release:
+    if: github.ref == 'refs/heads/main'
+    needs: live-review
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Publish v0.12.6 beta release after production verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(cat VERSION)" != "0.12.6" ]; then exit 0; fi
+          if gh release view v0.12.6 >/dev/null 2>&1; then exit 0; fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          Cleanup-only beta release. Navigation behaviour is unchanged from v0.12.5.
+
+          - Remove unsupported council-permission claims, retaining factual attribution and the independent-project notice.
+          - Remove obsolete source notices from cached build metadata.
+          - Add a concise route/navigation bug-report template with a privacy reminder.
+
+          The full data, routing, browser/PWA and Pages-artifact gates passed before deployment, followed by live mobile verification. No raw data or build inputs are attached.
+          NOTES
+          gh release create v0.12.6 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.12.6" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"

@@ -51,7 +51,7 @@ The remaining map/navigation lifecycle stays together deliberately. Further extr
 
 ## Data sources and attribution
 
-Official classification: Milton Keynes City Council / Get Around MK, used with permission as confirmed by the project owner. Routing: © OpenStreetMap contributors, supplied through Geofabrik. Basemap: Protomaps and its upstream data contributors.
+Official classification: Milton Keynes City Council / Get Around MK. Routing: © OpenStreetMap contributors, supplied through Geofabrik. Basemap: Protomaps and its upstream data contributors.
 
 See [DATA-LICENCE.md](DATA-LICENCE.md) for source links and licensing boundaries. This is not an official Milton Keynes City Council service.
 

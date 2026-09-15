@@ -155,6 +155,8 @@ def review(browser, url, live=False):
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
     page.get_by_role("button", name="Check for updates", exact=True).click()
     expect(page.locator("#appUpdateStatus")).to_contain_text("No newer update found")
+    assert "permission" not in page.locator("#aboutData").inner_text().lower()
+    expect(page.locator("#aboutData")).to_contain_text("not an official Milton Keynes City Council service")
     capture(page, "about")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
     page.set_viewport_size({"width": 844, "height": 390})
