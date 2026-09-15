@@ -9,16 +9,15 @@
       : 'Date unavailable';
   };
   async function refresh() {
+    text('aboutVersion', 'Version ' + document.getElementById('app').dataset.appVersion + ' · Beta');
     try {
       const response = await fetch('./data/data-meta.json');
       if (!response.ok) throw new Error('Metadata unavailable');
       const data = await response.json();
-      text('aboutVersion', 'Version ' + data.app_version + ' · Beta');
       text('aboutNetwork', date(data.network.generated_at) + (data.network.stale ? ' · Older saved data' : ''));
       text('aboutMap', date(data.basemap.built_on));
       text('aboutCouncil', ({fresh: 'Latest extraction', cached: 'Last successful extraction', fallback: 'OSM classification fallback'})[data.council.status] || 'Status unavailable');
     } catch (_) {
-      text('aboutVersion', 'MK Redway Navigator · Beta');
       ['aboutNetwork', 'aboutMap', 'aboutCouncil'].forEach(id => text(id, 'Information unavailable'));
     }
     try {

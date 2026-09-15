@@ -95,7 +95,10 @@ def review(browser, url, live=False):
         page.route("**/nominatim.openstreetmap.org/search?*", lambda route: route.fulfill(
             json=[{"lat": "52.0345", "lon": "-0.774", "name": "Test station start",
                    "display_name": "Test station start, Milton Keynes", "type": "station"}]))
-    page.get_by_role("button", name="Search starting location", exact=True).click()
+    if live:
+        search.press("Enter")  # Match the iPhone keyboard submission in the recording.
+    else:
+        page.get_by_role("button", name="Search starting location", exact=True).click()
     expect(page.locator(".result-item").first).to_be_visible()
     expect(page.locator("#routeSheet")).to_be_hidden()
     capture(page, "start-search")
@@ -150,6 +153,8 @@ def review(browser, url, live=False):
     check_panel_handle(page, context, "settingsSheet", ".setting-row")
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
+    page.get_by_role("button", name="Check for updates", exact=True).click()
+    expect(page.locator("#appUpdateStatus")).to_contain_text("No newer update found")
     capture(page, "about")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
     page.set_viewport_size({"width": 844, "height": 390})
@@ -237,7 +242,8 @@ def review_delayed_location(browser, url):
     page.evaluate("window.finishTestLocation(true)")
     expect(page.locator("#placeSheet")).to_be_visible()
     expect(page.locator("#routeSheet")).to_be_hidden()
-    assert start.input_value() != "Your location"
+    page.get_by_role("button", name="Directions", exact=True).click()
+    expect(start).to_have_value("Station entrance")
     print("PASS manual start: delayed GPS success/failure and leaving planner: " + url)
     context.close()
 

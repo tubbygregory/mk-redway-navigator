@@ -2,6 +2,9 @@
 
 ## 0.12.5
 
+- Check for updates when the app resumes or reconnects; provide a Settings update check and explicit reload without interrupting navigation.
+- Show the running app version and bypass the HTTP cache when installing a new app shell.
+
 - Prevent delayed current-location responses from replacing a manually searched starting point or interrupting endpoint searches.
 - Cancel obsolete location requests when leaving the planner or moving the start pin.
 - Preserve endpoint search text while results are open and verify delayed-location behaviour in mobile browser tests.

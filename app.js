@@ -1956,8 +1956,57 @@
   });
 
   // Service worker + initial state ------------------------------------------
+  el('app').dataset.appVersion = '0.12.5';
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
+    const updateArea = document.createElement('div');
+    updateArea.className = 'setting-block';
+    updateArea.innerHTML = '<p id="appUpdateStatus" role="status">App updates are checked when you return online.</p><button id="appUpdateBtn" class="compact-action" type="button">Check for updates</button>';
+    el('settingsSheet').insertBefore(updateArea, el('aboutData'));
+    let registration;
+    let hadController = Boolean(navigator.serviceWorker.controller);
+    let updateReady = false;
+    const ready = () => {
+      updateReady = true;
+      el('appUpdateStatus').textContent = 'An update is ready. Reload when you have finished your journey.';
+      el('appUpdateBtn').textContent = 'Reload updated app';
+      el('appUpdateBtn').disabled = false;
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) {
+        ready();
+        toast('App updated. Open Settings to reload when ready.', 5000);
+      }
+      hadController = true;
+    });
+    async function checkUpdate(manual = false) {
+      if (!registration || updateReady) return;
+      if (!navigator.onLine) {
+        if (manual) el('appUpdateStatus').textContent = 'You are offline. Connect to check for updates.';
+        return;
+      }
+      if (manual) el('appUpdateStatus').textContent = 'Checking for updates…';
+      try {
+        await registration.update();
+        if (!updateReady && manual) el('appUpdateStatus').textContent = registration.installing
+          ? 'Downloading the update…' : 'No newer update found.';
+      } catch (_) {
+        if (manual) el('appUpdateStatus').textContent = 'Could not check for updates. Try again when connected.';
+      }
+    }
+    el('appUpdateBtn').addEventListener('click', () => {
+      if (updateReady) location.reload();
+      else checkUpdate(true);
+    });
+    window.addEventListener('load', async () => {
+      try {
+        registration = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
+        await checkUpdate();
+      } catch (error) { console.warn(error); }
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkUpdate();
+    });
+    window.addEventListener('online', () => checkUpdate());
   }
 
   loadSettings();
