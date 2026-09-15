@@ -23,6 +23,7 @@ def check_panel_handle(page, context, panel_id, body_selector):
     panel = page.locator("#" + panel_id)
     handle = panel.locator(".sheet-handle")
     body = panel.locator(body_selector)
+    stage = page.locator("#app").get_attribute("data-stage")
     touch = context.new_cdp_session(page)
     def swipe(dy):
         box = handle.bounding_box()
@@ -42,6 +43,7 @@ def check_panel_handle(page, context, panel_id, body_selector):
     expect(body).to_be_hidden()
     handle.press("Enter")
     expect(body).to_be_visible()
+    expect(page.locator("#app")).to_have_attribute("data-stage", stage)
     touch.detach()
 
 def review(browser, url, live=False):

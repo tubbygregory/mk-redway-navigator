@@ -576,6 +576,10 @@
     });
     handle.addEventListener('pointerdown', event => {
       if (!event.isPrimary || event.button !== 0) return;
+      // Resizing moves the sheet away from the finger. Suppress compatibility
+      // mouse events so they cannot activate the newly exposed map underneath.
+      event.preventDefault();
+      handle.focus({preventScroll: true});
       drag = {id: event.pointerId, y: event.clientY};
       handle.setPointerCapture(event.pointerId);
     });
