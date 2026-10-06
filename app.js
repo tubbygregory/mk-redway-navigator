@@ -1580,6 +1580,24 @@
     state.userMarker = L.marker(latlng, { icon, interactive: false }).addTo(userLayer);
   }
 
+  function turnIconSvg(kind) {
+    const paths = {
+      straight: '<path d="M12 20V5M7 10l5-5 5 5"></path>',
+      left: '<path d="M20 17v-4a5 5 0 0 0-5-5H6M10 4 6 8l4 4"></path>',
+      right: '<path d="M4 17v-4a5 5 0 0 1 5-5h9M14 4l4 4-4 4"></path>',
+      'slight-left': '<path d="M18 19 8 9M8 15V9h6"></path>',
+      'slight-right': '<path d="m6 19 10-10M10 9h6v6"></path>',
+      'sharp-left': '<path d="M18 20v-8a4 4 0 0 0-4-4H7M11 4 7 8l4 4"></path>',
+      'sharp-right': '<path d="M6 20v-8a4 4 0 0 1 4-4h7M13 4l4 4-4 4"></path>',
+      arrive: '<circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2"></circle>'
+    };
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[kind] || paths.straight}</svg>`;
+  }
+
+  function setTurnIcon(kind) {
+    el('turnIcon').innerHTML = turnIconSvg(kind);
+  }
+
   // Voice guidance ----------------------------------------------------------
   // iOS requires the first speech request to happen synchronously inside a
   // user gesture. Once that first utterance has started, later GPS-triggered
@@ -1783,13 +1801,13 @@
     const remaining = Math.max(0, total - progress);
     const journey = remainingJourney(state.route, progress, latlng, state.start, state.end, state.mode);
     const mins = journey.mins;
-    el('navEta').textContent = arrivalTime(mins);
-    el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(journey.distance)} remaining`;
+    el('navEta').textContent = formatDuration(mins);
+    el('navRemain').textContent = `${formatDistance(journey.distance)} · arrive ${arrivalTime(mins)}`;
 
     const { maneuver, index, next } = activeManeuver(progress);
     if (maneuver) {
       const d = Math.max(0, maneuver.at - progress);
-      el('turnIcon').textContent = maneuver.icon;
+      setTurnIcon(maneuver.icon);
       el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Approaching' : formatTurnDistance(d);
       el('turnText').textContent = maneuver.instruction;
       el('nextTurnText').textContent = next && !maneuver.arrive ? `Then ${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}` : '';
@@ -1875,7 +1893,9 @@
       followNavigationView(current.latlng, state.heading, false)
     ));
     if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
-    el('turnIcon').textContent = '↑';
+    setTurnIcon('straight');
+    el('navEta').textContent = formatDuration(state.route.mins);
+    el('navRemain').textContent = `${formatDistance(state.route.dist)} · arrive ${arrivalTime(state.route.mins)}`;
     el('turnDistance').textContent = 'Start';
     el('turnText').textContent = state.route.initialInstruction;
     el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
@@ -1893,6 +1913,7 @@
     state.watchId = null; state.navigating = false; state.followUser = true;
     resetMapOrientation();
     userLayer.clearLayers();
+    if (state.userLatLng) setUserMarker(state.userLatLng);
     if (!arrived) clearSpeechQueue({ cancelActive: true });
     if (!map.hasLayer(redwayLayer)) redwayLayer.addTo(map);
     redrawMarkers();
@@ -1984,9 +2005,9 @@
     try {
       offlineVectorLayer = window.protomapsL.leafletLayer({
         url: OFFLINE_MAP_URL,
-        flavor: 'light',
+        flavor: darkQuery?.matches ? 'dark' : 'light',
         lang: 'en',
-        attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · <a href="https://protomaps.com/">Protomaps</a>'
+        attribution: '<a href="https://protomaps.com/">Protomaps</a>'
       });
       const previousLayer = baseLayer;
       let switched = false;
@@ -2098,7 +2119,7 @@
   function updateInstallButtonVisibility() {
     const button = el('installAppBtn');
     if (!button) return;
-    button.hidden = appInstalled || state.stage !== 'explore';
+    button.hidden = appInstalled;
   }
 
   function setInstallInstructions() {
@@ -2143,6 +2164,8 @@
 
   function showInstallSheet() {
     setInstallInstructions();
+    el('settingsSheet').hidden = true;
+    el('savedSheet').hidden = true;
     el('installSheet').hidden = false;
   }
 
@@ -2181,7 +2204,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.12.6';
+  el('app').dataset.appVersion = '0.13.0';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -2241,7 +2264,45 @@
   syncUnitControls();
   updatePlannerFields();
   setStage('explore');
-  setTimeout(showSettingsLogoHintOnce, 450);
+  setTurnIcon('straight');
   loadRedways();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
+
+  el('layersBtn').addEventListener('click', () => {
+    const popover = el('mapKeyPopover');
+    popover.hidden = !popover.hidden;
+    el('layersBtn').setAttribute('aria-expanded', String(!popover.hidden));
+  });
+  map.on('movestart', () => {
+    if (!el('mapKeyPopover').hidden) {
+      el('mapKeyPopover').hidden = true;
+      el('layersBtn').setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  (async () => {
+    try {
+      const permission = await navigator.permissions?.query?.({name: 'geolocation'});
+      if (permission?.state === 'granted') {
+        await refreshBrowseLocation({center: false, quiet: true});
+      } else {
+        const seen = localStorage.getItem(LOCATION_HINT_KEY) === '1';
+        if (!seen) {
+          localStorage.setItem(LOCATION_HINT_KEY, '1');
+          setTimeout(() => toast('Use the location button to show where you are. Location is only used for routing and navigation.', 5200), 700);
+        }
+      }
+    } catch (_) {}
+  })();
+
+  darkQuery?.addEventListener?.('change', () => {
+    document.documentElement.dataset.theme = darkQuery.matches ? 'dark' : 'light';
+    if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
+  });
 })();
