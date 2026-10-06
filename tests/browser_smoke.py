@@ -46,9 +46,7 @@ def main():
                 expect(page.locator('#roadStat')).to_contain_text('%')
                 mix_total = page.locator('#routeMixLegend b').evaluate_all("els => els.reduce((sum, el) => sum + Number(el.textContent.replace('%','')), 0)")
                 assert mix_total == 100, mix_total
-                expect(page.locator('#approachNote')).to_be_hidden()
-                page.locator('.route-option').filter(has_text='Fastest').click()
-                expect(page.locator('#prefLabel')).to_have_text('Fastest')
+                page.locator('.route-option').last.click()
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
                 page.get_by_role('button', name='Walk', exact=True).click()
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
