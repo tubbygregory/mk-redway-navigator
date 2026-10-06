@@ -58,11 +58,15 @@ def review(browser, url, live=False):
     page.on("request", lambda req: external_shell.append(req.url) if "unpkg.com" in req.url else None)
     page.goto(url, wait_until="networkidle")
     capture(page, "first-run")
-    page.get_by_role("button", name="Got it", exact=True).click()
+    expect(page.locator("#visibleSettingsBtn")).to_be_visible()
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
     page.evaluate("async () => { await navigator.serviceWorker.ready; if (!navigator.serviceWorker.controller) await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, {once:true})); }")
     assert page.evaluate("navigator.serviceWorker.controller !== null")
     capture(page, "map")
+    expect(page.get_by_role("button", name="Show my location", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Show my location", exact=True).click()
+    expect(page.locator(".user-pulse")).to_be_visible()
+    page.locator("#visibleSettingsBtn").click()
     page.get_by_role("button", name="Install MK Redway as an app", exact=True).click()
     expect(page.locator("#installSheet")).to_be_visible()
     check_panel_handle(page, context, "installSheet", "#installSteps")
@@ -84,6 +88,9 @@ def review(browser, url, live=False):
     plan(page, "52.0467,-0.7378", "52.025,-0.783")
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     assert page.locator("#timeStat").bounding_box()["height"] < 40, "Journey time wraps"
+    mix_total = page.locator("#routeMixLegend b").evaluate_all("els => els.reduce((sum, el) => sum + Number(el.textContent.replace('%','')), 0)")
+    assert mix_total == 100, mix_total
+    expect(page.locator("#routeSheetHandle")).to_have_attribute("aria-expanded", "false")
     capture(page, "route")
 
     # Edit an explicit start while a route panel is already visible.
@@ -121,11 +128,6 @@ def review(browser, url, live=False):
         touch.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
         touch.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x, "y": y + dy}]})
         touch.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
-    swipe_handle(55)
-    expect(page.locator("#routeSheetHandle")).to_have_attribute("aria-expanded", "false")
-    expect(page.locator("#timeStat")).to_be_visible()
-    expect(page.locator("#routeAlternatives")).to_be_hidden()
-    capture(page, "route-collapsed")
     swipe_handle(-55)
     expect(page.locator("#routeSheetHandle")).to_have_attribute("aria-expanded", "true")
     expect(page.locator("#routeAlternatives")).to_be_visible()
@@ -134,11 +136,14 @@ def review(browser, url, live=False):
     expect(page.locator("#routeAlternatives")).to_be_visible()
     touch.detach()
 
-    for name in ("Balanced", "Fastest", "Max Redway"):
-        page.locator(".route-option").filter(has_text=name).click()
+    options = page.locator(".route-option")
+    assert 1 <= options.count() <= 3
+    for i in range(options.count()):
+        options.nth(i).click()
         expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Walk", exact=True).click()
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    expect(page.locator("#prefBtn")).to_be_hidden()
     page.get_by_role("button", name="Start", exact=True).click()
     expect(page.locator("#navBanner")).to_be_visible()
     page.wait_for_timeout(3000)  # Inspect the settled camera and asynchronous tiles.
@@ -148,8 +153,9 @@ def review(browser, url, live=False):
     assert abs(marker["y"] + marker["height"] / 2 - 844 * .58) < 55, marker
     capture(page, "navigation")
     page.get_by_role("button", name="Exit", exact=True).click()
-    page.get_by_role("button", name="Clear", exact=True).click()
-    page.get_by_role("button", name="Open settings", exact=True).click()
+    page.get_by_role("button", name="More", exact=True).click()
+    page.get_by_role("button", name="Clear route", exact=True).click()
+    page.locator("#visibleSettingsBtn").click()
     check_panel_handle(page, context, "settingsSheet", ".setting-row")
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
@@ -161,9 +167,7 @@ def review(browser, url, live=False):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Horizontal overflow"
     page.set_viewport_size({"width": 844, "height": 390})
     expect(page.get_by_role("button", name="Close settings", exact=True)).to_be_visible()
-    saved = page.locator("#savedPlacesBtn").bounding_box()
-    install = page.locator("#installAppBtn").bounding_box()
-    assert install["x"] + install["width"] <= saved["x"], "Landscape map buttons overlap"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Landscape settings overflow"
     capture(page, "landscape-settings")
     page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_role("button", name="Close settings", exact=True).click()
