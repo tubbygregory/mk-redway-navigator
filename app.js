@@ -54,6 +54,38 @@
   const INSTALL_OFFER_KEY = 'mk-redway-install-offer-v1';
   const LOCATION_HINT_KEY = 'mk-redway-location-hint-v1';
   const CULTURAL_ROUTES_URL = 'https://getaroundmk.org.uk/cycling/where-to-ride/cultural-routes';
+  const CULTURAL_ROUTES = [
+    {
+      id: 'blue', color: 'Blue', title: 'Ancient & Modern Milton Keynes', fullMiles: 10, shortMiles: 5,
+      tags: ['heritage'], highlights: ['Great Linford', 'Campbell Park', 'Concrete Cows', 'Bradwell Windmill'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-short.gpx'
+    },
+    {
+      id: 'yellow', color: 'Yellow', title: 'Cars, Boats & Trains', fullMiles: 9.4, shortMiles: 5,
+      tags: ['heritage','lakes'], highlights: ['Newport Pagnell', 'Tongwell Lake', 'Willen Lake'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-short.gpx'
+    },
+    {
+      id: 'green', color: 'Green', title: 'Rivers, Lakes & Dinosaurs', fullMiles: 10.1, shortMiles: 5,
+      tags: ['lakes'], highlights: ['Open University', 'Grand Union Canal', 'Peartree Bridge'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-short.gpx'
+    },
+    {
+      id: 'iron', color: 'Iron', title: 'Romans, Rivers, Trams & Trains', fullMiles: 9.5, shortMiles: 5,
+      tags: ['heritage'], highlights: ['Wolverton Mill', 'Iron Trunk Aqueduct', 'Bancroft', 'Stony Stratford'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-short.gpx'
+    },
+    {
+      id: 'cornflower', color: 'Cornflower', title: 'Woods, Frogs & a Toot', fullMiles: 8.2, shortMiles: 4,
+      tags: ['lakes'], highlights: ['Shenley Toot', 'Howe Park Wood', 'Teardrop Lakes', 'Furzton Lake'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-short.gpx'
+    }
+  ];
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
