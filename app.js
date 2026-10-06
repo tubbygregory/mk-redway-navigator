@@ -909,6 +909,8 @@
     state.mode = mode;
     el('cycleBtn').classList.toggle('active', mode === 'cycle');
     el('walkBtn').classList.toggle('active', mode === 'walk');
+    el('prefBtn').hidden = true;
+    el('prefMenu').hidden = true;
     invalidateRoute();
     maybeCalculateRoute();
   }
@@ -1110,7 +1112,8 @@
       const current = state.userLatLng || state.start;
       const journey = remainingJourney(state.route, state.navProgressMeters, current, state.start, state.end, state.mode);
       const remaining = journey.distance, mins = journey.mins;
-      el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(remaining)} remaining`;
+      el('navEta').textContent = formatDuration(mins);
+      el('navRemain').textContent = `${formatDistance(remaining)} · arrive ${arrivalTime(mins)}`;
       const { maneuver } = activeManeuver(state.navProgressMeters);
       if (maneuver) {
         const d = Math.max(0, maneuver.at - state.navProgressMeters);
@@ -1167,21 +1170,68 @@
     return state.networkSource === 'bundled' ? 'Route ready' : 'Route ready · Online data';
   }
 
+  const MIX_LABELS = {
+    superredway: 'Super Redway',
+    redway: 'Redway',
+    leisure: 'Leisure',
+    shared: 'Shared path',
+    road: 'Road'
+  };
+
+  function renderRouteMix(plan) {
+    const mix = plan?.mixPercent;
+    const wrapper = el('routeMix');
+    const bar = el('routeMixBar');
+    const legend = el('routeMixLegend');
+    bar.replaceChildren();
+    legend.replaceChildren();
+    if (!mix) {
+      wrapper.hidden = true;
+      return;
+    }
+    wrapper.hidden = false;
+    for (const key of ['superredway', 'redway', 'leisure', 'shared', 'road']) {
+      const value = Number(mix[key] || 0);
+      if (!value) continue;
+      const segment = document.createElement('span');
+      segment.className = `route-mix-segment mix-${key}`;
+      segment.style.width = `${value}%`;
+      segment.title = `${MIX_LABELS[key]} ${value}%`;
+      bar.appendChild(segment);
+
+      const item = document.createElement('span');
+      item.innerHTML = `<i class="mix-dot mix-${key}"></i><b>${value}%</b> ${MIX_LABELS[key]}`;
+      legend.appendChild(item);
+    }
+  }
+
   function renderAlternatives() {
-    const container = el('routeAlternatives'); container.replaceChildren();
+    const container = el('routeAlternatives');
+    container.replaceChildren();
     if (state.mode !== 'cycle') return;
     for (const option of state.alternatives) {
-      const button = document.createElement('button'); button.type = 'button';
-      button.className = 'route-option' + (option.pref === state.pref ? ' selected' : '');
-      button.setAttribute('aria-pressed', String(option.pref === state.pref));
-      const title = document.createElement('strong'); title.textContent = PREF_LABEL[option.pref];
+      const prefs = option.prefs || [option.pref];
+      const selectedHere = prefs.includes(state.pref);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'route-option' + (selectedHere ? ' selected' : '');
+      button.setAttribute('aria-pressed', String(selectedHere));
+      const title = document.createElement('strong');
+      title.textContent = prefs.map(pref => PREF_LABEL[pref]).join(' / ');
       const detail = document.createElement('span');
-      detail.textContent = option.error ? 'No route' : `${formatDistance(option.dist)} · ${formatDuration(option.mins)} · ${option.roadPercent}% road`;
-      button.append(title, detail); button.disabled = Boolean(option.error) || state.routing;
+      detail.textContent = option.error
+        ? 'No route'
+        : `${formatDuration(option.mins)} · ${formatDistance(option.dist)} · ${option.roadPercent}% road${prefs.length > 1 ? ' · same route' : ''}`;
+      button.append(title, detail);
+      button.disabled = Boolean(option.error) || state.routing;
       button.addEventListener('click', () => {
-        state.pref = option.pref; el('prefLabel').textContent = PREF_LABEL[option.pref];
-        document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('active', b.dataset.pref === option.pref));
-        invalidateRoute(); maybeCalculateRoute();
+        state.pref = prefs.includes(state.pref) ? state.pref : prefs[0];
+        el('prefLabel').textContent = PREF_LABEL[state.pref];
+        document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('active', b.dataset.pref === state.pref));
+        if (option.plan) {
+          installRoute(option.plan, {fit: true, collapse: false});
+          renderAlternatives();
+        }
       });
       container.append(button);
     }
@@ -1189,14 +1239,29 @@
 
   function renderApproachNote() {
     const route = state.route, note = el('approachNote');
-    note.hidden = !route || route.approachDist < 5;
-    if (!route) return;
-    note.textContent = `Approaches: ${formatDistance(route.snaps.start)} at the start, ${formatDistance(route.snaps.end)} at the destination. Dashed approaches are unverified; check access. Totals include walking these gaps.`;
+    const startGap = route?.snaps?.start || 0;
+    const endGap = route?.snaps?.end || 0;
+    const significant = Math.max(startGap, endGap) > 50;
+    note.hidden = !route || !significant;
+    if (!route || !significant) return;
+    const messages = [];
+    if (startGap > 50) messages.push(`The first ${formatDistance(startGap)} isn't a mapped path`);
+    if (endGap > 50) messages.push(`The last ${formatDistance(endGap)} isn't a mapped path`);
+    note.textContent = `${messages.join('. ')}. Check that you can get through.`;
   }
 
-  function installRoute(plan, { fit = true } = {}) {
+  function installOfferSeen() {
+    try { return localStorage.getItem(INSTALL_OFFER_KEY) === '1'; } catch (_) { return true; }
+  }
+
+  function offerInstallOnce() {
+    if (appInstalled || installOfferSeen()) return;
+    try { localStorage.setItem(INSTALL_OFFER_KEY, '1'); } catch (_) {}
+    setTimeout(() => toast('Tip: install MK Redway from Settings for quicker access.', 4200), 900);
+  }
+
+  function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
     state.route = plan;
-    setRouteSheetCollapsed(false);
     drawRoute(plan.coords, fit);
     el('timeStat').textContent = formatDuration(plan.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
@@ -1204,24 +1269,37 @@
     el('redwayStat').textContent = `${plan.redwayPercent}%`;
     el('roadStat').textContent = `${plan.roadPercent}%`;
     el('startNavBtn').disabled = false;
+    renderRouteMix(plan);
     renderApproachNote();
     setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
+    setRouteSheetCollapsed(collapse);
+    offerInstallOnce();
   }
 
   async function solveRouteOnNetwork(parsed, { fit = true } = {}) {
     const revision = state.routeRevision;
     const {start, end, mode, pref, endLabel} = state;
     const choices = mode === 'cycle' && !state.navigating ? ['maximum', 'balanced', 'fastest'] : [pref];
-    const alternatives = []; let selected = null, selectedError;
+    const alternatives = [];
+    const bySignature = new Map();
+    let selected = null, selectedError;
     for (const choice of choices) {
       await sleep(0);
       if (revision !== state.routeRevision) return;
       try {
         const plan = planRoute(parsed, getGraph(parsed, mode, choice), start, end, mode, endLabel);
-        alternatives.push({pref:choice, dist:plan.dist, mins:plan.mins, roadPercent:plan.roadPercent});
+        const signature = plan.result.ids.join('|');
+        const duplicate = bySignature.get(signature);
+        if (duplicate) {
+          duplicate.prefs.push(choice);
+        } else {
+          const option = {pref: choice, prefs: [choice], plan, dist: plan.dist, mins: plan.mins, roadPercent: plan.roadPercent};
+          alternatives.push(option);
+          bySignature.set(signature, option);
+        }
         if (choice === pref) selected = plan;
       } catch (err) {
-        alternatives.push({pref:choice,error:true});
+        alternatives.push({pref: choice, prefs: [choice], error: true});
         if (choice === pref) selectedError = err;
       }
     }
@@ -1229,7 +1307,7 @@
     state.graphCache.clear(); // Keep only the selected plan's graph after comparing routes.
     state.alternatives = alternatives;
     if (!selected) throw selectedError || new Error('No route');
-    installRoute(selected, {fit}); renderAlternatives();
+    installRoute(selected, {fit, collapse: window.innerWidth < 900}); renderAlternatives();
   }
 
   function expandedBox(box, factor = 1.8) {
@@ -1307,16 +1385,26 @@
   }
 
   el('retryRouteBtn').addEventListener('click', () => calculateRoute());
+  el('routeMoreBtn').addEventListener('click', () => {
+    const menu = el('routeMoreMenu');
+    menu.hidden = !menu.hidden;
+    el('routeMoreBtn').setAttribute('aria-expanded', String(!menu.hidden));
+    if (!menu.hidden) setRouteSheetCollapsed(false);
+  });
   for (const which of ['start','end']) {
     el(which === 'start' ? 'moveStartBtn' : 'moveEndBtn').addEventListener('click', () => {
       if (which === 'start') cancelStartLocation();
       state.editEndpoint = which;
+      el('routeMoreMenu').hidden = true;
+      el('routeMoreBtn').setAttribute('aria-expanded', 'false');
       setRouteStatus(`Tap an accessible ${which === 'start' ? 'starting point' : 'destination entrance'} on the map.`, 'warn');
       toast('Tap the map to place the entrance', 5000);
     });
   }
 
   el('clearBtn').addEventListener('click', () => {
+    el('routeMoreMenu').hidden = true;
+    el('routeMoreBtn').setAttribute('aria-expanded', 'false');
     stopNavigation({ keepRoute: false });
     state.editEndpoint = null;
     state.start = null; state.end = null; state.startLabel = ''; state.endLabel = ''; state.endAddress = '';
