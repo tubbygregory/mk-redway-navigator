@@ -2518,6 +2518,7 @@
 
     state.navigating = true;
     state.followUser = true;
+    applyTheme();
     resetNavigationProgress();
     redrawMarkers();
     setStage('navigation');
@@ -2550,6 +2551,7 @@
   function stopNavigation({ keepRoute = true, arrived = false } = {}) {
     if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null; state.navigating = false; state.followUser = true;
+    applyTheme();
     resetMapOrientation();
     userLayer.clearLayers();
     if (state.userLatLng) setUserMarker(state.userLatLng);
@@ -2644,7 +2646,7 @@
     try {
       offlineVectorLayer = window.protomapsL.leafletLayer({
         url: OFFLINE_MAP_URL,
-        flavor: darkQuery?.matches ? 'dark' : 'light',
+        flavor: ['dark','high-contrast'].includes(effectiveTheme()) ? 'dark' : 'light',
         lang: 'en',
         attribution: '<a href="https://protomaps.com/">Protomaps</a>'
       });
