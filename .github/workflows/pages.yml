@@ -167,19 +167,19 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.13.0 beta release after production verification
+      - name: Publish v0.13.1 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$(cat VERSION)" != "0.13.0" ]; then exit 0; fi
-          if gh release view v0.13.0 >/dev/null 2>&1; then exit 0; fi
+          if gh release view v0.13.1 >/dev/null 2>&1; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Interface and usability release based on the October 2026 independent design review.
+          Dark-mode hotfix for installed iOS web apps.
 
-          - Make map browsing calmer and safer with long-press pins, browse-time location controls, visible settings and a layers key.
-          - Make route choices easier to understand with a complete route mix, duplicate-route merging and a compact mobile preview.
-          - Add system dark mode, SVG guidance icons, improved navigation hierarchy, clearer reporting links and desktop map controls.
+          - Remove the white Saved pill caused by legacy light-only CSS.
+          - Make the Home Screen bottom-edge viewport blend follow system dark mode.
+          - Add an installed-iOS dark-shell regression check to the release gate.
 
-          The full data, routing, browser/PWA and Pages-artifact gates passed before deployment, followed by live mobile verification.
+          The normal build, routing, browser/PWA, deployment and live-review gates must pass before publication.
           NOTES
-          gh release create v0.13.0 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.13.0" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create v0.13.1 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.13.1" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
