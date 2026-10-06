@@ -66,6 +66,11 @@ def review(browser, url, live=False):
     expect(page.get_by_role("button", name="Show my location", exact=True)).to_be_visible()
     page.get_by_role("button", name="Show my location", exact=True).click()
     expect(page.locator(".user-pulse")).to_be_visible()
+    page.get_by_role("button", name="Explore", exact=True).click()
+    expect(page.locator("#exploreSheet")).to_be_visible()
+    expect(page.locator(".cultural-route-card")).to_have_count(5)
+    capture(page, "explore")
+    page.get_by_role("button", name="Close Explore Milton Keynes", exact=True).click()
     page.locator("#visibleSettingsBtn").click()
     page.get_by_role("button", name="Install MK Redway as an app", exact=True).click()
     expect(page.locator("#installSheet")).to_be_visible()
@@ -161,6 +166,9 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="Clear route", exact=True).click()
     page.locator("#visibleSettingsBtn").click()
     check_panel_handle(page, context, "settingsSheet", ".setting-row:not(.install-setting)")
+    page.get_by_role("button", name="High contrast", exact=True).click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "high-contrast")
+    page.get_by_role("button", name="System", exact=True).click()
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
     page.get_by_role("button", name="Check for updates", exact=True).click()
@@ -217,6 +225,10 @@ def review_dark_shell(browser, url):
     page.goto(url, wait_until="networkidle")
     expect(page.locator("html")).to_have_class(__import__("re").compile(r".*ios-standalone.*"))
     expect(page.locator("#savedPlacesBtn")).to_be_visible()
+    expect(page.locator("#locationIntro")).to_be_visible()
+    expect(page.locator("#locationIntro")).to_contain_text("Location is used on this device")
+    page.get_by_role("button", name="Not now", exact=True).click()
+    expect(page.locator("#locationIntro")).to_be_hidden()
 
     styles = page.evaluate("""() => {
       const saved = getComputedStyle(document.querySelector('#savedPlacesBtn'));
