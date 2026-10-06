@@ -218,7 +218,7 @@ def review_delayed_location(browser, url):
         json=[{"lat": "52.0345", "lon": "-0.774", "name": "Station entrance",
                "display_name": "Station entrance, Milton Keynes"}]))
     page.goto(url, wait_until="networkidle")
-    page.get_by_role("button", name="Got it", exact=True).click()
+    expect(page.locator("#visibleSettingsBtn")).to_be_visible()
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
     page.get_by_role("searchbox", name="Search for a destination", exact=True).fill("52.025,-0.783")
     page.get_by_role("button", name="Search", exact=True).click()
