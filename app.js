@@ -2017,7 +2017,8 @@
         if (previousLayer && previousLayer !== offlineVectorLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
         baseLayer = offlineVectorLayer;
       };
-      offlineVectorLayer.on?.('tileload', finishSwitch);
+      // Keep the complete raster fallback visible until the vector layer has
+      // finished the current view; switching on the first tile creates a patchwork.
       offlineVectorLayer.on?.('load', finishSwitch);
       offlineVectorLayer.addTo(map);
       setTimeout(() => {
