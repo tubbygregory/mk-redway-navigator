@@ -44,7 +44,6 @@ def main():
                 plan(page, '52.0467,-0.7378', '52.025,-0.783')
                 expect(page.locator('#routeStatus')).to_have_text('Route ready')
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
-                expect(page.locator('#routeInsights')).to_be_visible()
                 if width >= 900:
                     expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_visible()
                     expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_enabled()
@@ -54,6 +53,7 @@ def main():
                 assert mix_total == 100, mix_total
                 if page.locator('#routeSheetHandle').get_attribute('aria-expanded') == 'false':
                     page.get_by_role('button', name='Expand route details', exact=True).click()
+                expect(page.locator('#routeInsights')).to_be_visible()
                 page.locator('.route-option').last.click()
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
                 page.get_by_role('button', name='Walk', exact=True).click()
