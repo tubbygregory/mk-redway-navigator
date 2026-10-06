@@ -1256,11 +1256,28 @@
     el('walkBtn').classList.toggle('active', mode === 'walk');
     el('prefBtn').hidden = true;
     el('prefMenu').hidden = true;
+    el('routePreferences').hidden = mode !== 'cycle';
     invalidateRoute();
     maybeCalculateRoute();
   }
   el('cycleBtn').addEventListener('click', () => setMode('cycle'));
   el('walkBtn').addEventListener('click', () => setMode('walk'));
+  el('preferLitBtn').addEventListener('click', () => {
+    state.preferLit = !state.preferLit;
+    persistSettings();
+    syncRoutePreferenceControls();
+    state.graphCache.clear();
+    invalidateRoute();
+    maybeCalculateRoute();
+  });
+  el('preferSuperBtn').addEventListener('click', () => {
+    state.preferSuper = !state.preferSuper;
+    persistSettings();
+    syncRoutePreferenceControls();
+    state.graphCache.clear();
+    invalidateRoute();
+    maybeCalculateRoute();
+  });
 
   const PREF_LABEL = { maximum: 'Max Redway', balanced: 'Balanced', fastest: 'Fastest' };
   el('prefBtn').addEventListener('click', () => {
