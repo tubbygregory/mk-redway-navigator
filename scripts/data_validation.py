@@ -4,7 +4,7 @@ import json
 import math
 from urllib.parse import urlparse
 
-FORMAT = "mk-redway-network-v5"
+FORMAT = "mk-redway-network-v6"
 SOURCES = {
     "Redway_Super_Routes.kmz": "super_redway",
     "GIS_Redway_layer_2019.kmz": "redway",
