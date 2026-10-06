@@ -66,7 +66,7 @@ def main():
                 expect(page.get_by_role('button', name='Choose destination entrance', exact=True)).to_be_visible()
                 assert not errors, errors
                 assert not fallbacks, fallbacks
-                print(f'PASS browser {width}x{height}: bundled v5, route choices, walking, blocked endpoint')
+                print(f'PASS browser {width}x{height}: bundled v6, route choices, walking, blocked endpoint')
                 page.get_by_role('button', name='Clear route', exact=True).click()
                 page.locator('#visibleSettingsBtn').click()
                 page.locator('#aboutData summary').click()
