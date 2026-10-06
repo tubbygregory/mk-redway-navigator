@@ -44,6 +44,10 @@ def main():
                 plan(page, '52.0467,-0.7378', '52.025,-0.783')
                 expect(page.locator('#routeStatus')).to_have_text('Route ready')
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
+                expect(page.locator('#routeInsights')).to_be_visible()
+                if width >= 900:
+                    expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_visible()
+                    expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_enabled()
                 assert 1 <= page.locator('.route-option').count() <= 3
                 expect(page.locator('#roadStat')).to_contain_text('%')
                 mix_total = page.locator('#routeMixLegend b').evaluate_all("els => els.reduce((sum, el) => sum + Number(el.textContent.replace('%','')), 0)")
