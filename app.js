@@ -2548,9 +2548,26 @@
     if (!snap) return;
     const heading = resolveTravelHeading(position, snap, latlng);
     state.lastSegment = snap.segment;
-    state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
-    const progress = Math.max(state.navProgressMeters, snap.progress);
+    const progressThreshold = state.mode === 'cycle' ? 80 : 60;
+    const closeEnoughForProgress = snap.distance <= progressThreshold;
+    if (closeEnoughForProgress) {
+      state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
+    }
+    const progress = closeEnoughForProgress ? Math.max(state.navProgressMeters, snap.progress) : state.navProgressMeters;
     state.navProgressMeters = progress;
+
+    if (state.importedRouteName && !closeEnoughForProgress) {
+      el('navEta').textContent = 'Join route';
+      el('navRemain').textContent = `${formatDistance(snap.distance)} to nearest point`;
+      setTurnIcon('straight');
+      el('turnDistance').textContent = formatDistance(snap.distance);
+      el('turnText').textContent = 'Join the imported route';
+      el('nextTurnText').textContent = 'Guidance will continue from the nearest point once you reach the track.';
+      state.offRouteCount += 1;
+      if (state.offRouteCount >= 2 && Date.now() - state.lastRerouteAt > 25000) rerouteFromPosition(latlng);
+      if (state.followUser) followNavigationView(latlng, heading, true);
+      return;
+    }
 
     const total = state.route.networkDist;
     const remaining = Math.max(0, total - progress);
