@@ -171,7 +171,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.13.0" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.13.1" ]; then exit 0; fi
           if gh release view v0.13.1 >/dev/null 2>&1; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
           Dark-mode hotfix for installed iOS web apps.
