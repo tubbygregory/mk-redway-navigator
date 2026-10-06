@@ -39,6 +39,8 @@ def main():
                 page.goto(f'http://127.0.0.1:{server.server_port}/', wait_until='networkidle')
                 expect(page.locator('#visibleSettingsBtn')).to_be_visible()
                 expect(page.locator('html')).to_have_attribute('data-routing-source', 'bundled')
+                page.locator('#map').click(position={'x': width // 2, 'y': height // 2})
+                expect(page.locator('#placeSheet')).to_be_hidden()
                 plan(page, '52.0467,-0.7378', '52.025,-0.783')
                 expect(page.locator('#routeStatus')).to_have_text('Route ready')
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
