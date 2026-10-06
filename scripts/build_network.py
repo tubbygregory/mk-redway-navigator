@@ -38,7 +38,7 @@ ENDPOINTS = [
 ]
 KEEP_TAGS = {
     "highway", "bicycle", "foot", "access", "oneway", "oneway:bicycle",
-    "name", "ref", "bridge", "tunnel", "lit", "surface", "tracktype",
+    "name", "ref", "bridge", "tunnel", "junction", "lit", "surface", "tracktype",
     "smoothness", "segregated",
 }
 ROOT = Path(__file__).resolve().parents[1]
@@ -538,6 +538,80 @@ def infer_official_super_route(
     return route_ref if score / total >= 0.5 else None
 
 
+def grid_road_labels(rules: dict) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for route in rules.get("super_routes", []):
+        ref = str(route.get("ref") or "").upper().strip()
+        aliases = [str(x).strip() for x in route.get("aliases", []) if str(x).strip()]
+        road_name = next((x for x in aliases if normalise_text(x) != normalise_text(ref)), "")
+        if ref:
+            labels[ref] = f"{ref} {road_name}".strip()
+    return labels
+
+
+def build_grid_road_index(
+    ways_by_osm: dict[int, tuple[list[int], dict[str, str]]],
+    nodes_by_osm: dict[int, tuple[float, float]],
+    rules: dict,
+) -> dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]]:
+    """Index named H/V grid-road segments so Redway tunnels can say what they pass under."""
+    aliases, _ = super_route_lookup(rules)
+    labels = grid_road_labels(rules)
+    cell = 120.0
+    index: dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]] = {}
+    roadish = {"primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified", "residential"}
+    for _, (node_ids, tags) in ways_by_osm.items():
+        if tags.get("highway") not in roadish:
+            continue
+        route_ref = identify_super_ref(tags, aliases)
+        if not route_ref:
+            continue
+        pts = [nodes_by_osm[n] for n in node_ids if n in nodes_by_osm]
+        for a, b in zip(pts, pts[1:]):
+            ax, ay = xy_m(*a); bx, by = xy_m(*b)
+            rbearing = math.atan2(by - ay, bx - ax) % math.pi
+            minx, maxx = min(ax, bx) - 55, max(ax, bx) + 55
+            miny, maxy = min(ay, by) - 55, max(ay, by) + 55
+            item = (ax, ay, bx, by, rbearing, labels.get(route_ref, route_ref))
+            for gx in range(math.floor(minx / cell), math.floor(maxx / cell) + 1):
+                for gy in range(math.floor(miny / cell), math.floor(maxy / cell) + 1):
+                    index.setdefault((gx, gy), []).append(item)
+    return index
+
+
+def infer_under_grid_road(
+    node_ids: list[int],
+    tags: dict[str, str],
+    nodes_by_osm: dict[int, tuple[float, float]],
+    index: dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]],
+) -> str | None:
+    """Return the H/V road a mapped tunnel passes under, when the geometry supports it."""
+    if str(tags.get("tunnel") or "").lower() not in {"yes", "culvert", "building_passage"} or len(node_ids) < 2:
+        return None
+    pts = [nodes_by_osm[n] for n in node_ids if n in nodes_by_osm]
+    if len(pts) < 2:
+        return None
+    a, b = pts[0], pts[-1]
+    ax, ay = xy_m(*a); bx, by = xy_m(*b)
+    mx, my = (ax + bx) / 2, (ay + by) / 2
+    pbearing = math.atan2(by - ay, bx - ax) % math.pi
+    cell = 120.0
+    gx, gy = math.floor(mx / cell), math.floor(my / cell)
+    best: tuple[float, str] | None = None
+    for ix in range(gx - 1, gx + 2):
+        for iy in range(gy - 1, gy + 2):
+            for x1, y1, x2, y2, rbearing, label in index.get((ix, iy), []):
+                dist = point_segment_distance(mx, my, x1, y1, x2, y2)
+                if dist > 35:
+                    continue
+                crossing_angle = math.degrees(angle_diff(pbearing, rbearing))
+                if crossing_angle < 28:
+                    continue
+                if best is None or dist < best[0]:
+                    best = (dist, label)
+    return best[1] if best else None
+
+
 def existing_network_is_valid() -> bool:
     if not OUT.exists():
         return False
@@ -674,11 +748,11 @@ def main() -> int:
     # We retain OSM relations/corridor inference only as fallback where the website extract
     # is unavailable or does not cover a particular edge.
     council_features = load_council_routes()
-    # The verified leisure source contains about 150,000 short fragments.
+    # The official leisure KMZ files contain a very large number of short geometry fragments.
+    # Treat extreme counts as a validation failure without assuming why the upstream data changed.
     if len(council_features) > 200_000:
         print(
-            f"Ignoring suspicious council extract with {len(council_features):,} lines; "
-            "this indicates contaminated web-map vector data rather than cycle routes.",
+            f"Ignoring council extract with {len(council_features):,} lines because it exceeds the validated upper bound.",
             flush=True,
         )
         council_features = []
@@ -741,6 +815,15 @@ def main() -> int:
             route_refs[way_id] = route_ref
             route_names[way_id] = official_names[route_ref]
     print(f"Official identifiers added {direct:,} and corridor matching added {inferred:,} Super Redway way segments.", flush=True)
+
+    grid_road_index = build_grid_road_index(ways_by_osm, nodes_by_osm, rules)
+    underpass_names = 0
+    for _, (node_ids, tags) in ways_by_osm.items():
+        under = infer_under_grid_road(node_ids, tags, nodes_by_osm, grid_road_index)
+        if under:
+            tags["_mk_under_road"] = under
+            underpass_names += 1
+    print(f"Added grid-road context to {underpass_names:,} mapped underpass ways.", flush=True)
 
     referenced: set[int] = set()
     for node_ids, _ in ways_by_osm.values():
