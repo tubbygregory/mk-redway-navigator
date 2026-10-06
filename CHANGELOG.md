@@ -30,7 +30,7 @@
 
 ## 0.12.6
 
-- Remove unsupported council-permission claims while retaining source attribution and the independent-project notice.
+- Remove unsupported council data-use claims while retaining source attribution and the independent-project notice.
 - Add a concise route/navigation bug-report template with a privacy reminder.
 - Prepare the first formal beta release; navigation behaviour remains unchanged.
 
