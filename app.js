@@ -183,6 +183,9 @@
     if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
     if (!['explore', 'place'].includes(stage)) el('settingsSheet').hidden = true;
     el('savedPlacesBtn').hidden = !['explore', 'place'].includes(stage);
+    el('homeNav').hidden = !['explore', 'place'].includes(stage);
+    if (!['explore','place'].includes(stage)) el('exploreSheet').hidden = true;
+    el('app').dataset.exploreOpen = el('exploreSheet').hidden ? 'false' : 'true';
     updateInstallButtonVisibility();
     setTimeout(syncViewport, 40);
   }
@@ -1202,6 +1205,7 @@
       const parsed = parseBundledNetwork(await response.json());
       if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Bundled routing network is incomplete');
       state.routingNetwork = parsed;
+      buildLocalSearchIndex(parsed);
       state.networkSource = 'bundled';
       document.documentElement.dataset.routingSource = 'bundled';
       state.graphCache.clear();
