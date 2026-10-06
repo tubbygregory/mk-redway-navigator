@@ -2,6 +2,9 @@
   'use strict';
   const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
 
+  const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+  document.documentElement.dataset.theme = darkQuery?.matches ? 'dark' : 'light';
+
   const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
   const isIOS = /iP(?:hone|ad|od)/.test(navigator.userAgent);
   const isIOSStandalone = Boolean(isStandalone && isIOS);
@@ -15,6 +18,7 @@
     'https://overpass.private.coffee/api/interpreter'
   ];
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+  const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
 
   const el = id => document.getElementById(id);
   let searchRevision = 0;
@@ -35,16 +39,21 @@
     rotateControl: false
   }).setView([52.0406, -0.7594], 12);
   map.attributionControl.setPrefix(false);
-  let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  map.attributionControl.addAttribution('<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>');
+  const onlineBaseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
-    attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
+    attribution: ''
   }).addTo(map);
+  let baseLayer = onlineBaseLayer;
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.control.scale({ position: 'bottomright', metric: true, imperial: true, maxWidth: 120 }).addTo(map);
   let offlineVectorLayer = null;
   const OFFLINE_MAP_URL = './data/mk-basemap.pmtiles';
   const OFFLINE_CACHE = 'mk-redway-offline-v1';
   const SAVED_KEY = 'mk-redway-saved-v1';
   const SETTINGS_KEY = 'mk-redway-settings-v1';
-  const SETTINGS_LOGO_HINT_KEY = 'mk-redway-settings-logo-hint-v1';
+  const INSTALL_OFFER_KEY = 'mk-redway-install-offer-v1';
+  const LOCATION_HINT_KEY = 'mk-redway-location-hint-v1';
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
@@ -148,7 +157,7 @@
     state.plannerSearchOpen = false;
     searchRevision += 1;
     el('app').dataset.stage = stage;
-    el('exploreUI').hidden = stage !== 'explore';
+    el('exploreUI').hidden = !['explore', 'place'].includes(stage);
     el('plannerUI').hidden = stage !== 'planner';
     el('placeSheet').hidden = stage !== 'place';
     el('routeSheet').hidden = stage !== 'planner';
@@ -156,6 +165,11 @@
     el('navBanner').hidden = !nav;
     el('navBottom').hidden = !nav;
     el('mapControls').hidden = !nav;
+    el('browseMapControls').hidden = nav;
+    if (nav) {
+      el('mapKeyPopover').hidden = true;
+      el('layersBtn').setAttribute('aria-expanded', 'false');
+    }
     if (stage !== 'search-results') el('resultsSheet').hidden = true;
     if (stage !== 'explore') el('installSheet').hidden = true;
     if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
@@ -281,13 +295,23 @@
     };
   }
 
+  function showDestinationInContext(latlng) {
+    const here = state.userLatLng || state.start;
+    if (here) {
+      map.fitBounds(L.latLngBounds([here, latlng]).pad(.16), { maxZoom: 15, padding: [28, 86] });
+    } else {
+      map.setView(latlng, 14);
+    }
+  }
+
   function openSavedPlace(place) {
     if (!place) return;
-    setPoint('end', L.latLng(place.lat, place.lng), place.name, place.address || '');
+    const point = L.latLng(place.lat, place.lng);
+    setPoint('end', point, place.name, place.address || '');
     el('homeSearch').value = place.name;
     el('savedSheet').hidden = true;
     showPlaceSheet();
-    map.setView([place.lat, place.lng], 16);
+    showDestinationInContext(point);
   }
 
   function renderSavedPlaces() {
@@ -295,6 +319,12 @@
     const work = state.saved.work;
     el('homeSavedLabel').textContent = home ? home.name : 'Not set';
     el('workSavedLabel').textContent = work ? work.name : 'Not set';
+    const quick = el('quickPlaces');
+    const quickHome = el('quickHomeBtn');
+    const quickWork = el('quickWorkBtn');
+    quickHome.hidden = !home;
+    quickWork.hidden = !work;
+    quick.hidden = !home && !work;
     const list = el('favouritesList');
     if (!list) return;
     list.innerHTML = '';
@@ -410,6 +440,40 @@
     return text.length > 130 ? `${text.slice(0, 127)}…` : text;
   }
 
+  function resultTypeLabel(result) {
+    const raw = String(result.type || result.addresstype || '').replaceAll('_', ' ');
+    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
+  }
+
+  function resultOrigin() {
+    return state.userLatLng || state.start || null;
+  }
+
+  function resultDistance(result) {
+    const origin = resultOrigin();
+    const lat = Number(result.lat), lon = Number(result.lon);
+    return origin && Number.isFinite(lat) && Number.isFinite(lon)
+      ? hav({lat: origin.lat, lon: origin.lng}, {lat, lon})
+      : null;
+  }
+
+  function dedupeSearchResults(results) {
+    const chosen = [];
+    const ordered = [...results].sort((a, b) => (resultDistance(a) ?? Infinity) - (resultDistance(b) ?? Infinity));
+    for (const result of ordered) {
+      const primary = conciseResultName(result);
+      const lat = Number(result.lat), lon = Number(result.lon);
+      const duplicate = chosen.some(other =>
+        conciseResultName(other).toLowerCase() === primary.toLowerCase() &&
+        Number.isFinite(lat) && Number.isFinite(lon) &&
+        hav({lat, lon}, {lat: Number(other.lat), lon: Number(other.lon)}) < 700
+      );
+      if (!duplicate) chosen.push(result);
+      if (chosen.length >= 6) break;
+    }
+    return chosen;
+  }
+
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
@@ -446,23 +510,28 @@
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
-    el('resultsTitle').textContent = results.length ? `Results for “${query}”` : 'No matching places';
+    const displayResults = dedupeSearchResults(results);
+    el('resultsTitle').textContent = displayResults.length ? `Results for “${query}”` : 'No matching places';
 
-    if (!results.length) {
+    if (!displayResults.length) {
       const msg = document.createElement('div');
       msg.className = 'result-message';
       msg.textContent = 'No Milton Keynes match found. Try a full postcode, street address or place name.';
       list.appendChild(msg);
     } else {
-      for (const result of results) {
+      for (const result of displayResults) {
         const primary = conciseResultName(result);
         const secondary = resultSecondary(result, primary);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'result-item';
-        button.innerHTML = `<span class="result-icon" aria-hidden="true">⌖</span><span class="result-copy"><strong></strong><span></span></span>`;
+        button.innerHTML = `<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span></span><small></small></span>`;
         button.querySelector('strong').textContent = primary;
         button.querySelector('.result-copy span').textContent = secondary;
+        const bits = [resultTypeLabel(result)];
+        const distance = resultDistance(result);
+        if (Number.isFinite(distance)) bits.push(formatDistance(distance));
+        button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
         button.addEventListener('click', () => selectSearchResult(result, context));
         list.appendChild(button);
       }
@@ -542,7 +611,7 @@
       setPoint('end', L.latLng(lat, lng), primary, secondary);
       el('homeSearch').value = primary;
       showPlaceSheet();
-      map.setView([lat, lng], 16);
+      showDestinationInContext(L.latLng(lat, lng));
     } else if (context === 'start') {
       setPoint('start', L.latLng(lat, lng), primary, secondary);
       setStage('planner');
@@ -644,21 +713,7 @@
     probeOfflineMap().catch(() => {});
   });
   el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
-  function settingsHintSeen() {
-    try { return localStorage.getItem(SETTINGS_LOGO_HINT_KEY) === '1'; } catch (_) { return false; }
-  }
-
-  function markSettingsHintSeen() {
-    try { localStorage.setItem(SETTINGS_LOGO_HINT_KEY, '1'); } catch (_) {}
-  }
-
-  function dismissSettingsLogoHint() {
-    markSettingsHintSeen();
-    el('settingsLogoHint').hidden = true;
-  }
-
   function openSettings() {
-    dismissSettingsLogoHint();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
     syncVoiceControls();
@@ -666,14 +721,7 @@
     el('settingsSheet').hidden = false;
   }
 
-  function showSettingsLogoHintOnce() {
-    if (settingsHintSeen()) return;
-    el('settingsLogoHint').hidden = false;
-    setTimeout(() => el('settingsHintGotIt')?.focus({ preventScroll: true }), 80);
-  }
-
-  el('logoSettingsBtn').addEventListener('click', openSettings);
-  el('settingsHintGotIt').addEventListener('click', dismissSettingsLogoHint);
+  el('visibleSettingsBtn').addEventListener('click', openSettings);
   el('closeSettings').addEventListener('click', () => { el('settingsSheet').hidden = true; });
   el('voiceSettingBtn').addEventListener('click', () => {
     setVoiceEnabled(!state.voiceEnabled, { announce: !state.voiceEnabled });
@@ -681,9 +729,9 @@
   document.querySelectorAll('[data-units]').forEach(button => {
     button.addEventListener('click', () => setUnits(button.dataset.units));
   });
-  el('setHomeBtn').addEventListener('click', () => beginSavedSearch('home'));
-  el('setWorkBtn').addEventListener('click', () => beginSavedSearch('work'));
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
+  el('quickHomeBtn').addEventListener('click', () => openSavedPlace(state.saved.home));
+  el('quickWorkBtn').addEventListener('click', () => openSavedPlace(state.saved.work));
   el('homeSavedRow').addEventListener('click', () => state.saved.home ? openSavedPlace(state.saved.home) : beginSavedSearch('home'));
   el('workSavedRow').addEventListener('click', () => state.saved.work ? openSavedPlace(state.saved.work) : beginSavedSearch('work'));
   el('saveFavouriteBtn').addEventListener('click', () => {
