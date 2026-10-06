@@ -417,7 +417,17 @@
     const quickWork = el('quickWorkBtn');
     quickHome.hidden = !home;
     quickWork.hidden = !work;
-    quick.hidden = !home && !work;
+    quick.querySelectorAll('.quick-favourite').forEach(button => button.remove());
+    for (const place of state.saved.favourites.slice(0, 3)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'quick-favourite';
+      button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"></path></svg><span></span>';
+      button.querySelector('span').textContent = place.name;
+      button.addEventListener('click', () => openSavedPlace(place));
+      quick.appendChild(button);
+    }
+    quick.hidden = !home && !work && !state.saved.favourites.length;
     const list = el('favouritesList');
     if (!list) return;
     list.innerHTML = '';
