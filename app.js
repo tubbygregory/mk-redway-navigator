@@ -3,7 +3,6 @@
   const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
 
   const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
-  document.documentElement.dataset.theme = darkQuery?.matches ? 'dark' : 'light';
 
   const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
   const isIOS = /iP(?:hone|ad|od)/.test(navigator.userAgent);
@@ -54,10 +53,12 @@
   const SETTINGS_KEY = 'mk-redway-settings-v1';
   const INSTALL_OFFER_KEY = 'mk-redway-install-offer-v1';
   const LOCATION_HINT_KEY = 'mk-redway-location-hint-v1';
+  const CULTURAL_ROUTES_URL = 'https://getaroundmk.org.uk/cycling/where-to-ride/cultural-routes';
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
+  const searchResultLayer = L.layerGroup().addTo(map);
   const userLayer = L.layerGroup().addTo(map);
 
   const state = {
@@ -82,6 +83,10 @@
     navigating: false,
     voiceEnabled: true,
     units: 'metric',
+    themeChoice: 'system',
+    preferLit: false,
+    preferSuper: false,
+    localSearchIndex: [],
     speechUnlocked: false,
     speechVoice: null,
     speechActive: null,
@@ -114,7 +119,10 @@
     offlineMapAvailable: false,
     offlineMapDownloaded: false,
     offlineMapBytes: 0,
-    offlineDownloadBusy: false
+    offlineDownloadBusy: false,
+    exploreFilter: 'all',
+    importedRouteName: '',
+    nightThemeActive: false
   };
 
   function syncViewport() {
@@ -204,6 +212,9 @@
       const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
       if (typeof raw.voiceEnabled === 'boolean') state.voiceEnabled = raw.voiceEnabled;
       if (raw.units === 'metric' || raw.units === 'imperial') state.units = raw.units;
+      if (['system','light','dark','high-contrast'].includes(raw.themeChoice)) state.themeChoice = raw.themeChoice;
+      if (typeof raw.preferLit === 'boolean') state.preferLit = raw.preferLit;
+      if (typeof raw.preferSuper === 'boolean') state.preferSuper = raw.preferSuper;
     } catch (_) {}
   }
 
@@ -211,7 +222,10 @@
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         voiceEnabled: state.voiceEnabled,
-        units: state.units
+        units: state.units,
+        themeChoice: state.themeChoice,
+        preferLit: state.preferLit,
+        preferSuper: state.preferSuper
       }));
     } catch (_) {}
   }
@@ -234,6 +248,85 @@
     document.querySelectorAll('[data-units]').forEach(button => {
       button.classList.toggle('active', button.dataset.units === state.units);
     });
+  }
+
+  function dayOfYear(date) {
+    const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+    return Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - start) / 86400000);
+  }
+
+  function solarEvent(date, lat, lon, sunrise) {
+    const n = dayOfYear(date);
+    const lngHour = lon / 15;
+    const t = n + (((sunrise ? 6 : 18) - lngHour) / 24);
+    const m = (0.9856 * t) - 3.289;
+    let l = m + (1.916 * Math.sin(m * Math.PI / 180)) + (0.020 * Math.sin(2 * m * Math.PI / 180)) + 282.634;
+    l = (l + 360) % 360;
+    let ra = Math.atan(0.91764 * Math.tan(l * Math.PI / 180)) * 180 / Math.PI;
+    ra = (ra + 360) % 360;
+    ra += (Math.floor(l / 90) * 90) - (Math.floor(ra / 90) * 90);
+    ra /= 15;
+    const sinDec = 0.39782 * Math.sin(l * Math.PI / 180);
+    const cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (Math.cos(90.833 * Math.PI / 180) - (sinDec * Math.sin(lat * Math.PI / 180))) /
+      (cosDec * Math.cos(lat * Math.PI / 180));
+    if (cosH > 1 || cosH < -1) return null;
+    let h = sunrise ? 360 - Math.acos(cosH) * 180 / Math.PI : Math.acos(cosH) * 180 / Math.PI;
+    h /= 15;
+    const localMean = h + ra - (0.06571 * t) - 6.622;
+    const utcHours = ((localMean - lngHour) % 24 + 24) % 24;
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0) + utcHours * 3600000);
+  }
+
+  function afterSunset() {
+    const here = state.userLatLng || {lat: 52.0406, lng: -0.7594};
+    const now = new Date();
+    const sunset = solarEvent(now, here.lat, here.lng, false);
+    const sunrise = solarEvent(now, here.lat, here.lng, true);
+    return Boolean((sunset && now >= sunset) || (sunrise && now < sunrise));
+  }
+
+  function effectiveTheme() {
+    if (state.themeChoice === 'high-contrast') return 'high-contrast';
+    if (state.themeChoice === 'dark') return 'dark';
+    if (state.themeChoice === 'light') return 'light';
+    return darkQuery?.matches || (state.navigating && afterSunset()) ? 'dark' : 'light';
+  }
+
+  function applyTheme() {
+    const theme = effectiveTheme();
+    state.nightThemeActive = theme === 'dark';
+    document.documentElement.dataset.theme = theme;
+    document.querySelectorAll('[data-theme-choice]').forEach(button => {
+      button.classList.toggle('active', button.dataset.themeChoice === state.themeChoice);
+    });
+  }
+
+  function setThemeChoice(choice) {
+    if (!['system','light','dark','high-contrast'].includes(choice)) return;
+    state.themeChoice = choice;
+    persistSettings();
+    applyTheme();
+    if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
+  }
+
+  function syncRoutePreferenceControls() {
+    const lit = el('preferLitBtn');
+    const sup = el('preferSuperBtn');
+    if (lit) {
+      lit.setAttribute('aria-checked', String(state.preferLit));
+      lit.classList.toggle('active', state.preferLit);
+    }
+    if (sup) {
+      sup.setAttribute('aria-checked', String(state.preferSuper));
+      sup.classList.toggle('active', state.preferSuper);
+    }
   }
 
   function setVoiceEnabled(enabled, { announce = false } = {}) {
