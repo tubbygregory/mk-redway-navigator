@@ -2969,16 +2969,15 @@
   el('locationIntroDismiss').addEventListener('click', closeLocationIntro);
 
   (async () => {
-    if (sharedRouteRestored) return;
     try {
       const permission = await navigator.permissions?.query?.({name: 'geolocation'});
       if (permission?.state === 'granted') {
         await refreshBrowseLocation({center:false, quiet:true});
-      } else if (!locationIntroSeen()) {
+      } else if (!sharedRouteRestored && !locationIntroSeen()) {
         el('locationIntro').hidden = false;
       }
     } catch (_) {
-      if (!locationIntroSeen()) el('locationIntro').hidden = false;
+      if (!sharedRouteRestored && !locationIntroSeen()) el('locationIntro').hidden = false;
     }
   })();
 
