@@ -231,9 +231,11 @@ def super_route_lookup(rules: dict) -> tuple[dict[str, str], dict[str, str]]:
         ref = str(route.get("ref") or "").upper().strip()
         if not ref:
             continue
-        names[ref] = f"MK Redway Super Route {ref}"
+        route_aliases = [str(alias).strip() for alias in route.get("aliases", []) if str(alias).strip()]
+        road_name = next((alias for alias in route_aliases if normalise_text(alias) != normalise_text(ref)), "")
+        names[ref] = f"{ref} · {road_name}" if road_name else f"MK Redway Super Route {ref}"
         aliases[normalise_text(ref)] = ref
-        for alias in route.get("aliases", []):
+        for alias in route_aliases:
             key = normalise_text(alias)
             if key:
                 aliases[key] = ref
