@@ -160,7 +160,7 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="More", exact=True).click()
     page.get_by_role("button", name="Clear route", exact=True).click()
     page.locator("#visibleSettingsBtn").click()
-    check_panel_handle(page, context, "settingsSheet", ".setting-row")
+    check_panel_handle(page, context, "settingsSheet", ".setting-row:not(.install-setting)")
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
     page.get_by_role("button", name="Check for updates", exact=True).click()
