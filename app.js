@@ -2643,7 +2643,15 @@
 
     state.navigating = true;
     state.followUser = true;
+    const themeBeforeNavigation = document.documentElement.dataset.theme;
     applyTheme();
+    if (themeBeforeNavigation !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
     resetNavigationProgress();
     if (state.importedRouteName) {
       const importedSnap = nearestOnRoute(current.latlng);
@@ -2685,7 +2693,15 @@
   function stopNavigation({ keepRoute = true, arrived = false } = {}) {
     if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null; state.navigating = false; state.followUser = true;
+    const themeBeforeExit = document.documentElement.dataset.theme;
     applyTheme();
+    if (themeBeforeExit !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
     resetMapOrientation();
     userLayer.clearLayers();
     if (state.userLatLng) setUserMarker(state.userLatLng);
