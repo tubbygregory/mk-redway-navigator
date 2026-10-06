@@ -1728,7 +1728,8 @@
     for (const route of insights.superRoutes || []) {
       const badge = document.createElement('span');
       badge.className = 'super-route-badge';
-      badge.textContent = route.ref + ' Super Route';
+      const usefulName = route.name && route.name !== route.ref && !route.name.includes('MK Redway Super Route');
+      badge.textContent = usefulName ? route.name : route.ref + ' Super Route';
       box.appendChild(badge);
     }
     box.hidden = false;
