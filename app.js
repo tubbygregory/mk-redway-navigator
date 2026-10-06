@@ -1673,7 +1673,7 @@
 
   function renderAlternativeMapRoutes() {
     routeLayer.eachLayer(layer => {
-      const className = layer.options?.className || '';
+      const className = layer.options?.className || layer.options?.icon?.options?.className || '';
       if (className === 'route-alt-line' || className === 'route-alt-time') routeLayer.removeLayer(layer);
     });
     if (state.mode !== 'cycle' || !state.route) return;
