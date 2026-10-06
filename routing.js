@@ -86,8 +86,10 @@
     return '';
   }
 
-  function buildGraph(parsed, mode, pref) {
+  function buildGraph(parsed, mode, pref, options = {}) {
     const graph = new Map();
+    const preferLit = Boolean(options.preferLit);
+    const preferSuper = Boolean(options.preferSuper);
     const add = (id, edge) => {
       if (!graph.has(id)) graph.set(id, []);
       graph.get(id).push(edge);
@@ -107,7 +109,30 @@
         const b = parsed.nodes.get(idb);
         if (!a || !b) continue;
         const d = hav(a, b);
-        const base = { d, cost: d * multiplier(cls, pref, mode), cls, name, wayId: w.id };
+        let preferenceFactor = 1;
+        if (mode === 'cycle' && preferLit) {
+          if (String(t.lit || '').toLowerCase() === 'no') preferenceFactor *= 2.8;
+          else if (String(t.lit || '').toLowerCase() === 'yes') preferenceFactor *= .92;
+        }
+        if (mode === 'cycle' && preferSuper) {
+          if (cls === 'superredway') preferenceFactor *= .66;
+          else if (['redway','leisure','shared'].includes(cls)) preferenceFactor *= 1.22;
+          else preferenceFactor *= 1.55;
+        }
+        const base = {
+          d,
+          cost: d * multiplier(cls, pref, mode) * preferenceFactor,
+          cls,
+          name,
+          wayId: w.id,
+          highway: t.highway || '',
+          lit: String(t.lit || '').toLowerCase(),
+          tunnel: String(t.tunnel || '').toLowerCase(),
+          junction: String(t.junction || '').toLowerCase(),
+          underRoad: t._mk_under_road || '',
+          routeRef: t._mk_route_ref || '',
+          routeName: t._mk_route_name || ''
+        };
         if (!oneWay) {
           add(ida, { ...base, to: idb });
           add(idb, { ...base, to: ida });
@@ -327,11 +352,29 @@
       const junction = isJunction(ids[i], graph);
       const enteredRedway = ['superredway', 'redway'].includes(outgoing?.cls) && !['superredway', 'redway'].includes(incoming?.cls);
       const namedChange = outgoing?.name && outgoing.name !== incoming?.name && !['Super Redway','Redway','Leisure route','shared path'].includes(outgoing.name);
+      const enteringTunnel = ['yes','culvert','building_passage'].includes(outgoing?.tunnel) && !['yes','culvert','building_passage'].includes(incoming?.tunnel);
+      const enteringRoundabout = outgoing?.junction === 'roundabout' && incoming?.junction !== 'roundabout';
+      const leavingRoundabout = incoming?.junction === 'roundabout' && outgoing?.junction !== 'roundabout';
+      if (enteringTunnel) {
+        const under = outgoing.underRoad ? ` under ${outgoing.underRoad}` : ' through the underpass';
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'underpass', instruction: `Continue${under}` });
+        continue;
+      }
+      if (enteringRoundabout) {
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout', instruction: 'Enter the roundabout' });
+        continue;
+      }
+      if (leavingRoundabout) {
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout-exit', instruction: `Exit the roundabout${targetPhrase(outgoing)}` });
+        continue;
+      }
       // Following a curving path is not a succession of turns. Keep decision points
       // and genuine hairpins, rather than suppressing real junctions by distance.
       if (!enteredRedway && !(junction && (abs >= 28 || namedChange)) && abs < 150) continue;
       let icon = 'straight', instruction;
-      if (abs >= 150) { icon = delta > 0 ? 'sharp-right' : 'sharp-left'; instruction = `Follow the sharp bend${targetPhrase(outgoing)}`; }
+      const uturn = junction && abs >= 165 && incoming?.wayId === outgoing?.wayId;
+      if (uturn) { icon = delta > 0 ? 'u-turn-right' : 'u-turn-left'; instruction = `Make a U-turn${targetPhrase(outgoing)}`; }
+      else if (abs >= 150) { icon = delta > 0 ? 'sharp-right' : 'sharp-left'; instruction = `Follow the sharp bend${targetPhrase(outgoing)}`; }
       else if (abs >= 58) { icon = delta > 0 ? 'right' : 'left'; instruction = `Turn ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
       else if (abs >= 28) { icon = delta > 0 ? 'slight-right' : 'slight-left'; instruction = `Bear ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
       else instruction = `Continue${targetPhrase(outgoing)}`;
@@ -376,6 +419,38 @@
     for (let i = 0; i < rows.length && remaining > 0; i++, remaining--) rows[i].value += 1;
     for (const row of rows) out[row.key] = row.value;
     return out;
+  }
+
+  function routeInsights(edges) {
+    let unlitDist = 0;
+    let underpasses = 0;
+    let roadCrossings = 0;
+    const superRoutes = new Map();
+    let inTunnel = false;
+    const roadish = new Set(['quiet','road','tertiary','secondary','primary']);
+    for (let i = 0; i < edges.length; i++) {
+      const edge = edges[i];
+      if (edge.lit === 'no') unlitDist += edge.d;
+      const tunnelNow = ['yes','culvert','building_passage'].includes(edge.tunnel);
+      if (tunnelNow && !inTunnel) underpasses += 1;
+      inTunnel = tunnelNow;
+      if (edge.routeRef) superRoutes.set(edge.routeRef, edge.routeName || edge.routeRef);
+    }
+    for (let i = 0; i < edges.length;) {
+      if (!roadish.has(edges[i].cls)) { i++; continue; }
+      const start = i;
+      let distance = 0;
+      while (i < edges.length && roadish.has(edges[i].cls)) distance += edges[i++].d;
+      const hasPathBefore = start > 0 && !roadish.has(edges[start - 1].cls);
+      const hasPathAfter = i < edges.length && !roadish.has(edges[i].cls);
+      if (hasPathBefore && hasPathAfter && distance <= 65) roadCrossings += 1;
+    }
+    return {
+      underpasses,
+      roadCrossings,
+      unlitDist,
+      superRoutes: [...superRoutes.entries()].map(([ref, name]) => ({ref, name}))
+    };
   }
 
   const MAX_APPROACH = 150;
@@ -446,7 +521,8 @@
     for(const edge of result.edges) mix[Object.hasOwn(mix,edge.cls)?edge.cls:'road']+=edge.d;
     const networkDist=result.edges.reduce((sum,e)=>sum+e.d,0), approachDist=result.startSnap+result.endSnap;
     const mixPercent=wholePercentMix(mix, networkDist);
-    return { parsed:network, graph, result, coords, cumulative, mix, mixPercent, networkDist, approachDist,
+    const insights=routeInsights(result.edges);
+    return { parsed:network, graph, result, coords, cumulative, mix, mixPercent, insights, networkDist, approachDist,
       dist:networkDist+approachDist, mins:networkDist/(mode==='cycle'?4.17:1.34)/60+approachDist/1.34/60,
       snaps:{start:result.startSnap,end:result.endSnap},
       roadPercent:mixPercent.road,
@@ -477,5 +553,5 @@
     return {distance:mapped+startApproach+endApproach,mins:mapped/(mode==='cycle'?4.17:1.34)/60+(startApproach+endApproach)/1.34/60};
   }
 
-  return { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, wholePercentMix, planRoute, routeErrorMessage, hasArrived, remainingJourney };
+  return { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, wholePercentMix, routeInsights, planRoute, routeErrorMessage, hasArrived, remainingJourney };
 });
