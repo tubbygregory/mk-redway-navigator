@@ -1729,6 +1729,14 @@ html.ios-standalone .toast {
 .explore-import { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .explore-import small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
 #app[data-explore-open="true"] .explore-sheet { border-top-color: rgba(35,134,74,.35); }
+#app[data-explore-open="true"] .home-nav-button.active {
+  background: rgba(35,134,74,.14);
+  color: #23864a;
+}
+#app[data-explore-open="true"] .search-pill,
+#app[data-explore-open="true"] .map-fab {
+  border-color: rgba(35,134,74,.35);
+}
 
 .theme-choice {
   display: grid;
