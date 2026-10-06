@@ -197,6 +197,47 @@ def review(browser, url, live=False):
     context.close()
 
 
+def review_dark_shell(browser, url):
+    """Installed iOS dark mode must not expose white legacy fallback surfaces."""
+    context = browser.new_context(
+        viewport={"width": 390, "height": 844},
+        is_mobile=True,
+        has_touch=True,
+        color_scheme="dark",
+        user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/26.0 Mobile/15E148 Safari/604.1"
+    )
+    context.add_init_script("""Object.defineProperty(navigator, 'standalone', {
+      configurable: true,
+      get: () => true
+    });""")
+    page = context.new_page()
+    page.set_default_timeout(45000)
+    page.goto(url, wait_until="networkidle")
+    expect(page.locator("html")).to_have_class(__import__("re").compile(r".*ios-standalone.*"))
+    expect(page.locator("#savedPlacesBtn")).to_be_visible()
+
+    styles = page.evaluate("""() => {
+      const saved = getComputedStyle(document.querySelector('#savedPlacesBtn'));
+      const root = getComputedStyle(document.documentElement);
+      const app = getComputedStyle(document.querySelector('#app'));
+      const fade = getComputedStyle(document.querySelector('#app'), '::after');
+      return {
+        savedBackground: saved.backgroundColor,
+        savedText: saved.color,
+        rootBackground: root.backgroundColor,
+        appBackground: app.backgroundColor,
+        fade: fade.backgroundImage
+      };
+    }""")
+    assert styles["savedBackground"] != "rgb(255, 255, 255)", styles
+    assert styles["rootBackground"] == "rgb(17, 21, 26)", styles
+    assert styles["appBackground"] == "rgb(17, 21, 26)", styles
+    assert "255, 255, 255" not in styles["fade"], styles
+    assert "17, 21, 26" in styles["fade"], styles
+    capture(page, "dark-ios-shell")
+    context.close()
+
+
 def review_delayed_location(browser, url):
     """A late GPS result must never replace a manually chosen start."""
     context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
@@ -262,6 +303,7 @@ def main():
         browser = p.chromium.launch()
         if os.environ.get("LIVE_URL"):
             review(browser, os.environ["LIVE_URL"], True)
+            review_dark_shell(browser, os.environ["LIVE_URL"])
             review_delayed_location(browser, os.environ["LIVE_URL"])
         else:
             with tempfile.TemporaryDirectory() as tmp:
@@ -271,6 +313,7 @@ def main():
                     Thread(target=server.serve_forever, daemon=True).start()
                     try:
                         review(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
+                        review_dark_shell(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
                         review_delayed_location(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
                     finally:
                         server.shutdown()

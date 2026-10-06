@@ -1419,3 +1419,35 @@ html.ios-standalone .toast {
   .leaflet-pane .leisure-casing { stroke: #11151a; }
   .nav-banner { background: #7e1c18; }
 }
+
+
+/* v0.13.1 iOS standalone dark-shell fix ---------------------------------
+   Older iOS viewport workarounds intentionally used white fallbacks. When
+   system dark mode was added those hard-coded surfaces remained white,
+   producing the bright Saved pill and bottom fade seen on Home Screen. */
+@media (prefers-color-scheme: dark) {
+  html,
+  body,
+  #app,
+  #map {
+    background: #11151a !important;
+  }
+
+  html.ios-standalone #app::after {
+    background: linear-gradient(
+      to bottom,
+      rgba(17,21,26,0),
+      rgba(17,21,26,.92) 78%,
+      #11151a 100%
+    );
+  }
+
+  .saved-fab,
+  .install-fab,
+  .offline-button,
+  .settings-sheet > .sheet-heading {
+    background: var(--surface-solid);
+    color: var(--text);
+    border-color: var(--border);
+  }
+}
