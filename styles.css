@@ -1661,6 +1661,20 @@ html.ios-standalone .toast {
 }
 [data-network-zoom="city"] .super-route-label { opacity: .7; }
 
+.explore-sheet {
+  bottom: max(78px, calc(env(safe-area-inset-bottom, 0px) + 74px));
+  max-height: min(76dvh, calc(var(--visual-height, 100dvh) - 150px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.explore-sheet .sheet-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-top: -2px;
+  padding-top: 2px;
+  background: var(--surface-solid);
+}
 .explore-sheet .sheet-heading > div {
   min-width: 0;
 }
@@ -1852,7 +1866,9 @@ html[data-theme="high-contrast"].ios-standalone #app::after {
   .explore-sheet {
     left:20px;
     right:auto;
+    bottom:90px;
     width:390px;
+    max-height:calc(100dvh - 185px);
   }
   .desktop-send { display:flex; }
   #startNavBtn { display:none; }
