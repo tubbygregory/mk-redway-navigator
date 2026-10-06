@@ -7,7 +7,7 @@ from data_validation import validate_network, validate_council, source_class, co
 
 class DataValidationTests(unittest.TestCase):
     def network(self):
-        return {"format": "mk-redway-network-v5",
+        return {"format": "mk-redway-network-v6",
                 "nodes": [[i, 52, -.75] for i in range(1002)],
                 "ways": [[i, [i, i + 1], {"highway": "cycleway"}] for i in range(102)]}
     def test_populated_graph(self):
