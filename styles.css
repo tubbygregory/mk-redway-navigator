@@ -1309,7 +1309,7 @@ html.ios-standalone .toast {
   text-align: center;
   text-decoration: none;
 }
-.route-sheet.is-collapsed > .route-actions {
+.bottom-sheet.route-sheet.is-collapsed > .route-actions {
   display: flex;
   padding-top: 5px;
 }
