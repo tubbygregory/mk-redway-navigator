@@ -1403,17 +1403,21 @@
   }
 
   function getGraph(parsed, mode, pref) {
+    const options = {
+      preferLit: mode === 'cycle' && state.preferLit,
+      preferSuper: mode === 'cycle' && state.preferSuper
+    };
     if (parsed === state.routingNetwork) {
-      const key = `${mode}:${pref}`;
+      const key = mode + ':' + pref + ':' + (options.preferLit ? 'lit' : '-') + ':' + (options.preferSuper ? 'super' : '-');
       if (!state.graphCache.has(key)) {
         // Keep memory predictable on phones; an old graph can still be referenced by
         // an active route even after it drops out of this small cache.
-        if (state.graphCache.size >= 2) state.graphCache.clear();
-        state.graphCache.set(key, buildGraph(parsed, mode, pref));
+        if (state.graphCache.size >= 4) state.graphCache.clear();
+        state.graphCache.set(key, buildGraph(parsed, mode, pref, options));
       }
       return state.graphCache.get(key);
     }
-    return buildGraph(parsed, mode, pref);
+    return buildGraph(parsed, mode, pref, options);
   }
 
   function corridorBBox(a, b) {
