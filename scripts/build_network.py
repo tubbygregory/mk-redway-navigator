@@ -619,7 +619,7 @@ def existing_network_is_valid() -> bool:
         with OUT.open("r", encoding="utf-8") as f:
             data = json.load(f)
         return (
-            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2", "mk-redway-network-v3", "mk-redway-network-v4", "mk-redway-network-v5"}
+            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2", "mk-redway-network-v3", "mk-redway-network-v4", "mk-redway-network-v6"}
             and len(data.get("nodes", [])) > 1000
             and len(data.get("ways", [])) > 100
         )
@@ -688,7 +688,7 @@ def main() -> int:
     # pretending its network was newly generated.
     if (COUNCIL_ROUTES.exists() and cached_council_hash
             and cached_council_hash == hashlib.sha256(COUNCIL_ROUTES.read_bytes()).hexdigest()
-            and existing_network_format() == "mk-redway-network-v5"):
+            and existing_network_format() == "mk-redway-network-v6"):
         previous = json.loads(OUT.read_text())
         validate_network(previous)
         previous["council_geometry_sha256"] = current_council_hash
@@ -698,7 +698,7 @@ def main() -> int:
         print("Migrated provenance hash for byte-identical council geometry; network generation date retained.", flush=True)
     if (
         existing_network_is_valid()
-        and existing_network_format() == "mk-redway-network-v5"
+        and existing_network_format() == "mk-redway-network-v6"
         and age is not None and age < 7
         and current_council_hash == cached_council_hash
         and os.environ.get("FORCE_NETWORK_REFRESH") != "1"
@@ -853,7 +853,7 @@ def main() -> int:
         compact_ways.append([way_id, compact, tags])
 
     payload = {
-        "format": "mk-redway-network-v5",
+        "format": "mk-redway-network-v6",
         "generated_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         "bbox": [SOUTH, WEST, NORTH, EAST],
         "classification": "Get Around MK interactive-map Redway/Super Redway/Leisure geometry matched to Geofabrik/OSM routable geometry; OSM/corridor rules are fallback only",
