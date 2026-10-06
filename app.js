@@ -760,10 +760,79 @@
       persistSavedPlaces(); finishSavedSearch(); el('savedSheet').hidden = false;
       return;
     }
-    if (state.stage === 'explore' || state.stage === 'place') {
-      setPoint('end', e.latlng, 'Dropped pin', fmtCoord(e.latlng));
-      showPlaceSheet();
+  });
+
+  async function reverseGeocode(latlng) {
+    const elapsed = Date.now() - state.lastGeocodeAt;
+    if (elapsed < 1050) await sleep(1050 - elapsed);
+    state.lastGeocodeAt = Date.now();
+    const params = new URLSearchParams({
+      lat: String(latlng.lat),
+      lon: String(latlng.lng),
+      format: 'jsonv2',
+      addressdetails: '1',
+      namedetails: '1',
+      zoom: '18',
+      'accept-language': 'en-GB'
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(`${NOMINATIM_REVERSE}?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      return response.ok ? await response.json() : null;
+    } catch (_) {
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  async function dropDestinationPin(latlng) {
+    if (state.navigating || !['explore', 'place'].includes(state.stage)) return;
+    setPoint('end', latlng, 'Dropped pin', fmtCoord(latlng));
+    showPlaceSheet();
+    showDestinationInContext(latlng);
+    const original = state.end && L.latLng(state.end.lat, state.end.lng);
+    const result = await reverseGeocode(latlng);
+    if (!result || !state.end || !original || state.end.distanceTo(original) > 2) return;
+    const primary = conciseResultName(result);
+    state.endLabel = primary || 'Dropped pin';
+    state.endAddress = resultSecondary(result, state.endLabel) || fmtCoord(latlng);
+    el('homeSearch').value = state.endLabel;
+    showPlaceSheet();
+  }
+
+  let longPressTimer = null;
+  let longPressStart = null;
+  let lastLongPressAt = 0;
+  const mapContainer = map.getContainer();
+  const cancelLongPress = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressStart = null;
+  };
+  mapContainer.addEventListener('pointerdown', event => {
+    if (!event.isPrimary || !['touch', 'pen'].includes(event.pointerType) || !['explore', 'place'].includes(state.stage)) return;
+    const rect = mapContainer.getBoundingClientRect();
+    longPressStart = { x: event.clientX, y: event.clientY, rect };
+    longPressTimer = setTimeout(() => {
+      if (!longPressStart) return;
+      lastLongPressAt = performance.now();
+      const point = L.point(longPressStart.x - longPressStart.rect.left, longPressStart.y - longPressStart.rect.top);
+      dropDestinationPin(map.containerPointToLatLng(point));
+      cancelLongPress();
+    }, 550);
+  }, {passive: true});
+  mapContainer.addEventListener('pointermove', event => {
+    if (longPressStart && Math.hypot(event.clientX - longPressStart.x, event.clientY - longPressStart.y) > 10) cancelLongPress();
+  }, {passive: true});
+  mapContainer.addEventListener('pointerup', cancelLongPress, {passive: true});
+  mapContainer.addEventListener('pointercancel', cancelLongPress, {passive: true});
+  map.on('contextmenu', event => {
+    if (performance.now() - lastLongPressAt >= 1000) dropDestinationPin(event.latlng);
   });
 
   function acquireCurrentLocation() {
@@ -786,6 +855,8 @@
       const pos = await acquireCurrentLocation();
       // A manual search, pin, newer request or departure from the planner wins.
       if (revision !== startLocationRevision || state.stage !== 'planner') return false;
+      state.userLatLng = pos.latlng;
+      setUserMarker(pos.latlng);
       setPoint('start', pos.latlng, 'Your location');
       map.setView(pos.latlng, 15);
       if (calculate) maybeCalculateRoute();
@@ -801,7 +872,25 @@
     }
   }
 
+  async function refreshBrowseLocation({ center = true, quiet = false } = {}) {
+    const button = el('browseLocateBtn');
+    if (button) button.disabled = true;
+    try {
+      const pos = await acquireCurrentLocation();
+      state.userLatLng = pos.latlng;
+      setUserMarker(pos.latlng);
+      if (center) map.setView(pos.latlng, Math.max(map.getZoom(), 15));
+      return true;
+    } catch (_) {
+      if (!quiet) toast('Location unavailable — check browser permission');
+      return false;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   el('useLocationBtn').addEventListener('click', () => useCurrentLocation());
+  el('browseLocateBtn').addEventListener('click', () => refreshBrowseLocation({ center: true }));
 
   el('directionsBtn').addEventListener('click', async () => {
     setStage('planner');
