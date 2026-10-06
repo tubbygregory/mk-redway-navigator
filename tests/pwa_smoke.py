@@ -164,6 +164,31 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="Exit", exact=True).click()
     page.get_by_role("button", name="More", exact=True).click()
     page.get_by_role("button", name="Clear route", exact=True).click()
+
+    # Starting an imported GPX away from its first point must preserve that track
+    # rather than silently replacing it with a normal A-to-B route.
+    gpx = """<?xml version="1.0"?>
+    <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+      <trk><name>Regression GPX</name><trkseg>
+        <trkpt lat="52.025000" lon="-0.783000"/>
+        <trkpt lat="52.026000" lon="-0.781500"/>
+        <trkpt lat="52.027000" lon="-0.780000"/>
+      </trkseg></trk>
+    </gpx>"""
+    page.locator("#gpxFileInput").set_input_files({
+        "name": "regression.gpx",
+        "mimeType": "application/gpx+xml",
+        "buffer": gpx.encode("utf-8")
+    })
+    expect(page.get_by_role("searchbox", name="Starting location", exact=True)).to_have_value("Regression GPX start")
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    page.get_by_role("button", name="Start", exact=True).click()
+    expect(page.locator("#navBanner")).to_be_visible()
+    expect(page.get_by_role("searchbox", name="Starting location", exact=True)).to_have_value("Regression GPX start")
+    page.get_by_role("button", name="Exit", exact=True).click()
+    page.get_by_role("button", name="More", exact=True).click()
+    page.get_by_role("button", name="Clear route", exact=True).click()
+
     page.locator("#visibleSettingsBtn").click()
     check_panel_handle(page, context, "settingsSheet", ".setting-row:not(.install-setting)")
     page.get_by_role("button", name="High contrast", exact=True).click()
