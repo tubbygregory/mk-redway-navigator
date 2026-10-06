@@ -184,7 +184,9 @@ def review(browser, url, live=False):
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     page.get_by_role("button", name="Start", exact=True).click()
     expect(page.locator("#navBanner")).to_be_visible()
-    expect(page.get_by_role("searchbox", name="Starting location", exact=True)).to_have_value("Regression GPX start")
+    # The planner is intentionally hidden during navigation, so inspect the
+    # underlying field directly rather than locating it by an exposed ARIA role.
+    expect(page.locator("#startSearch")).to_have_value("Regression GPX start")
     page.get_by_role("button", name="Exit", exact=True).click()
     page.get_by_role("button", name="More", exact=True).click()
     page.get_by_role("button", name="Clear route", exact=True).click()
