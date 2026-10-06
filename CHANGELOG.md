@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0
+
+- Apply the October mobile/desktop design review: long-press map pins, persistent map search, visible settings, browse-time location controls and a map-key layers button.
+- Replace incomplete route-mix summaries with a five-category 100% stacked mix, merge duplicate cycling alternatives, hide the redundant walking preference and reduce minor approach warnings.
+- Make route preview map-first with a mobile peek state, move secondary route actions behind More, simplify Saved, and move installation into Settings.
+- Improve destination context and search-result comparison with deduplication, place type and distance where location is known.
+- Add system dark mode, a dark packaged basemap flavour, a branded navigation banner, SVG maneuver/search icons, and time-remaining-first navigation status.
+- Remove duplicate map attribution during basemap handover, expose desktop zoom/scale controls, and provide separate path-problem and app-problem report links.
+
 ## 0.12.6
 
 - Remove unsupported council-permission claims while retaining source attribution and the independent-project notice.

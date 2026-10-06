@@ -2,6 +2,9 @@
   'use strict';
   const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
 
+  const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+  document.documentElement.dataset.theme = darkQuery?.matches ? 'dark' : 'light';
+
   const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
   const isIOS = /iP(?:hone|ad|od)/.test(navigator.userAgent);
   const isIOSStandalone = Boolean(isStandalone && isIOS);
@@ -15,6 +18,7 @@
     'https://overpass.private.coffee/api/interpreter'
   ];
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+  const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
 
   const el = id => document.getElementById(id);
   let searchRevision = 0;
@@ -35,16 +39,21 @@
     rotateControl: false
   }).setView([52.0406, -0.7594], 12);
   map.attributionControl.setPrefix(false);
-  let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  map.attributionControl.addAttribution('<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>');
+  const onlineBaseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 20,
-    attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
+    attribution: ''
   }).addTo(map);
+  let baseLayer = onlineBaseLayer;
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.control.scale({ position: 'bottomright', metric: true, imperial: true, maxWidth: 120 }).addTo(map);
   let offlineVectorLayer = null;
   const OFFLINE_MAP_URL = './data/mk-basemap.pmtiles';
   const OFFLINE_CACHE = 'mk-redway-offline-v1';
   const SAVED_KEY = 'mk-redway-saved-v1';
   const SETTINGS_KEY = 'mk-redway-settings-v1';
-  const SETTINGS_LOGO_HINT_KEY = 'mk-redway-settings-logo-hint-v1';
+  const INSTALL_OFFER_KEY = 'mk-redway-install-offer-v1';
+  const LOCATION_HINT_KEY = 'mk-redway-location-hint-v1';
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
@@ -148,7 +157,7 @@
     state.plannerSearchOpen = false;
     searchRevision += 1;
     el('app').dataset.stage = stage;
-    el('exploreUI').hidden = stage !== 'explore';
+    el('exploreUI').hidden = !['explore', 'place'].includes(stage);
     el('plannerUI').hidden = stage !== 'planner';
     el('placeSheet').hidden = stage !== 'place';
     el('routeSheet').hidden = stage !== 'planner';
@@ -156,6 +165,11 @@
     el('navBanner').hidden = !nav;
     el('navBottom').hidden = !nav;
     el('mapControls').hidden = !nav;
+    el('browseMapControls').hidden = nav;
+    if (nav) {
+      el('mapKeyPopover').hidden = true;
+      el('layersBtn').setAttribute('aria-expanded', 'false');
+    }
     if (stage !== 'search-results') el('resultsSheet').hidden = true;
     if (stage !== 'explore') el('installSheet').hidden = true;
     if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
@@ -281,13 +295,23 @@
     };
   }
 
+  function showDestinationInContext(latlng) {
+    const here = state.userLatLng || state.start;
+    if (here) {
+      map.fitBounds(L.latLngBounds([here, latlng]).pad(.16), { maxZoom: 15, padding: [28, 86] });
+    } else {
+      map.setView(latlng, 14);
+    }
+  }
+
   function openSavedPlace(place) {
     if (!place) return;
-    setPoint('end', L.latLng(place.lat, place.lng), place.name, place.address || '');
+    const point = L.latLng(place.lat, place.lng);
+    setPoint('end', point, place.name, place.address || '');
     el('homeSearch').value = place.name;
     el('savedSheet').hidden = true;
     showPlaceSheet();
-    map.setView([place.lat, place.lng], 16);
+    showDestinationInContext(point);
   }
 
   function renderSavedPlaces() {
@@ -295,6 +319,12 @@
     const work = state.saved.work;
     el('homeSavedLabel').textContent = home ? home.name : 'Not set';
     el('workSavedLabel').textContent = work ? work.name : 'Not set';
+    const quick = el('quickPlaces');
+    const quickHome = el('quickHomeBtn');
+    const quickWork = el('quickWorkBtn');
+    quickHome.hidden = !home;
+    quickWork.hidden = !work;
+    quick.hidden = !home && !work;
     const list = el('favouritesList');
     if (!list) return;
     list.innerHTML = '';
@@ -410,6 +440,40 @@
     return text.length > 130 ? `${text.slice(0, 127)}…` : text;
   }
 
+  function resultTypeLabel(result) {
+    const raw = String(result.type || result.addresstype || '').replaceAll('_', ' ');
+    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
+  }
+
+  function resultOrigin() {
+    return state.userLatLng || state.start || null;
+  }
+
+  function resultDistance(result) {
+    const origin = resultOrigin();
+    const lat = Number(result.lat), lon = Number(result.lon);
+    return origin && Number.isFinite(lat) && Number.isFinite(lon)
+      ? hav({lat: origin.lat, lon: origin.lng}, {lat, lon})
+      : null;
+  }
+
+  function dedupeSearchResults(results) {
+    const chosen = [];
+    const ordered = [...results].sort((a, b) => (resultDistance(a) ?? Infinity) - (resultDistance(b) ?? Infinity));
+    for (const result of ordered) {
+      const primary = conciseResultName(result);
+      const lat = Number(result.lat), lon = Number(result.lon);
+      const duplicate = chosen.some(other =>
+        conciseResultName(other).toLowerCase() === primary.toLowerCase() &&
+        Number.isFinite(lat) && Number.isFinite(lon) &&
+        hav({lat, lon}, {lat: Number(other.lat), lon: Number(other.lon)}) < 700
+      );
+      if (!duplicate) chosen.push(result);
+      if (chosen.length >= 6) break;
+    }
+    return chosen;
+  }
+
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
@@ -446,23 +510,28 @@
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
-    el('resultsTitle').textContent = results.length ? `Results for “${query}”` : 'No matching places';
+    const displayResults = dedupeSearchResults(results);
+    el('resultsTitle').textContent = displayResults.length ? `Results for “${query}”` : 'No matching places';
 
-    if (!results.length) {
+    if (!displayResults.length) {
       const msg = document.createElement('div');
       msg.className = 'result-message';
       msg.textContent = 'No Milton Keynes match found. Try a full postcode, street address or place name.';
       list.appendChild(msg);
     } else {
-      for (const result of results) {
+      for (const result of displayResults) {
         const primary = conciseResultName(result);
         const secondary = resultSecondary(result, primary);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'result-item';
-        button.innerHTML = `<span class="result-icon" aria-hidden="true">⌖</span><span class="result-copy"><strong></strong><span></span></span>`;
+        button.innerHTML = `<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span></span><small></small></span>`;
         button.querySelector('strong').textContent = primary;
         button.querySelector('.result-copy span').textContent = secondary;
+        const bits = [resultTypeLabel(result)];
+        const distance = resultDistance(result);
+        if (Number.isFinite(distance)) bits.push(formatDistance(distance));
+        button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
         button.addEventListener('click', () => selectSearchResult(result, context));
         list.appendChild(button);
       }
@@ -542,7 +611,7 @@
       setPoint('end', L.latLng(lat, lng), primary, secondary);
       el('homeSearch').value = primary;
       showPlaceSheet();
-      map.setView([lat, lng], 16);
+      showDestinationInContext(L.latLng(lat, lng));
     } else if (context === 'start') {
       setPoint('start', L.latLng(lat, lng), primary, secondary);
       setStage('planner');
@@ -644,21 +713,7 @@
     probeOfflineMap().catch(() => {});
   });
   el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
-  function settingsHintSeen() {
-    try { return localStorage.getItem(SETTINGS_LOGO_HINT_KEY) === '1'; } catch (_) { return false; }
-  }
-
-  function markSettingsHintSeen() {
-    try { localStorage.setItem(SETTINGS_LOGO_HINT_KEY, '1'); } catch (_) {}
-  }
-
-  function dismissSettingsLogoHint() {
-    markSettingsHintSeen();
-    el('settingsLogoHint').hidden = true;
-  }
-
   function openSettings() {
-    dismissSettingsLogoHint();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
     syncVoiceControls();
@@ -666,14 +721,7 @@
     el('settingsSheet').hidden = false;
   }
 
-  function showSettingsLogoHintOnce() {
-    if (settingsHintSeen()) return;
-    el('settingsLogoHint').hidden = false;
-    setTimeout(() => el('settingsHintGotIt')?.focus({ preventScroll: true }), 80);
-  }
-
-  el('logoSettingsBtn').addEventListener('click', openSettings);
-  el('settingsHintGotIt').addEventListener('click', dismissSettingsLogoHint);
+  el('visibleSettingsBtn').addEventListener('click', openSettings);
   el('closeSettings').addEventListener('click', () => { el('settingsSheet').hidden = true; });
   el('voiceSettingBtn').addEventListener('click', () => {
     setVoiceEnabled(!state.voiceEnabled, { announce: !state.voiceEnabled });
@@ -681,9 +729,9 @@
   document.querySelectorAll('[data-units]').forEach(button => {
     button.addEventListener('click', () => setUnits(button.dataset.units));
   });
-  el('setHomeBtn').addEventListener('click', () => beginSavedSearch('home'));
-  el('setWorkBtn').addEventListener('click', () => beginSavedSearch('work'));
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
+  el('quickHomeBtn').addEventListener('click', () => openSavedPlace(state.saved.home));
+  el('quickWorkBtn').addEventListener('click', () => openSavedPlace(state.saved.work));
   el('homeSavedRow').addEventListener('click', () => state.saved.home ? openSavedPlace(state.saved.home) : beginSavedSearch('home'));
   el('workSavedRow').addEventListener('click', () => state.saved.work ? openSavedPlace(state.saved.work) : beginSavedSearch('work'));
   el('saveFavouriteBtn').addEventListener('click', () => {
@@ -712,10 +760,79 @@
       persistSavedPlaces(); finishSavedSearch(); el('savedSheet').hidden = false;
       return;
     }
-    if (state.stage === 'explore' || state.stage === 'place') {
-      setPoint('end', e.latlng, 'Dropped pin', fmtCoord(e.latlng));
-      showPlaceSheet();
+  });
+
+  async function reverseGeocode(latlng) {
+    const elapsed = Date.now() - state.lastGeocodeAt;
+    if (elapsed < 1050) await sleep(1050 - elapsed);
+    state.lastGeocodeAt = Date.now();
+    const params = new URLSearchParams({
+      lat: String(latlng.lat),
+      lon: String(latlng.lng),
+      format: 'jsonv2',
+      addressdetails: '1',
+      namedetails: '1',
+      zoom: '18',
+      'accept-language': 'en-GB'
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(`${NOMINATIM_REVERSE}?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      return response.ok ? await response.json() : null;
+    } catch (_) {
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  async function dropDestinationPin(latlng) {
+    if (state.navigating || !['explore', 'place'].includes(state.stage)) return;
+    setPoint('end', latlng, 'Dropped pin', fmtCoord(latlng));
+    showPlaceSheet();
+    showDestinationInContext(latlng);
+    const original = state.end && L.latLng(state.end.lat, state.end.lng);
+    const result = await reverseGeocode(latlng);
+    if (!result || !state.end || !original || state.end.distanceTo(original) > 2) return;
+    const primary = conciseResultName(result);
+    state.endLabel = primary || 'Dropped pin';
+    state.endAddress = resultSecondary(result, state.endLabel) || fmtCoord(latlng);
+    el('homeSearch').value = state.endLabel;
+    showPlaceSheet();
+  }
+
+  let longPressTimer = null;
+  let longPressStart = null;
+  let lastLongPressAt = 0;
+  const mapContainer = map.getContainer();
+  const cancelLongPress = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressStart = null;
+  };
+  mapContainer.addEventListener('pointerdown', event => {
+    if (!event.isPrimary || !['touch', 'pen'].includes(event.pointerType) || !['explore', 'place'].includes(state.stage)) return;
+    const rect = mapContainer.getBoundingClientRect();
+    longPressStart = { x: event.clientX, y: event.clientY, rect };
+    longPressTimer = setTimeout(() => {
+      if (!longPressStart) return;
+      lastLongPressAt = performance.now();
+      const point = L.point(longPressStart.x - longPressStart.rect.left, longPressStart.y - longPressStart.rect.top);
+      dropDestinationPin(map.containerPointToLatLng(point));
+      cancelLongPress();
+    }, 550);
+  }, {passive: true});
+  mapContainer.addEventListener('pointermove', event => {
+    if (longPressStart && Math.hypot(event.clientX - longPressStart.x, event.clientY - longPressStart.y) > 10) cancelLongPress();
+  }, {passive: true});
+  mapContainer.addEventListener('pointerup', cancelLongPress, {passive: true});
+  mapContainer.addEventListener('pointercancel', cancelLongPress, {passive: true});
+  map.on('contextmenu', event => {
+    if (performance.now() - lastLongPressAt >= 1000) dropDestinationPin(event.latlng);
   });
 
   function acquireCurrentLocation() {
@@ -738,6 +855,8 @@
       const pos = await acquireCurrentLocation();
       // A manual search, pin, newer request or departure from the planner wins.
       if (revision !== startLocationRevision || state.stage !== 'planner') return false;
+      state.userLatLng = pos.latlng;
+      setUserMarker(pos.latlng);
       setPoint('start', pos.latlng, 'Your location');
       map.setView(pos.latlng, 15);
       if (calculate) maybeCalculateRoute();
@@ -753,7 +872,25 @@
     }
   }
 
+  async function refreshBrowseLocation({ center = true, quiet = false } = {}) {
+    const button = el('browseLocateBtn');
+    if (button) button.disabled = true;
+    try {
+      const pos = await acquireCurrentLocation();
+      state.userLatLng = pos.latlng;
+      setUserMarker(pos.latlng);
+      if (center) map.setView(pos.latlng, Math.max(map.getZoom(), 15));
+      return true;
+    } catch (_) {
+      if (!quiet) toast('Location unavailable — check browser permission');
+      return false;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   el('useLocationBtn').addEventListener('click', () => useCurrentLocation());
+  el('browseLocateBtn').addEventListener('click', () => refreshBrowseLocation({ center: true }));
 
   el('directionsBtn').addEventListener('click', async () => {
     setStage('planner');
@@ -772,6 +909,8 @@
     state.mode = mode;
     el('cycleBtn').classList.toggle('active', mode === 'cycle');
     el('walkBtn').classList.toggle('active', mode === 'walk');
+    el('prefBtn').hidden = true;
+    el('prefMenu').hidden = true;
     invalidateRoute();
     maybeCalculateRoute();
   }
@@ -973,7 +1112,8 @@
       const current = state.userLatLng || state.start;
       const journey = remainingJourney(state.route, state.navProgressMeters, current, state.start, state.end, state.mode);
       const remaining = journey.distance, mins = journey.mins;
-      el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(remaining)} remaining`;
+      el('navEta').textContent = formatDuration(mins);
+      el('navRemain').textContent = `${formatDistance(remaining)} · arrive ${arrivalTime(mins)}`;
       const { maneuver } = activeManeuver(state.navProgressMeters);
       if (maneuver) {
         const d = Math.max(0, maneuver.at - state.navProgressMeters);
@@ -1030,21 +1170,68 @@
     return state.networkSource === 'bundled' ? 'Route ready' : 'Route ready · Online data';
   }
 
+  const MIX_LABELS = {
+    superredway: 'Super Redway',
+    redway: 'Redway',
+    leisure: 'Leisure',
+    shared: 'Shared path',
+    road: 'Road'
+  };
+
+  function renderRouteMix(plan) {
+    const mix = plan?.mixPercent;
+    const wrapper = el('routeMix');
+    const bar = el('routeMixBar');
+    const legend = el('routeMixLegend');
+    bar.replaceChildren();
+    legend.replaceChildren();
+    if (!mix) {
+      wrapper.hidden = true;
+      return;
+    }
+    wrapper.hidden = false;
+    for (const key of ['superredway', 'redway', 'leisure', 'shared', 'road']) {
+      const value = Number(mix[key] || 0);
+      if (!value) continue;
+      const segment = document.createElement('span');
+      segment.className = `route-mix-segment mix-${key}`;
+      segment.style.width = `${value}%`;
+      segment.title = `${MIX_LABELS[key]} ${value}%`;
+      bar.appendChild(segment);
+
+      const item = document.createElement('span');
+      item.innerHTML = `<i class="mix-dot mix-${key}"></i><b>${value}%</b> ${MIX_LABELS[key]}`;
+      legend.appendChild(item);
+    }
+  }
+
   function renderAlternatives() {
-    const container = el('routeAlternatives'); container.replaceChildren();
+    const container = el('routeAlternatives');
+    container.replaceChildren();
     if (state.mode !== 'cycle') return;
     for (const option of state.alternatives) {
-      const button = document.createElement('button'); button.type = 'button';
-      button.className = 'route-option' + (option.pref === state.pref ? ' selected' : '');
-      button.setAttribute('aria-pressed', String(option.pref === state.pref));
-      const title = document.createElement('strong'); title.textContent = PREF_LABEL[option.pref];
+      const prefs = option.prefs || [option.pref];
+      const selectedHere = prefs.includes(state.pref);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'route-option' + (selectedHere ? ' selected' : '');
+      button.setAttribute('aria-pressed', String(selectedHere));
+      const title = document.createElement('strong');
+      title.textContent = prefs.map(pref => PREF_LABEL[pref]).join(' / ');
       const detail = document.createElement('span');
-      detail.textContent = option.error ? 'No route' : `${formatDistance(option.dist)} · ${formatDuration(option.mins)} · ${option.roadPercent}% road`;
-      button.append(title, detail); button.disabled = Boolean(option.error) || state.routing;
+      detail.textContent = option.error
+        ? 'No route'
+        : `${formatDuration(option.mins)} · ${formatDistance(option.dist)} · ${option.roadPercent}% road${prefs.length > 1 ? ' · same route' : ''}`;
+      button.append(title, detail);
+      button.disabled = Boolean(option.error) || state.routing;
       button.addEventListener('click', () => {
-        state.pref = option.pref; el('prefLabel').textContent = PREF_LABEL[option.pref];
-        document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('active', b.dataset.pref === option.pref));
-        invalidateRoute(); maybeCalculateRoute();
+        state.pref = prefs.includes(state.pref) ? state.pref : prefs[0];
+        el('prefLabel').textContent = PREF_LABEL[state.pref];
+        document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('active', b.dataset.pref === state.pref));
+        if (option.plan) {
+          installRoute(option.plan, {fit: true, collapse: false});
+          renderAlternatives();
+        }
       });
       container.append(button);
     }
@@ -1052,14 +1239,29 @@
 
   function renderApproachNote() {
     const route = state.route, note = el('approachNote');
-    note.hidden = !route || route.approachDist < 5;
-    if (!route) return;
-    note.textContent = `Approaches: ${formatDistance(route.snaps.start)} at the start, ${formatDistance(route.snaps.end)} at the destination. Dashed approaches are unverified; check access. Totals include walking these gaps.`;
+    const startGap = route?.snaps?.start || 0;
+    const endGap = route?.snaps?.end || 0;
+    const significant = Math.max(startGap, endGap) > 50;
+    note.hidden = !route || !significant;
+    if (!route || !significant) return;
+    const messages = [];
+    if (startGap > 50) messages.push(`The first ${formatDistance(startGap)} isn't a mapped path`);
+    if (endGap > 50) messages.push(`The last ${formatDistance(endGap)} isn't a mapped path`);
+    note.textContent = `${messages.join('. ')}. Check that you can get through.`;
   }
 
-  function installRoute(plan, { fit = true } = {}) {
+  function installOfferSeen() {
+    try { return localStorage.getItem(INSTALL_OFFER_KEY) === '1'; } catch (_) { return true; }
+  }
+
+  function offerInstallOnce() {
+    if (appInstalled || installOfferSeen()) return;
+    try { localStorage.setItem(INSTALL_OFFER_KEY, '1'); } catch (_) {}
+    setTimeout(() => toast('Tip: install MK Redway from Settings for quicker access.', 4200), 900);
+  }
+
+  function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
     state.route = plan;
-    setRouteSheetCollapsed(false);
     drawRoute(plan.coords, fit);
     el('timeStat').textContent = formatDuration(plan.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
@@ -1067,24 +1269,37 @@
     el('redwayStat').textContent = `${plan.redwayPercent}%`;
     el('roadStat').textContent = `${plan.roadPercent}%`;
     el('startNavBtn').disabled = false;
+    renderRouteMix(plan);
     renderApproachNote();
     setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
+    setRouteSheetCollapsed(collapse);
+    offerInstallOnce();
   }
 
   async function solveRouteOnNetwork(parsed, { fit = true } = {}) {
     const revision = state.routeRevision;
     const {start, end, mode, pref, endLabel} = state;
     const choices = mode === 'cycle' && !state.navigating ? ['maximum', 'balanced', 'fastest'] : [pref];
-    const alternatives = []; let selected = null, selectedError;
+    const alternatives = [];
+    const bySignature = new Map();
+    let selected = null, selectedError;
     for (const choice of choices) {
       await sleep(0);
       if (revision !== state.routeRevision) return;
       try {
         const plan = planRoute(parsed, getGraph(parsed, mode, choice), start, end, mode, endLabel);
-        alternatives.push({pref:choice, dist:plan.dist, mins:plan.mins, roadPercent:plan.roadPercent});
+        const signature = plan.result.ids.join('|');
+        const duplicate = bySignature.get(signature);
+        if (duplicate) {
+          duplicate.prefs.push(choice);
+        } else {
+          const option = {pref: choice, prefs: [choice], plan, dist: plan.dist, mins: plan.mins, roadPercent: plan.roadPercent};
+          alternatives.push(option);
+          bySignature.set(signature, option);
+        }
         if (choice === pref) selected = plan;
       } catch (err) {
-        alternatives.push({pref:choice,error:true});
+        alternatives.push({pref: choice, prefs: [choice], error: true});
         if (choice === pref) selectedError = err;
       }
     }
@@ -1092,7 +1307,7 @@
     state.graphCache.clear(); // Keep only the selected plan's graph after comparing routes.
     state.alternatives = alternatives;
     if (!selected) throw selectedError || new Error('No route');
-    installRoute(selected, {fit}); renderAlternatives();
+    installRoute(selected, {fit, collapse: window.innerWidth < 900}); renderAlternatives();
   }
 
   function expandedBox(box, factor = 1.8) {
@@ -1152,6 +1367,7 @@
       console.error(err);
       if (revision === state.routeRevision) {
         setRouteStatus(routeErrorMessage(err), 'warn');
+        setRouteSheetCollapsed(false);
         el('retryRouteBtn').hidden = false;
         toast('Could not calculate route');
       }
@@ -1170,16 +1386,26 @@
   }
 
   el('retryRouteBtn').addEventListener('click', () => calculateRoute());
+  el('routeMoreBtn').addEventListener('click', () => {
+    const menu = el('routeMoreMenu');
+    menu.hidden = !menu.hidden;
+    el('routeMoreBtn').setAttribute('aria-expanded', String(!menu.hidden));
+    if (!menu.hidden) setRouteSheetCollapsed(false);
+  });
   for (const which of ['start','end']) {
     el(which === 'start' ? 'moveStartBtn' : 'moveEndBtn').addEventListener('click', () => {
       if (which === 'start') cancelStartLocation();
       state.editEndpoint = which;
+      el('routeMoreMenu').hidden = true;
+      el('routeMoreBtn').setAttribute('aria-expanded', 'false');
       setRouteStatus(`Tap an accessible ${which === 'start' ? 'starting point' : 'destination entrance'} on the map.`, 'warn');
       toast('Tap the map to place the entrance', 5000);
     });
   }
 
   el('clearBtn').addEventListener('click', () => {
+    el('routeMoreMenu').hidden = true;
+    el('routeMoreBtn').setAttribute('aria-expanded', 'false');
     stopNavigation({ keepRoute: false });
     state.editEndpoint = null;
     state.start = null; state.end = null; state.startLabel = ''; state.endLabel = ''; state.endAddress = '';
@@ -1353,6 +1579,24 @@
     userLayer.clearLayers();
     const icon = L.divIcon({ className: '', html: '<div class="user-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
     state.userMarker = L.marker(latlng, { icon, interactive: false }).addTo(userLayer);
+  }
+
+  function turnIconSvg(kind) {
+    const paths = {
+      straight: '<path d="M12 20V5M7 10l5-5 5 5"></path>',
+      left: '<path d="M20 17v-4a5 5 0 0 0-5-5H6M10 4 6 8l4 4"></path>',
+      right: '<path d="M4 17v-4a5 5 0 0 1 5-5h9M14 4l4 4-4 4"></path>',
+      'slight-left': '<path d="M18 19 8 9M8 15V9h6"></path>',
+      'slight-right': '<path d="m6 19 10-10M10 9h6v6"></path>',
+      'sharp-left': '<path d="M18 20v-8a4 4 0 0 0-4-4H7M11 4 7 8l4 4"></path>',
+      'sharp-right': '<path d="M6 20v-8a4 4 0 0 1 4-4h7M13 4l4 4-4 4"></path>',
+      arrive: '<circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2"></circle>'
+    };
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[kind] || paths.straight}</svg>`;
+  }
+
+  function setTurnIcon(kind) {
+    el('turnIcon').innerHTML = turnIconSvg(kind);
   }
 
   // Voice guidance ----------------------------------------------------------
@@ -1558,13 +1802,13 @@
     const remaining = Math.max(0, total - progress);
     const journey = remainingJourney(state.route, progress, latlng, state.start, state.end, state.mode);
     const mins = journey.mins;
-    el('navEta').textContent = arrivalTime(mins);
-    el('navRemain').textContent = `${formatDuration(mins)} · ${formatDistance(journey.distance)} remaining`;
+    el('navEta').textContent = formatDuration(mins);
+    el('navRemain').textContent = `${formatDistance(journey.distance)} · arrive ${arrivalTime(mins)}`;
 
     const { maneuver, index, next } = activeManeuver(progress);
     if (maneuver) {
       const d = Math.max(0, maneuver.at - progress);
-      el('turnIcon').textContent = maneuver.icon;
+      setTurnIcon(maneuver.icon);
       el('turnDistance').textContent = maneuver.arrive && d < 30 ? 'Approaching' : formatTurnDistance(d);
       el('turnText').textContent = maneuver.instruction;
       el('nextTurnText').textContent = next && !maneuver.arrive ? `Then ${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}` : '';
@@ -1650,7 +1894,9 @@
       followNavigationView(current.latlng, state.heading, false)
     ));
     if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
-    el('turnIcon').textContent = '↑';
+    setTurnIcon('straight');
+    el('navEta').textContent = formatDuration(state.route.mins);
+    el('navRemain').textContent = `${formatDistance(state.route.dist)} · arrive ${arrivalTime(state.route.mins)}`;
     el('turnDistance').textContent = 'Start';
     el('turnText').textContent = state.route.initialInstruction;
     el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
@@ -1668,6 +1914,7 @@
     state.watchId = null; state.navigating = false; state.followUser = true;
     resetMapOrientation();
     userLayer.clearLayers();
+    if (state.userLatLng) setUserMarker(state.userLatLng);
     if (!arrived) clearSpeechQueue({ cancelActive: true });
     if (!map.hasLayer(redwayLayer)) redwayLayer.addTo(map);
     redrawMarkers();
@@ -1759,9 +2006,9 @@
     try {
       offlineVectorLayer = window.protomapsL.leafletLayer({
         url: OFFLINE_MAP_URL,
-        flavor: 'light',
+        flavor: darkQuery?.matches ? 'dark' : 'light',
         lang: 'en',
-        attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · <a href="https://protomaps.com/">Protomaps</a>'
+        attribution: '<a href="https://protomaps.com/">Protomaps</a>'
       });
       const previousLayer = baseLayer;
       let switched = false;
@@ -1771,7 +2018,8 @@
         if (previousLayer && previousLayer !== offlineVectorLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
         baseLayer = offlineVectorLayer;
       };
-      offlineVectorLayer.on?.('tileload', finishSwitch);
+      // Keep the complete raster fallback visible until the vector layer has
+      // finished the current view; switching on the first tile creates a patchwork.
       offlineVectorLayer.on?.('load', finishSwitch);
       offlineVectorLayer.addTo(map);
       setTimeout(() => {
@@ -1873,7 +2121,7 @@
   function updateInstallButtonVisibility() {
     const button = el('installAppBtn');
     if (!button) return;
-    button.hidden = appInstalled || state.stage !== 'explore';
+    button.hidden = appInstalled;
   }
 
   function setInstallInstructions() {
@@ -1918,6 +2166,8 @@
 
   function showInstallSheet() {
     setInstallInstructions();
+    el('settingsSheet').hidden = true;
+    el('savedSheet').hidden = true;
     el('installSheet').hidden = false;
   }
 
@@ -1956,7 +2206,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.12.6';
+  el('app').dataset.appVersion = '0.13.0';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -2016,7 +2266,45 @@
   syncUnitControls();
   updatePlannerFields();
   setStage('explore');
-  setTimeout(showSettingsLogoHintOnce, 450);
+  setTurnIcon('straight');
   loadRedways();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
+
+  el('layersBtn').addEventListener('click', () => {
+    const popover = el('mapKeyPopover');
+    popover.hidden = !popover.hidden;
+    el('layersBtn').setAttribute('aria-expanded', String(!popover.hidden));
+  });
+  map.on('movestart', () => {
+    if (!el('mapKeyPopover').hidden) {
+      el('mapKeyPopover').hidden = true;
+      el('layersBtn').setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  (async () => {
+    try {
+      const permission = await navigator.permissions?.query?.({name: 'geolocation'});
+      if (permission?.state === 'granted') {
+        await refreshBrowseLocation({center: false, quiet: true});
+      } else {
+        const seen = localStorage.getItem(LOCATION_HINT_KEY) === '1';
+        if (!seen) {
+          localStorage.setItem(LOCATION_HINT_KEY, '1');
+          setTimeout(() => toast('Use the location button to show where you are. Location is only used for routing and navigation.', 5200), 700);
+        }
+      }
+    } catch (_) {}
+  })();
+
+  darkQuery?.addEventListener?.('change', () => {
+    document.documentElement.dataset.theme = darkQuery.matches ? 'dark' : 'light';
+    if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
+  });
 })();

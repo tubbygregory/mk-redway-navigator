@@ -79,6 +79,8 @@ test('generated MK data supports representative journeys in all four modes',()=>
    assert.ok(plan.dist>100&&plan.dist<25000,name);assert.ok(plan.snaps.start<=150&&plan.snaps.end<=150);
    assert.ok(plan.result.edges.every(e=>Number.isFinite(e.d)&&e.d>=0));
    assert.ok(plan.maneuvers.every(m=>!m.instruction.includes('Make a U-turn')));
+   assert.equal(Object.values(plan.mixPercent).reduce((a,b)=>a+b,0),100);
+   assert.ok(plan.maneuvers.every(m=>['straight','left','right','slight-left','slight-right','sharp-left','sharp-right','arrive'].includes(m.icon)));
    summary.push({journey:name,mode,pref,km:+(plan.dist/1000).toFixed(2),road:plan.roadPercent,instructions:plan.maneuvers.length});
   }
  }

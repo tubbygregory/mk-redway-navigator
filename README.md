@@ -11,11 +11,12 @@ Plan a journey around Milton Keynes, compare cycling routes and follow location-
 ## Key features
 
 - Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode.
-- Route previews with distance, estimated time and road share.
-- Live navigation, spoken guidance and automatic rerouting.
-- Home, Work and favourites saved on this device.
+- Route previews with distance, estimated time, complete route mix and road share.
+- Live navigation, spoken guidance, automatic rerouting and system dark mode.
+- Home, Work and favourites saved on this device, with quick shortcuts.
 - Downloadable Milton Keynes map and routing data.
-- Mobile portrait/landscape layouts and Home Screen installation.
+- Map key and current-location controls available while browsing.
+- Mobile portrait/landscape layouts, desktop planning controls and Home Screen installation.
 
 ## Routing philosophy
 

@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#a9251d" />
+  <meta name="theme-color" content="#a9251d" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#11151a" media="(prefers-color-scheme: dark)" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -25,15 +26,22 @@
     <!-- Explore / destination search. Compact and map-first, inspired by familiar mapping-app interaction patterns. -->
     <section id="exploreUI" class="top-overlay" aria-label="Destination search">
       <form id="homeSearchForm" class="search-pill">
-        <button id="logoSettingsBtn" class="search-logo-button" type="button" aria-label="Open settings" aria-haspopup="dialog" title="Settings">
-          <img src="./icons/app-logo.svg" class="search-logo" width="32" height="32" alt="" aria-hidden="true" />
-        </button>
+        <span class="search-logo-static" aria-hidden="true">
+          <img src="./icons/app-logo.svg" class="search-logo" width="32" height="32" alt="" />
+        </span>
         <label class="sr-only" for="homeSearch">Search for a destination</label>
         <input id="homeSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Search places or postcodes" />
         <button id="homeSearchSubmit" class="icon-button search-submit" type="submit" aria-label="Search">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
         </button>
+        <button id="visibleSettingsBtn" class="icon-button visible-settings" type="button" aria-label="Open settings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></svg>
+        </button>
       </form>
+      <div id="quickPlaces" class="quick-places" aria-label="Saved place shortcuts" hidden>
+        <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
+        <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
+      </div>
     </section>
 
     <button id="savedPlacesBtn" class="saved-fab" type="button" aria-label="Open saved places">
@@ -42,10 +50,21 @@
     </button>
 
 
-    <button id="installAppBtn" class="install-fab" type="button" hidden aria-label="Install MK Redway as an app">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"></path><path d="m8 10 4 4 4-4"></path><path d="M5 15v4h14v-4"></path></svg>
-      <span>Install app</span>
-    </button>
+    <div id="browseMapControls" class="browse-map-controls" aria-label="Map controls">
+      <button id="layersBtn" class="map-fab" type="button" aria-label="Show map key" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4-8 4-8-4 8-4Z"></path><path d="m4 12 8 4 8-4M4 17l8 4 8-4"></path></svg>
+      </button>
+      <button id="browseLocateBtn" class="map-fab" type="button" aria-label="Show my location" title="Show my location">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path><circle cx="12" cy="12" r="4"></circle></svg>
+      </button>
+    </div>
+    <aside id="mapKeyPopover" class="map-key-popover" aria-label="Map key" hidden>
+      <strong>Map key</strong>
+      <span><i class="key-super"></i>Super Redway</span>
+      <span><i class="key-redway"></i>Redway</span>
+      <span><i class="key-leisure"></i>Leisure route</span>
+      <span><i class="key-shared"></i>Shared path</span>
+    </aside>
 
     <!-- Route planner shown after Directions. -->
     <section id="plannerUI" class="top-overlay planner-card" aria-label="Route planner" hidden>
@@ -120,7 +139,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4" r="2"></circle><path d="m12 7-2 5 3 2 2 6M10 12l-3 7M12 8l4 4 3 1"></path></svg>
           Walk
         </button>
-        <button id="prefBtn" class="mode-chip preference-chip" type="button" aria-expanded="false">
+        <button id="prefBtn" class="mode-chip preference-chip" type="button" aria-expanded="false" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"></path><circle cx="15" cy="7" r="2"></circle><circle cx="9" cy="17" r="2"></circle></svg>
           <span id="prefLabel">Max Redway</span>
         </button>
@@ -143,27 +162,33 @@
           <span>· <b id="roadStat">—</b> road</span>
         </div>
       </div>
-      <div id="routeAlternatives" class="route-alternatives" role="group" aria-label="Compare cycling routes"></div>
-      <small class="road-share-note">Road share includes local streets; percentages exclude approach gaps.</small>
-      <p id="approachNote" class="approach-note" hidden></p>
-      <div class="endpoint-actions">
-        <button id="moveStartBtn" type="button">Move start pin</button>
-        <button id="moveEndBtn" type="button">Choose destination entrance</button>
+      <div id="routeMix" class="route-mix" aria-label="Selected route mix" hidden>
+        <div id="routeMixBar" class="route-mix-bar" aria-hidden="true"></div>
+        <div id="routeMixLegend" class="route-mix-legend"></div>
       </div>
+      <div id="routeAlternatives" class="route-alternatives" role="group" aria-label="Compare cycling routes"></div>
+      <small class="road-share-note">Route mix covers the mapped route; approach gaps are shown separately.</small>
+      <p id="approachNote" class="approach-note" hidden></p>
       <div id="routeStatus" class="route-status" aria-live="polite">Choose a start and destination.</div>
       <button id="retryRouteBtn" class="secondary-action" type="button" hidden>Retry route</button>
+      <div id="routeMoreMenu" class="route-more-menu" hidden>
+        <button id="moveStartBtn" type="button">Move start pin</button>
+        <button id="moveEndBtn" type="button">Choose destination entrance</button>
+        <a href="https://www.milton-keynes.gov.uk/pay-report-and-apply/report-it" target="_blank" rel="noopener noreferrer">Report a path problem</a>
+        <button id="clearBtn" type="button">Clear route</button>
+      </div>
       <div class="route-actions">
         <button id="startNavBtn" class="primary-action nav-start" type="button" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 18-7-4-7 4 7-18Z"></path></svg>
           Start
         </button>
-        <button id="clearBtn" class="secondary-action" type="button">Clear</button>
+        <button id="routeMoreBtn" class="secondary-action" type="button" aria-expanded="false">More</button>
       </div>
     </section>
 
     <!-- Live navigation UI. -->
     <section id="navBanner" class="nav-banner" aria-label="Next navigation instruction" hidden>
-      <div id="turnIcon" class="turn-icon" aria-hidden="true">↑</div>
+      <div id="turnIcon" class="turn-icon" aria-hidden="true"></div>
       <div class="turn-copy">
         <span id="turnDistance">Starting…</span>
         <strong id="turnText">Follow the route</strong>
@@ -210,11 +235,6 @@
           <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
       </div>
-      <div class="saved-set-actions">
-        <button id="setHomeBtn" class="compact-action" type="button">Set Home</button>
-        <button id="setWorkBtn" class="compact-action" type="button">Set Work</button>
-      </div>
-
       <div class="saved-section-heading">
         <strong>Favourites</strong>
         <button id="addFavouriteBtn" class="text-action" type="button">+ Add</button>
@@ -230,25 +250,8 @@
       </div>
       <div class="offline-note">Address/place search still needs an internet connection; saved places, map browsing and routing work offline.</div>
 
-      <div class="map-key" aria-label="Map key">
-        <span><i class="key-super"></i>Super Redway</span>
-        <span><i class="key-redway"></i>Redway</span>
-        <span><i class="key-leisure"></i>Leisure route</span>
-        <span><i class="key-shared"></i>Shared path</span>
-      </div>
     </section>
 
-
-    <div id="settingsLogoHint" class="settings-coachmark-backdrop" hidden>
-      <section class="settings-coachmark" role="dialog" aria-modal="true" aria-labelledby="settingsHintTitle" aria-describedby="settingsHintCopy">
-        <div class="coachmark-logo" aria-hidden="true"><img src="./icons/app-logo.svg" width="40" height="40" alt="" /></div>
-        <div class="coachmark-copy">
-          <strong id="settingsHintTitle">Settings are in the logo</strong>
-          <p id="settingsHintCopy">Tap the MK Redway logo in the top-left of the search bar whenever you want to change voice guidance or distance units.</p>
-        </div>
-        <button id="settingsHintGotIt" class="primary-action coachmark-action" type="button">Got it</button>
-      </section>
-    </div>
 
     <section id="settingsSheet" class="bottom-sheet settings-sheet" aria-label="Settings" hidden>
       <button id="settingsSheetHandle" class="sheet-handle" type="button" data-panel-label="settings" aria-expanded="true" aria-label="Collapse settings"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
@@ -279,6 +282,13 @@
           <button type="button" data-units="imperial">Miles &amp; yards <small>mi · yd</small></button>
         </div>
       </div>
+      <div class="setting-row install-setting">
+        <div class="setting-copy">
+          <strong>Install app</strong>
+          <span>Add MK Redway to your Home Screen for quicker access.</span>
+        </div>
+        <button id="installAppBtn" class="compact-action" type="button" aria-label="Install MK Redway as an app">Install</button>
+      </div>
       <details id="aboutData" class="about-data">
         <summary>About &amp; Data</summary>
         <h2>MK Redway Navigator</h2>
@@ -299,7 +309,8 @@
         <nav class="about-links" aria-label="Project information">
           <a href="./DATA-LICENCE.md">Data licences &amp; attribution</a>
           <a href="https://github.com/tubbygregory/mk-redway-navigator" target="_blank" rel="noopener noreferrer">Project source</a>
-          <a href="https://github.com/tubbygregory/mk-redway-navigator/issues/new" target="_blank" rel="noopener noreferrer">Report a problem</a>
+          <a href="https://www.milton-keynes.gov.uk/pay-report-and-apply/report-it" target="_blank" rel="noopener noreferrer">Problem with a path</a>
+          <a href="https://github.com/tubbygregory/mk-redway-navigator/issues/new?template=route-navigation-bug.yml" target="_blank" rel="noopener noreferrer">Problem with the app</a>
         </nav>
       </details>
     </section>

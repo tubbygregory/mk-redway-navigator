@@ -167,19 +167,19 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.12.6 beta release after production verification
+      - name: Publish v0.13.0 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.12.6" ]; then exit 0; fi
-          if gh release view v0.12.6 >/dev/null 2>&1; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.13.0" ]; then exit 0; fi
+          if gh release view v0.13.0 >/dev/null 2>&1; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Cleanup-only beta release. Navigation behaviour is unchanged from v0.12.5.
+          Interface and usability release based on the October 2026 independent design review.
 
-          - Remove unsupported council-permission claims, retaining factual attribution and the independent-project notice.
-          - Remove obsolete source notices from cached build metadata.
-          - Add a concise route/navigation bug-report template with a privacy reminder.
+          - Make map browsing calmer and safer with long-press pins, browse-time location controls, visible settings and a layers key.
+          - Make route choices easier to understand with a complete route mix, duplicate-route merging and a compact mobile preview.
+          - Add system dark mode, SVG guidance icons, improved navigation hierarchy, clearer reporting links and desktop map controls.
 
-          The full data, routing, browser/PWA and Pages-artifact gates passed before deployment, followed by live mobile verification. No raw data or build inputs are attached.
+          The full data, routing, browser/PWA and Pages-artifact gates passed before deployment, followed by live mobile verification.
           NOTES
-          gh release create v0.12.6 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.12.6" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create v0.13.0 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.13.0" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
