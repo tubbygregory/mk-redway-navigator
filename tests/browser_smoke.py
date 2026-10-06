@@ -46,6 +46,8 @@ def main():
                 expect(page.locator('#roadStat')).to_contain_text('%')
                 mix_total = page.locator('#routeMixLegend b').evaluate_all("els => els.reduce((sum, el) => sum + Number(el.textContent.replace('%','')), 0)")
                 assert mix_total == 100, mix_total
+                if page.locator('#routeSheetHandle').get_attribute('aria-expanded') == 'false':
+                    page.get_by_role('button', name='Expand route details', exact=True).click()
                 page.locator('.route-option').last.click()
                 expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
                 page.get_by_role('button', name='Walk', exact=True).click()
