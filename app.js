@@ -2009,6 +2009,11 @@
       'slight-right': '<path d="m6 19 10-10M10 9h6v6"></path>',
       'sharp-left': '<path d="M18 20v-8a4 4 0 0 0-4-4H7M11 4 7 8l4 4"></path>',
       'sharp-right': '<path d="M6 20v-8a4 4 0 0 1 4-4h7M13 4l4 4-4 4"></path>',
+      'u-turn-left': '<path d="M18 20V10a6 6 0 0 0-12 0v3M3 10l3 3 3-3"></path>',
+      'u-turn-right': '<path d="M6 20V10a6 6 0 0 1 12 0v3M15 10l3 3 3-3"></path>',
+      roundabout: '<circle cx="12" cy="12" r="5"></circle><path d="M12 20v-3M12 7V4M6.5 15.5 4 17M17.5 8.5 20 7"></path><path d="m15 5-3-1 1-3"></path>',
+      'roundabout-exit': '<circle cx="10" cy="13" r="4"></circle><path d="M10 21v-4M13 10l6-6M15 4h4v4"></path>',
+      underpass: '<path d="M3 17c2-6 5-9 9-9s7 3 9 9"></path><path d="M4 17h16M12 17V9"></path>',
       arrive: '<circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2"></circle>'
     };
     return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[kind] || paths.straight}</svg>`;
