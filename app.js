@@ -1030,17 +1030,21 @@
 
   el('savedPlacesBtn').addEventListener('click', () => {
     if (state.pendingSaveKind) finishSavedSearch();
+    closeExploreRoutes();
     renderSavedPlaces();
     el('settingsSheet').hidden = true;
     el('savedSheet').hidden = false;
-    probeOfflineMap().catch(() => {});
   });
   el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
   function openSettings() {
+    closeExploreRoutes();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
     syncVoiceControls();
     syncUnitControls();
+    syncRoutePreferenceControls();
+    applyTheme();
+    probeOfflineMap().catch(() => {});
     el('settingsSheet').hidden = false;
   }
 
@@ -1051,6 +1055,24 @@
   });
   document.querySelectorAll('[data-units]').forEach(button => {
     button.addEventListener('click', () => setUnits(button.dataset.units));
+  });
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    button.addEventListener('click', () => setThemeChoice(button.dataset.themeChoice));
+  });
+  document.querySelectorAll('[data-explore-filter]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.exploreFilter = button.dataset.exploreFilter;
+      document.querySelectorAll('[data-explore-filter]').forEach(x => x.classList.toggle('active', x === button));
+      renderCulturalRoutes();
+    });
+  });
+  el('exploreRoutesBtn').addEventListener('click', openExploreRoutes);
+  el('closeExplore').addEventListener('click', closeExploreRoutes);
+  el('goTabBtn').addEventListener('click', () => {
+    closeExploreRoutes();
+    el('savedSheet').hidden = true;
+    el('settingsSheet').hidden = true;
+    setStage('explore');
   });
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
   el('quickHomeBtn').addEventListener('click', () => openSavedPlace(state.saved.home));
