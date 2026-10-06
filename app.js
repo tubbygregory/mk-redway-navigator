@@ -841,6 +841,7 @@
   async function runSearch(context, input) {
     const query = input.value.trim();
     if (!query) { input.focus(); return; }
+    el('typeaheadSuggestions').hidden = true;
     if (context === 'start' || context === 'end') openPlannerSearch(context);
     const revision = ++searchRevision;
     input.blur();
