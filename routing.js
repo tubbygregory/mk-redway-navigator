@@ -355,6 +355,7 @@
       const enteringTunnel = ['yes','culvert','building_passage'].includes(outgoing?.tunnel) && !['yes','culvert','building_passage'].includes(incoming?.tunnel);
       const enteringRoundabout = outgoing?.junction === 'roundabout' && incoming?.junction !== 'roundabout';
       const leavingRoundabout = incoming?.junction === 'roundabout' && outgoing?.junction !== 'roundabout';
+      const enteringUnlit = outgoing?.lit === 'no' && incoming?.lit !== 'no';
       if (enteringTunnel) {
         const under = outgoing.underRoad ? ` under ${outgoing.underRoad}` : ' through the underpass';
         maneuvers.push({ index: i, at: cumulative[i], icon: 'underpass', instruction: `Continue${under}` });
@@ -368,6 +369,10 @@
         maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout-exit', instruction: `Exit the roundabout${targetPhrase(outgoing)}` });
         continue;
       }
+      if (enteringUnlit && abs < 28 && !namedChange) {
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'straight', instruction: 'Continue; unlit path ahead' });
+        continue;
+      }
       // Following a curving path is not a succession of turns. Keep decision points
       // and genuine hairpins, rather than suppressing real junctions by distance.
       if (!enteredRedway && !(junction && (abs >= 28 || namedChange)) && abs < 150) continue;
@@ -378,6 +383,7 @@
       else if (abs >= 58) { icon = delta > 0 ? 'right' : 'left'; instruction = `Turn ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
       else if (abs >= 28) { icon = delta > 0 ? 'slight-right' : 'slight-left'; instruction = `Bear ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
       else instruction = `Continue${targetPhrase(outgoing)}`;
+      if (enteringUnlit) instruction += '; unlit path ahead';
       const previous = maneuvers[maneuvers.length - 1];
       if (!junction && previous && cumulative[i] - previous.at < 25 && previous.instruction === instruction) continue;
       maneuvers.push({ index: i, at: cumulative[i], icon, instruction });
