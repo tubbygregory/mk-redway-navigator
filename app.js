@@ -1686,7 +1686,9 @@
     el('redwayStat').textContent = `${plan.redwayPercent}%`;
     el('roadStat').textContent = `${plan.roadPercent}%`;
     el('startNavBtn').disabled = false;
+    el('sendToPhoneBtn').disabled = false;
     renderRouteMix(plan);
+    renderRouteInsights(plan);
     renderApproachNote();
     setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
     setRouteSheetCollapsed(collapse);
