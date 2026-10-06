@@ -945,6 +945,8 @@
     el('goTabBtn').classList.remove('active');
     el('exploreRoutesBtn').classList.add('active');
     el('exploreRoutesBtn').setAttribute('aria-current', 'page');
+    el('savedPlacesBtn').classList.remove('active');
+    el('savedPlacesBtn').removeAttribute('aria-current');
     el('goTabBtn').removeAttribute('aria-current');
   }
 
@@ -1036,8 +1038,18 @@
     renderSavedPlaces();
     el('settingsSheet').hidden = true;
     el('savedSheet').hidden = false;
+    el('goTabBtn').classList.remove('active');
+    el('goTabBtn').removeAttribute('aria-current');
+    el('savedPlacesBtn').classList.add('active');
+    el('savedPlacesBtn').setAttribute('aria-current', 'page');
   });
-  el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
+  el('closeSaved').addEventListener('click', () => {
+    el('savedSheet').hidden = true;
+    el('savedPlacesBtn').classList.remove('active');
+    el('savedPlacesBtn').removeAttribute('aria-current');
+    el('goTabBtn').classList.add('active');
+    el('goTabBtn').setAttribute('aria-current', 'page');
+  });
   function openSettings() {
     closeExploreRoutes();
     el('savedSheet').hidden = true;
@@ -1073,7 +1085,11 @@
   el('goTabBtn').addEventListener('click', () => {
     closeExploreRoutes();
     el('savedSheet').hidden = true;
+    el('savedPlacesBtn').classList.remove('active');
+    el('savedPlacesBtn').removeAttribute('aria-current');
     el('settingsSheet').hidden = true;
+    el('goTabBtn').classList.add('active');
+    el('goTabBtn').setAttribute('aria-current', 'page');
     setStage('explore');
   });
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
