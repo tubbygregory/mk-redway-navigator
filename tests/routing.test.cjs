@@ -5,8 +5,8 @@ const fs=require('node:fs');
 const network=(nodes,ways)=>({nodes:new Map(nodes.map(([id,lat,lon])=>[id,{id,lat,lon}])),ways:ways.map(([id,nodes,tags])=>({id,nodes,tags}))});
 const tags={highway:'cycleway',_mk_class:'redway'};
 
-test('frontend accepts generated v5 and rejects incompatible data',()=>{
- assert.doesNotThrow(()=>R.parseBundledNetwork({format:'mk-redway-network-v5',nodes:[],ways:[]}));
+test('frontend accepts generated v6 and rejects incompatible data',()=>{
+ assert.doesNotThrow(()=>R.parseBundledNetwork({format:'mk-redway-network-v6',nodes:[],ways:[]}));
  assert.throws(()=>R.parseBundledNetwork({format:'mk-redway-network-v99',nodes:[],ways:[]}));
 });
 test('explicit council classifications take precedence; legal access still applies',()=>{
@@ -27,6 +27,33 @@ test('same-edge projections preserve distance, directions and original graph',()
   assert.throws(()=>R.planRoute(one,og,end,start),/No connected/);
  }
 });
+test('lighting and Super Route preferences change graph costs without changing access',()=>{
+ const p=network([[1,52,-.78],[2,52,-.77],[3,52.001,-.77]],[
+  [1,[1,2],{highway:'cycleway',_mk_class:'redway',lit:'no'}],
+  [2,[2,3],{highway:'cycleway',_mk_class:'super_redway',lit:'yes',_mk_route_ref:'H5',_mk_route_name:'Portway'}]
+ ]);
+ const normal=R.buildGraph(p,'cycle','balanced');
+ const preferred=R.buildGraph(p,'cycle','balanced',{preferLit:true,preferSuper:true});
+ assert.ok(preferred.get(1)[0].cost>normal.get(1)[0].cost,'unlit segment should be penalised');
+ const normalSuper=normal.get(2).find(e=>e.to===3);
+ const preferredSuper=preferred.get(2).find(e=>e.to===3);
+ assert.ok(preferredSuper.cost<normalSuper.cost,'Super Route should be favoured');
+ assert.equal(R.allowed({...tags,bicycle:'no'},'cycle'),false);
+});
+
+test('route insights count mapped underpasses, short road crossings, unlit distance and Super Routes',()=>{
+ const edges=[
+  {d:100,cls:'redway',lit:'no',tunnel:'yes',routeRef:'H5',routeName:'Portway'},
+  {d:20,cls:'road',lit:'yes',tunnel:''},
+  {d:100,cls:'redway',lit:'yes',tunnel:''}
+ ];
+ const insights=R.routeInsights(edges);
+ assert.equal(insights.underpasses,1);
+ assert.equal(insights.roadCrossings,1);
+ assert.equal(insights.unlitDist,100);
+ assert.deepEqual(insights.superRoutes,[{ref:'H5',name:'Portway'}]);
+});
+
 test('directed destination at terminal node is routable',()=>{
  const p=network([[1,52,-.78],[2,52,-.77]],[[1,[1,2],{...tags,oneway:'yes'}]]);
  const plan=R.planRoute(p,R.buildGraph(p,'cycle','fastest'),{lat:52,lng:-.778},{lat:52,lng:-.77});
@@ -62,7 +89,7 @@ test('download errors have actionable text',()=>{
 
 test('generated MK data supports representative journeys in all four modes',()=>{
  const raw=JSON.parse(fs.readFileSync('data/network.json','utf8')),parsed=R.parseBundledNetwork(raw);
- assert.equal(raw.format,'mk-redway-network-v5');assert.ok(raw.council_geometry_features>0,'Release must include council geometry');
+ assert.equal(raw.format,'mk-redway-network-v6');assert.ok(raw.council_geometry_features>0,'Release must include council geometry');
  assert.equal(parsed.ways.filter(w=>w.tags._mk_class==='redway'&&R.edgeClass(w.tags)!=='redway').length,0);
  const journeys=[
  ['Campbell Park–Knowlhill',[52.0467,-.7378],[52.025,-.783]],
@@ -80,7 +107,7 @@ test('generated MK data supports representative journeys in all four modes',()=>
    assert.ok(plan.result.edges.every(e=>Number.isFinite(e.d)&&e.d>=0));
    assert.ok(plan.maneuvers.every(m=>!m.instruction.includes('Make a U-turn')));
    assert.equal(Object.values(plan.mixPercent).reduce((a,b)=>a+b,0),100);
-   assert.ok(plan.maneuvers.every(m=>['straight','left','right','slight-left','slight-right','sharp-left','sharp-right','arrive'].includes(m.icon)));
+   assert.ok(plan.maneuvers.every(m=>['straight','left','right','slight-left','slight-right','sharp-left','sharp-right','u-turn-left','u-turn-right','roundabout','roundabout-exit','underpass','arrive'].includes(m.icon)));
    summary.push({journey:name,mode,pref,km:+(plan.dist/1000).toFixed(2),road:plan.roadPercent,instructions:plan.maneuvers.length});
   }
  }
