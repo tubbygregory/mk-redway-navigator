@@ -1693,6 +1693,25 @@
     }
   }
 
+  function renderUnlitSegments(plan) {
+    const edges = plan?.result?.edges || [];
+    const coords = plan?.coords || [];
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) L.polyline(run, {className:'route-unlit-line', interactive:false}).addTo(routeLayer);
+      run = [];
+    };
+    for (let i = 0; i < edges.length && i + 1 < coords.length; i++) {
+      if (edges[i].lit === 'no') {
+        if (!run.length) run.push(coords[i]);
+        run.push(coords[i + 1]);
+      } else {
+        flush();
+      }
+    }
+    flush();
+  }
+
   function renderRouteInsights(plan) {
     const insights = plan?.insights;
     const box = el('routeInsights');
@@ -1775,6 +1794,7 @@
   function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
     state.route = plan;
     drawRoute(plan.coords, fit);
+    renderUnlitSegments(plan);
     el('timeStat').textContent = formatDuration(plan.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
     el('distanceStat').textContent = formatDistance(plan.dist);
