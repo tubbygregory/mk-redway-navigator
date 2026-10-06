@@ -711,6 +711,7 @@
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
+    searchResultLayer.clearLayers();
     const displayResults = dedupeSearchResults(results);
     el('resultsTitle').textContent = displayResults.length ? `Results for “${query}”` : 'No matching places';
 
@@ -720,7 +721,7 @@
       msg.textContent = 'No Milton Keynes match found. Try a full postcode, street address or place name.';
       list.appendChild(msg);
     } else {
-      for (const result of displayResults) {
+      displayResults.forEach((result, index) => {
         const primary = conciseResultName(result);
         const secondary = resultSecondary(result, primary);
         const button = document.createElement('button');
@@ -735,7 +736,21 @@
         button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
         button.addEventListener('click', () => selectSearchResult(result, context));
         list.appendChild(button);
-      }
+        const lat = Number(result.lat), lon = Number(result.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          const icon = L.divIcon({
+            className: 'search-result-marker',
+            html: '<span>' + String(index + 1) + '</span>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 28]
+          });
+          L.marker([lat, lon], {icon}).addTo(searchResultLayer).on('click', () => selectSearchResult(result, context));
+        }
+      });
+      const coords = displayResults
+        .map(result => [Number(result.lat), Number(result.lon)])
+        .filter(pair => pair.every(Number.isFinite));
+      if (coords.length > 1) map.fitBounds(coords, {padding:[50,70], maxZoom:15});
     }
     el('resultsSheet').hidden = false;
   }
@@ -757,12 +772,20 @@
     searchRevision += 1;
     state.plannerSearchOpen = false;
     el('resultsSheet').hidden = true;
+    el('typeaheadSuggestions').hidden = true;
+    searchResultLayer.clearLayers();
     el('routeSheet').hidden = state.stage !== 'planner';
   }
 
   for (const [id, context] of [['startSearch', 'start'], ['endSearch', 'end']]) {
-    el(id).addEventListener('focus', () => openPlannerSearch(context));
+    const input = el(id);
+    input.addEventListener('focus', () => openPlannerSearch(context));
+    input.addEventListener('input', () => renderTypeahead(input, context));
   }
+  el('homeSearch').addEventListener('input', () => {
+    const context = state.pendingSaveKind ? 'save-' + state.pendingSaveKind : 'destination';
+    renderTypeahead(el('homeSearch'), context);
+  });
 
   async function runSearch(context, input) {
     const query = input.value.trim();
