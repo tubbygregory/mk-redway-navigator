@@ -118,6 +118,7 @@
     themeChoice: 'system',
     preferLit: false,
     preferSuper: false,
+    lightingCoverage: 0,
     localSearchIndex: [],
     speechUnlocked: false,
     speechVoice: null,
@@ -360,6 +361,8 @@
     if (lit) {
       lit.setAttribute('aria-checked', String(state.preferLit));
       lit.classList.toggle('active', state.preferLit);
+      const coverage = Math.round((state.lightingCoverage || 0) * 100);
+      lit.title = coverage ? 'Uses explicit OSM lit tags; about ' + coverage + '% of mapped path ways have a lighting tag.' : 'Uses explicit OSM lighting tags where they are available.';
     }
     if (sup) {
       sup.setAttribute('aria-checked', String(state.preferSuper));
@@ -620,8 +623,14 @@
   function buildLocalSearchIndex(parsed) {
     const entries = [];
     const seen = new Set();
+    let pathWays = 0;
+    let litTaggedWays = 0;
     for (const way of parsed?.ways || []) {
       const tags = way.tags || {};
+      if (['superredway','redway','leisure','shared'].includes(edgeClass(tags))) {
+        pathWays += 1;
+        if (['yes','no'].includes(String(tags.lit || '').toLowerCase())) litTaggedWays += 1;
+      }
       const candidates = [
         [tags.name, 'Street or path'],
         [tags._mk_route_name, tags._mk_route_ref ? 'Super Route' : 'Route'],
@@ -648,6 +657,8 @@
       }
     }
     state.localSearchIndex = entries;
+    state.lightingCoverage = pathWays ? litTaggedWays / pathWays : 0;
+    syncRoutePreferenceControls();
   }
 
   function localSuggestions(query) {
