@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.1
+
+- Fix the bright white Saved control in system dark mode.
+- Make the installed iOS bottom-edge viewport blend follow the active dark theme instead of fading to white.
+- Keep offline/settings auxiliary surfaces on dark theme tokens.
+- Add a dedicated installed-iOS dark-mode regression check.
+
 ## 0.13.0
 
 - Apply the October mobile/desktop design review: long-press map pins, persistent map search, visible settings, browse-time location controls and a map-key layers button.
