@@ -1820,6 +1820,204 @@
     else setRouteStatus('Search for a destination.');
   }
 
+  function xmlEscape(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch]));
+  }
+
+  function routeToGpx(plan, name = 'MK Redway route') {
+    const points = (plan?.coords || []).map(pair =>
+      '      <trkpt lat="' + Number(pair[0]).toFixed(6) + '" lon="' + Number(pair[1]).toFixed(6) + '"></trkpt>'
+    ).join('\n');
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<gpx version="1.1" creator="MK Redway Navigator" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+      '  <metadata><name>' + xmlEscape(name) + '</name></metadata>\n' +
+      '  <trk><name>' + xmlEscape(name) + '</name><trkseg>\n' + points + '\n  </trkseg></trk>\n' +
+      '</gpx>\n';
+  }
+
+  function downloadText(filename, textValue, type) {
+    const blob = new Blob([textValue], {type});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function parseGpx(textValue) {
+    const doc = new DOMParser().parseFromString(textValue, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('Invalid GPX file');
+    let points = [...doc.getElementsByTagNameNS('*', 'trkpt')];
+    if (!points.length) points = [...doc.getElementsByTagNameNS('*', 'rtept')];
+    const coords = points.map(node => [Number(node.getAttribute('lat')), Number(node.getAttribute('lon'))])
+      .filter(pair => pair.every(Number.isFinite));
+    if (coords.length < 2) throw new Error('GPX file does not contain a usable track');
+    const title = doc.getElementsByTagNameNS('*', 'name')[0]?.textContent?.trim() || 'Imported GPX route';
+    return {coords, title};
+  }
+
+  function importedPlan(coords, title) {
+    const cumulative = buildCumulative(coords);
+    const edges = [];
+    for (let i = 0; i < coords.length - 1; i++) {
+      edges.push({
+        d: cumulative[i + 1] - cumulative[i],
+        cls: 'shared',
+        name: title,
+        wayId: 'gpx-' + i,
+        lit: '',
+        tunnel: '',
+        junction: ''
+      });
+    }
+    const distance = cumulative.at(-1) || 0;
+    return {
+      coords,
+      cumulative,
+      result: {ids: coords.map((_, i) => 'gpx-' + i), edges},
+      networkDist: distance,
+      approachDist: 0,
+      dist: distance,
+      mins: distance / (state.mode === 'cycle' ? 4.17 : 1.34) / 60,
+      snaps: {start:0,end:0},
+      mixPercent: {superredway:0,redway:0,leisure:0,shared:100,road:0},
+      redwayPercent: 0,
+      roadPercent: 0,
+      insights: {underpasses:0,roadCrossings:0,unlitDist:0,superRoutes:[]},
+      maneuvers: buildManeuvers(coords, edges, cumulative, {
+        ids: coords.map((_, i) => 'gpx-' + i),
+        endLabel: title,
+        endGap: 0
+      }),
+      initialInstruction: initialInstruction(coords, edges)
+    };
+  }
+
+  function installImportedGpx(coords, title) {
+    stopNavigation({keepRoute:false});
+    state.importedRouteName = title;
+    state.start = L.latLng(coords[0][0], coords[0][1]);
+    state.end = L.latLng(coords.at(-1)[0], coords.at(-1)[1]);
+    state.startLabel = title + ' start';
+    state.endLabel = title + ' finish';
+    state.endAddress = 'Imported GPX';
+    state.alternatives = [];
+    setStage('planner');
+    updatePlannerFields();
+    redrawMarkers();
+    installRoute(importedPlan(coords, title), {fit:true, collapse: window.innerWidth < 900});
+    renderAlternatives();
+    toast('GPX route ready');
+  }
+
+  async function loadOfficialGpx(route, variant) {
+    const url = variant === 'short' ? route.shortGpx : route.fullGpx;
+    const title = route.color + ' · ' + route.title + (variant === 'short' ? ' short' : '');
+    try {
+      const response = await fetch(url, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
+      if (!response.ok) throw new Error('GPX download returned ' + response.status);
+      const parsed = parseGpx(await response.text());
+      closeExploreRoutes();
+      installImportedGpx(parsed.coords, title);
+    } catch (err) {
+      console.warn('Official GPX could not be loaded directly', err);
+      window.open(url, '_blank', 'noopener');
+      toast('GPX opened from Get Around MK. Import the downloaded file if it does not open here.', 6000);
+    }
+  }
+
+  async function importGpxFile(file) {
+    if (!file) return;
+    try {
+      const parsed = parseGpx(await file.text());
+      closeExploreRoutes();
+      installImportedGpx(parsed.coords, parsed.title || file.name.replace(/\.gpx$/i, ''));
+    } catch (err) {
+      console.error(err);
+      toast('That GPX file could not be read');
+    }
+  }
+
+  function routeShareUrl() {
+    if (!state.start || !state.end) return location.href.split('?')[0];
+    const url = new URL(location.href);
+    url.search = '';
+    url.searchParams.set('from', state.start.lat.toFixed(6) + ',' + state.start.lng.toFixed(6));
+    url.searchParams.set('to', state.end.lat.toFixed(6) + ',' + state.end.lng.toFixed(6));
+    url.searchParams.set('mode', state.mode);
+    url.searchParams.set('pref', state.pref);
+    if (state.preferLit) url.searchParams.set('lit', '1');
+    if (state.preferSuper) url.searchParams.set('super', '1');
+    return url.href;
+  }
+
+  async function sendRouteToPhone() {
+    if (!state.route) return;
+    const url = routeShareUrl();
+    const data = {title:'MK Redway route', text:'Open this route in MK Redway Navigator', url};
+    try {
+      if (navigator.share) {
+        await navigator.share(data);
+        return;
+      }
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast('Route link copied — open it on your phone');
+        return;
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      console.warn(err);
+    }
+    window.prompt('Copy this route link to your phone:', url);
+  }
+
+  function restoreSharedRoute() {
+    const params = new URLSearchParams(location.search);
+    const parsePoint = key => {
+      const match = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(params.get(key) || '');
+      if (!match) return null;
+      const lat = Number(match[1]), lng = Number(match[2]);
+      if (![lat,lng].every(Number.isFinite) || lat < MK.south || lat > MK.north || lng < MK.west || lng > MK.east) return null;
+      return L.latLng(lat,lng);
+    };
+    const from = parsePoint('from'), to = parsePoint('to');
+    if (!from || !to) return false;
+    state.mode = params.get('mode') === 'walk' ? 'walk' : 'cycle';
+    state.pref = ['maximum','balanced','fastest'].includes(params.get('pref')) ? params.get('pref') : 'maximum';
+    state.preferLit = params.get('lit') === '1';
+    state.preferSuper = params.get('super') === '1';
+    state.start = from;
+    state.end = to;
+    state.startLabel = 'Shared route start';
+    state.endLabel = 'Shared route destination';
+    state.endAddress = '';
+    el('cycleBtn').classList.toggle('active', state.mode === 'cycle');
+    el('walkBtn').classList.toggle('active', state.mode === 'walk');
+    el('routePreferences').hidden = state.mode !== 'cycle';
+    syncRoutePreferenceControls();
+    setStage('planner');
+    updatePlannerFields();
+    redrawMarkers();
+    maybeCalculateRoute();
+    return true;
+  }
+
+  el('exportGpxBtn').addEventListener('click', () => {
+    if (!state.route) return;
+    downloadText('mk-redway-route.gpx', routeToGpx(state.route, state.endLabel || 'MK Redway route'), 'application/gpx+xml');
+  });
+  for (const id of ['importGpxBtn','exploreImportGpxBtn']) {
+    el(id).addEventListener('click', () => el('gpxFileInput').click());
+  }
+  el('gpxFileInput').addEventListener('change', event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    importGpxFile(file);
+  });
+  el('sendToPhoneBtn').addEventListener('click', sendRouteToPhone);
+
   el('retryRouteBtn').addEventListener('click', () => calculateRoute());
   el('routeMoreBtn').addEventListener('click', () => {
     const menu = el('routeMoreMenu');
