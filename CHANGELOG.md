@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.0
+
+- Complete the remaining practical recommendations from the October design review.
+- Add local type-ahead suggestions, numbered search-result pins and favourite shortcut chips without using the public Nominatim service for autocomplete.
+- Add Explore MK with the five Get Around MK Cultural Routes and official full/short GPX source links.
+- Add GPX import/export and shareable route links for sending a planned journey to a phone.
+- Add mapped underpass, road-crossing and unlit-distance summaries, with optional lighting-aware and Super Route-aware cycling preferences.
+- Add H/V grid-road context to mapped underpass instructions, named Super Route labels, roundabout/U-turn guidance and warnings before mapped unlit stretches.
+- Add automatic after-sunset navigation dark mode, explicit light/dark/high-contrast appearance choices, and move offline-map management from Saved into Settings.
+- Add a first-run location explanation and explicit opt-in control, plus route alternatives with time labels directly on the map.
+- Bump the generated routing-data format to v6 so the new underpass and route metadata is rebuilt and validated.
+
 ## 0.13.1
 
 - Fix the bright white Saved control in system dark mode.
