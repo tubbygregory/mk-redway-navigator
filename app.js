@@ -332,6 +332,9 @@
     const theme = effectiveTheme();
     state.nightThemeActive = theme === 'dark';
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark';
+    const themeColor = theme === 'high-contrast' ? '#000000' : theme === 'dark' ? '#11151a' : '#a9251d';
+    document.querySelectorAll('meta[name="theme-color"]').forEach(meta => { meta.content = themeColor; });
     document.querySelectorAll('[data-theme-choice]').forEach(button => {
       button.classList.toggle('active', button.dataset.themeChoice === state.themeChoice);
     });
