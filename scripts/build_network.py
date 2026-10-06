@@ -64,7 +64,7 @@ def download_geofabrik_pbf() -> Path:
     for attempt in range(3):
         try:
             print(f"Downloading current Buckinghamshire OSM extract from Geofabrik (attempt {attempt + 1}/3)…", flush=True)
-            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator/0.12.0 GitHub-Pages-build"})
+            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator/0.14.0 GitHub-Pages-build"})
             with urllib.request.urlopen(req, timeout=180) as r, tmp.open("wb") as out:
                 while True:
                     chunk = r.read(1024 * 1024)
@@ -175,7 +175,7 @@ def request_overpass(query: str, label: str, rotate: int = 0, attempts: int = 2)
                     headers={
                         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
                         "Accept": "application/json",
-                        "User-Agent": "MKRedwayNavigator-PoC/0.10 GitHub-Pages-build",
+                        "User-Agent": "MKRedwayNavigator/0.14.0 GitHub-Pages-build",
                     },
                     method="POST",
                 )
