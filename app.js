@@ -577,6 +577,104 @@
     return chosen;
   }
 
+  function buildLocalSearchIndex(parsed) {
+    const entries = [];
+    const seen = new Set();
+    for (const way of parsed?.ways || []) {
+      const tags = way.tags || {};
+      const candidates = [
+        [tags.name, 'Street or path'],
+        [tags._mk_route_name, tags._mk_route_ref ? 'Super Route' : 'Route'],
+        [tags._mk_route_ref, 'Super Route']
+      ];
+      const nodes = way.nodes.map(id => parsed.nodes.get(id)).filter(Boolean);
+      if (!nodes.length) continue;
+      const mid = nodes[Math.floor(nodes.length / 2)];
+      for (const pair of candidates) {
+        const textValue = String(pair[0] || '').trim();
+        const type = pair[1];
+        if (!textValue || textValue.length < 2) continue;
+        const key = textValue.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({
+          lat: mid.lat,
+          lon: mid.lon,
+          name: textValue,
+          display_name: type === 'Super Route' ? textValue + ', Milton Keynes' : 'Milton Keynes',
+          type,
+          local: true
+        });
+      }
+    }
+    state.localSearchIndex = entries;
+  }
+
+  function localSuggestions(query) {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const saved = [state.saved.home, state.saved.work, ...state.saved.favourites]
+      .filter(Boolean)
+      .map(place => ({
+        lat: place.lat,
+        lon: place.lng,
+        name: place.name,
+        display_name: place.address || 'Saved place',
+        type: 'Saved place',
+        local: true
+      }));
+    const ranked = [];
+    for (const item of [...saved, ...state.localSearchIndex]) {
+      const name = String(item.name || '').toLowerCase();
+      const display = String(item.display_name || '').toLowerCase();
+      const starts = name.startsWith(q);
+      const includes = name.includes(q) || display.includes(q);
+      if (!includes) continue;
+      const d = resultDistance(item);
+      ranked.push({item, score: (starts ? 0 : 10) + Math.max(0, name.indexOf(q)) + (Number.isFinite(d) ? Math.min(20, d / 1000) : 5)});
+    }
+    ranked.sort((a,b) => a.score - b.score);
+    return dedupeSearchResults(ranked.map(x => x.item)).slice(0, 5);
+  }
+
+  function makeSuggestionButton(result, context) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'typeahead-item';
+    button.innerHTML = '<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><small></small></span>';
+    button.querySelector('strong').textContent = conciseResultName(result);
+    const bits = [resultTypeLabel(result) || result.type];
+    const d = resultDistance(result);
+    if (Number.isFinite(d)) bits.push(formatDistance(d));
+    button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
+    button.addEventListener('click', () => {
+      el('typeaheadSuggestions').hidden = true;
+      selectSearchResult(result, context);
+    });
+    return button;
+  }
+
+  function renderTypeahead(input, context) {
+    const results = localSuggestions(input.value);
+    if (input === el('homeSearch')) {
+      const box = el('typeaheadSuggestions');
+      box.replaceChildren();
+      for (const result of results) box.appendChild(makeSuggestionButton(result, context));
+      box.hidden = !results.length;
+      return;
+    }
+    if (input.value.trim().length < 2) return;
+    openPlannerSearch(context);
+    const list = el('resultsList');
+    list.replaceChildren();
+    el('resultsTitle').textContent = results.length ? 'Suggestions' : 'Search when ready';
+    if (results.length) {
+      for (const result of results) list.appendChild(makeSuggestionButton(result, context));
+    } else {
+      list.innerHTML = '<div class="result-message">Press Search for addresses and places. Suggestions are generated locally from the MK routing map.</div>';
+    }
+  }
+
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
