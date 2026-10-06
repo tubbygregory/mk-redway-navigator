@@ -1765,6 +1765,8 @@ html[data-theme="light"] #map { background: #fff !important; }
 html[data-theme="light"] .route-option { background:#fff; color:#333; border-color:#d4d4d4; }
 html[data-theme="light"] .route-option.selected { background:#fff6f3; border-color:var(--red); }
 html[data-theme="light"] .approach-note { background:#fff2d5; color:#674400; }
+html[data-theme="light"] .leaflet-control-attribution { background:rgba(255,255,255,.86) !important; color:#333; }
+html[data-theme="light"] .leaflet-control-attribution a { color:#2457d6; }
 html[data-theme="light"] .leaflet-tile-pane img { filter:none; }
 html[data-theme="light"].ios-standalone #app::after {
   background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.92) 78%, #fff 100%);
