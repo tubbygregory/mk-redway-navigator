@@ -155,7 +155,8 @@
     offlineDownloadBusy: false,
     exploreFilter: 'all',
     importedRouteName: '',
-    nightThemeActive: false
+    nightThemeActive: false,
+    lastThemeCheckAt: 0
   };
 
   function syncViewport() {
@@ -520,6 +521,7 @@
 
   function setPoint(which, latlng, label = '', address = '') {
     if (which === 'start') cancelStartLocation();
+    state.importedRouteName = '';
     state[which] = L.latLng(latlng.lat, latlng.lng);
     state[`${which}Label`] = label || fmtCoord(state[which]);
     if (which === 'end') state.endAddress = address || label || '';
@@ -2528,6 +2530,18 @@
     state.userLatLng = latlng;
     state.lastPositionAt = Date.now();
     setUserMarker(latlng);
+    if (state.themeChoice === 'system' && Date.now() - state.lastThemeCheckAt > 30000) {
+      state.lastThemeCheckAt = Date.now();
+      const before = document.documentElement.dataset.theme;
+      applyTheme();
+      if (before !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+        map.removeLayer(offlineVectorLayer);
+        offlineVectorLayer = null;
+        if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+        baseLayer = onlineBaseLayer;
+        activatePackagedBasemap().catch(console.warn);
+      }
+    }
 
     const snap = nearestOnRoute(latlng);
     if (!snap) return;
@@ -2580,6 +2594,16 @@
   async function rerouteFromPosition(latlng) {
     if (!state.route || state.routing) return;
     state.lastRerouteAt = Date.now(); state.offRouteCount = 0;
+    if (state.importedRouteName) {
+      const snap = nearestOnRoute(latlng);
+      const gap = snap?.distance;
+      const message = Number.isFinite(gap)
+        ? `Return to the imported route — nearest point is ${formatDistance(gap)} away.`
+        : 'Return to the imported route.';
+      toast(message, 4200);
+      speak(message, { priority: 3, dedupeMs: 12000 });
+      return;
+    }
     toast('Rerouting…'); speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
     state.start = latlng; state.startLabel = 'Your location';
     invalidateRoute();
@@ -2607,7 +2631,7 @@
     if (!current) { toast('Allow location access to start navigation'); return; }
     state.userLatLng = current.latlng;
     const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
-    if (distanceFromPlannedStart > 60) {
+    if (distanceFromPlannedStart > 60 && !state.importedRouteName) {
       state.start = current.latlng; state.startLabel = 'Your location';
       invalidateRoute();
       await calculateRoute({ fit: false, quiet: true });
@@ -2621,6 +2645,15 @@
     state.followUser = true;
     applyTheme();
     resetNavigationProgress();
+    if (state.importedRouteName) {
+      const importedSnap = nearestOnRoute(current.latlng);
+      if (importedSnap && importedSnap.distance <= 100) {
+        state.lastSegment = importedSnap.segment;
+        state.navProgressMeters = importedSnap.progress;
+      } else if (importedSnap) {
+        toast(`Imported route is ${formatDistance(importedSnap.distance)} away — head to the nearest point to join it.`, 6000);
+      }
+    }
     redrawMarkers();
     setStage('navigation');
     redwayLayer.remove(); // declutter sat-nav view; the chosen route remains visible.
