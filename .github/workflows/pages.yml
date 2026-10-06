@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "professionalism-release", "cleanup-v0.12.6", "pdf-review-completion"]
+    branches: ["main", "pdf-review-completion"]
   workflow_dispatch:
 
 permissions:
