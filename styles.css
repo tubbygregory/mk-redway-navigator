@@ -1704,6 +1704,7 @@ html.ios-standalone .toast {
 .route-iron .cultural-swatch { background: #5f6670; }
 .route-cornflower .cultural-swatch { background: #6495ed; }
 .cultural-route-card p { margin: 8px 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.cultural-join { display:block; margin:-2px 0 8px; color:var(--muted); font-size:10px; }
 .cultural-route-actions { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
 .cultural-route-actions button,
 .cultural-route-actions a {
