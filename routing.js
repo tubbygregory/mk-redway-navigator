@@ -4,7 +4,7 @@
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
   function parseBundledNetwork(data) {
-    if (!data || !['mk-redway-network-v1', 'mk-redway-network-v2', 'mk-redway-network-v3', 'mk-redway-network-v4', 'mk-redway-network-v5'].includes(data.format) || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
+    if (!data || !['mk-redway-network-v1', 'mk-redway-network-v2', 'mk-redway-network-v3', 'mk-redway-network-v4', 'mk-redway-network-v5', 'mk-redway-network-v6'].includes(data.format) || !Array.isArray(data.nodes) || !Array.isArray(data.ways)) {
       throw new Error('Bundled routing network has an unsupported format');
     }
     const nodes = new Map();
