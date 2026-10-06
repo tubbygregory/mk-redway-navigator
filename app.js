@@ -891,6 +891,70 @@
   }
 
 
+  function culturalRouteMatches(route) {
+    if (state.exploreFilter === 'all') return true;
+    if (state.exploreFilter === 'short') return route.shortMiles <= 5;
+    return route.tags.includes(state.exploreFilter);
+  }
+
+  function renderCulturalRoutes() {
+    const list = el('culturalRoutesList');
+    if (!list) return;
+    list.replaceChildren();
+    for (const route of CULTURAL_ROUTES.filter(culturalRouteMatches)) {
+      const card = document.createElement('article');
+      card.className = 'cultural-route-card route-' + route.id;
+      const header = document.createElement('div');
+      header.className = 'cultural-route-heading';
+      header.innerHTML = '<span class="cultural-swatch" aria-hidden="true"></span><div><strong></strong><small></small></div>';
+      header.querySelector('strong').textContent = route.color + ' · ' + route.title;
+      header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi short';
+      const highlights = document.createElement('p');
+      highlights.textContent = route.highlights.join(' · ');
+      const actions = document.createElement('div');
+      actions.className = 'cultural-route-actions';
+      const full = document.createElement('button');
+      full.type = 'button';
+      full.textContent = 'Full route';
+      full.addEventListener('click', () => loadOfficialGpx(route, 'full'));
+      const short = document.createElement('button');
+      short.type = 'button';
+      short.textContent = 'Short route';
+      short.addEventListener('click', () => loadOfficialGpx(route, 'short'));
+      const source = document.createElement('a');
+      source.href = CULTURAL_ROUTES_URL;
+      source.target = '_blank';
+      source.rel = 'noopener noreferrer';
+      source.textContent = 'Route guide';
+      actions.append(full, short, source);
+      card.append(header, highlights, actions);
+      list.appendChild(card);
+    }
+  }
+
+  function openExploreRoutes() {
+    if (state.pendingSaveKind) finishSavedSearch();
+    el('savedSheet').hidden = true;
+    el('settingsSheet').hidden = true;
+    el('installSheet').hidden = true;
+    renderCulturalRoutes();
+    el('exploreSheet').hidden = false;
+    el('app').dataset.exploreOpen = 'true';
+    el('goTabBtn').classList.remove('active');
+    el('exploreRoutesBtn').classList.add('active');
+    el('exploreRoutesBtn').setAttribute('aria-current', 'page');
+    el('goTabBtn').removeAttribute('aria-current');
+  }
+
+  function closeExploreRoutes() {
+    el('exploreSheet').hidden = true;
+    el('app').dataset.exploreOpen = 'false';
+    el('exploreRoutesBtn').classList.remove('active');
+    el('exploreRoutesBtn').removeAttribute('aria-current');
+    el('goTabBtn').classList.add('active');
+    el('goTabBtn').setAttribute('aria-current', 'page');
+  }
+
   // All visible sheet handles share touch, mouse and keyboard behaviour.
   function setSheetCollapsed(sheet, collapsed) {
     const handle = sheet.querySelector('.sheet-handle');
