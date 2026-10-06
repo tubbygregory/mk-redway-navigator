@@ -330,16 +330,16 @@
       // Following a curving path is not a succession of turns. Keep decision points
       // and genuine hairpins, rather than suppressing real junctions by distance.
       if (!enteredRedway && !(junction && (abs >= 28 || namedChange)) && abs < 150) continue;
-      let icon = '↑', instruction;
-      if (abs >= 150) { icon = '↶'; instruction = `Follow the sharp bend${targetPhrase(outgoing)}`; }
-      else if (abs >= 58) { icon = delta > 0 ? '↱' : '↰'; instruction = `Turn ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
-      else if (abs >= 28) { icon = delta > 0 ? '↗' : '↖'; instruction = `Bear ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
+      let icon = 'straight', instruction;
+      if (abs >= 150) { icon = delta > 0 ? 'sharp-right' : 'sharp-left'; instruction = `Follow the sharp bend${targetPhrase(outgoing)}`; }
+      else if (abs >= 58) { icon = delta > 0 ? 'right' : 'left'; instruction = `Turn ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
+      else if (abs >= 28) { icon = delta > 0 ? 'slight-right' : 'slight-left'; instruction = `Bear ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
       else instruction = `Continue${targetPhrase(outgoing)}`;
       const previous = maneuvers[maneuvers.length - 1];
       if (!junction && previous && cumulative[i] - previous.at < 25 && previous.instruction === instruction) continue;
       maneuvers.push({ index: i, at: cumulative[i], icon, instruction });
     }
-    maneuvers.push({ index: coords.length - 1, at: cumulative.at(-1) || 0, icon: '●',
+    maneuvers.push({ index: coords.length - 1, at: cumulative.at(-1) || 0, icon: 'arrive',
       instruction: endGap > 20 ? `Mapped route ends near ${endLabel}; check the remaining approach` : `Approach ${endLabel}`,
       arrive: true });
     return maneuvers;
@@ -361,6 +361,22 @@
     return `Head ${dir}`;
   }
 
+
+  const MIX_KEYS = ['superredway', 'redway', 'leisure', 'shared', 'road'];
+
+  function wholePercentMix(mix, total) {
+    const out = Object.fromEntries(MIX_KEYS.map(key => [key, 0]));
+    if (!(total > 0)) return out;
+    const rows = MIX_KEYS.map((key, order) => {
+      const exact = Math.max(0, Number(mix[key] || 0)) / total * 100;
+      return { key, order, value: Math.floor(exact), fraction: exact - Math.floor(exact) };
+    });
+    let remaining = 100 - rows.reduce((sum, row) => sum + row.value, 0);
+    rows.sort((a, b) => b.fraction - a.fraction || a.order - b.order);
+    for (let i = 0; i < rows.length && remaining > 0; i++, remaining--) rows[i].value += 1;
+    for (const row of rows) out[row.key] = row.value;
+    return out;
+  }
 
   const MAX_APPROACH = 150;
 
@@ -429,11 +445,12 @@
     const cumulative=buildCumulative(coords), mix={superredway:0,redway:0,leisure:0,shared:0,road:0};
     for(const edge of result.edges) mix[Object.hasOwn(mix,edge.cls)?edge.cls:'road']+=edge.d;
     const networkDist=result.edges.reduce((sum,e)=>sum+e.d,0), approachDist=result.startSnap+result.endSnap;
-    return { parsed:network, graph, result, coords, cumulative, mix, networkDist, approachDist,
+    const mixPercent=wholePercentMix(mix, networkDist);
+    return { parsed:network, graph, result, coords, cumulative, mix, mixPercent, networkDist, approachDist,
       dist:networkDist+approachDist, mins:networkDist/(mode==='cycle'?4.17:1.34)/60+approachDist/1.34/60,
       snaps:{start:result.startSnap,end:result.endSnap},
-      roadPercent:networkDist?Math.round(mix.road/networkDist*100):0,
-      redwayPercent:networkDist?Math.round((mix.superredway+mix.redway)/networkDist*100):0,
+      roadPercent:mixPercent.road,
+      redwayPercent:mixPercent.superredway+mixPercent.redway,
       maneuvers:buildManeuvers(coords,result.edges,cumulative,{ids:result.ids,graph,endLabel,endGap:result.endSnap}),
       initialInstruction:result.startSnap>20?'Join the mapped route using an accessible approach':initialInstruction(coords,result.edges),
       startNodeId:result.ids[0],endNodeId:result.ids.at(-1) };
@@ -460,5 +477,5 @@
     return {distance:mapped+startApproach+endApproach,mins:mapped/(mode==='cycle'?4.17:1.34)/60+(startApproach+endApproach)/1.34/60};
   }
 
-  return { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney };
+  return { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, wholePercentMix, planRoute, routeErrorMessage, hasArrived, remainingJourney };
 });
