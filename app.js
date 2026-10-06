@@ -1574,10 +1574,57 @@
     }
   }
 
+  function renderAlternativeMapRoutes() {
+    routeLayer.eachLayer(layer => {
+      const className = layer.options?.className || '';
+      if (className === 'route-alt-line' || className === 'route-alt-time') routeLayer.removeLayer(layer);
+    });
+    if (state.mode !== 'cycle' || !state.route) return;
+    for (const option of state.alternatives) {
+      if (!option.plan || option.plan === state.route) continue;
+      const line = L.polyline(option.plan.coords, {className:'route-alt-line', interactive:false}).addTo(routeLayer);
+      line.bringToBack?.();
+      const coords = option.plan.coords;
+      if (coords.length) {
+        const point = coords[Math.floor(coords.length / 2)];
+        const icon = L.divIcon({
+          className: 'route-alt-time',
+          html: '<span>' + formatDuration(option.mins) + '</span>',
+          iconSize: [54, 24],
+          iconAnchor: [27, 12]
+        });
+        L.marker(point, {icon, interactive:false}).addTo(routeLayer);
+      }
+    }
+  }
+
+  function renderRouteInsights(plan) {
+    const insights = plan?.insights;
+    const box = el('routeInsights');
+    if (!insights) {
+      box.hidden = true;
+      return;
+    }
+    el('underpassStat').textContent = String(insights.underpasses || 0);
+    el('crossingStat').textContent = String(insights.roadCrossings || 0);
+    el('unlitStat').textContent = formatDistance(insights.unlitDist || 0);
+    box.querySelectorAll('.super-route-badge').forEach(node => node.remove());
+    for (const route of insights.superRoutes || []) {
+      const badge = document.createElement('span');
+      badge.className = 'super-route-badge';
+      badge.textContent = route.ref + ' Super Route';
+      box.appendChild(badge);
+    }
+    box.hidden = false;
+  }
+
   function renderAlternatives() {
     const container = el('routeAlternatives');
     container.replaceChildren();
-    if (state.mode !== 'cycle') return;
+    if (state.mode !== 'cycle') {
+      renderAlternativeMapRoutes();
+      return;
+    }
     for (const option of state.alternatives) {
       const prefs = option.prefs || [option.pref];
       const selectedHere = prefs.includes(state.pref);
@@ -1604,6 +1651,7 @@
       });
       container.append(button);
     }
+    renderAlternativeMapRoutes();
   }
 
   function renderApproachNote() {
