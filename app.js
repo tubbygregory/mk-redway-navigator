@@ -549,10 +549,12 @@
     state.route = null;
     state.alternatives = [];
     el('routeAlternatives').replaceChildren();
+    el('routeInsights').hidden = true;
     el('approachNote').hidden = true;
     el('roadStat').textContent = '—';
     el('retryRouteBtn').hidden = true;
     el('startNavBtn').disabled = true;
+    el('sendToPhoneBtn').disabled = true;
     el('timeStat').textContent = '—';
     el('distanceStat').textContent = '—';
     el('redwayStat').textContent = '—';
