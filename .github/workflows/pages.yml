@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "professionalism-release", "cleanup-v0.12.6"]
+    branches: ["main", "professionalism-release", "cleanup-v0.12.6", "pdf-review-completion"]
   workflow_dispatch:
 
 permissions:
@@ -35,9 +35,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/network.json
-          key: mk-redway-routing-v7-${{ github.run_number }}
+          key: mk-redway-routing-v8-${{ github.run_number }}
           restore-keys: |
-            mk-redway-routing-v7-
+            mk-redway-routing-v8-
             mk-redway-routing-v6-
             mk-redway-routing-v5-
 
