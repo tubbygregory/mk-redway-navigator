@@ -1367,6 +1367,7 @@
       console.error(err);
       if (revision === state.routeRevision) {
         setRouteStatus(routeErrorMessage(err), 'warn');
+        setRouteSheetCollapsed(false);
         el('retryRouteBtn').hidden = false;
         toast('Could not calculate route');
       }
