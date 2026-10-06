@@ -928,6 +928,11 @@
       header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi short';
       const highlights = document.createElement('p');
       highlights.textContent = route.highlights.join(' · ');
+      const join = document.createElement('small');
+      join.className = 'cultural-join';
+      join.textContent = Number.isFinite(route.joinDistance)
+        ? 'Nearest join ' + formatDistance(route.joinDistance) + ' away'
+        : 'Choose a version to load the official GPX';
       const actions = document.createElement('div');
       actions.className = 'cultural-route-actions';
       const full = document.createElement('button');
@@ -944,7 +949,7 @@
       source.rel = 'noopener noreferrer';
       source.textContent = 'Route guide';
       actions.append(full, short, source);
-      card.append(header, highlights, actions);
+      card.append(header, highlights, join, actions);
       list.appendChild(card);
     }
   }
@@ -955,6 +960,7 @@
     el('settingsSheet').hidden = true;
     el('installSheet').hidden = true;
     renderCulturalRoutes();
+    hydrateCulturalRouteDistances().catch(() => {});
     el('exploreSheet').hidden = false;
     el('app').dataset.exploreOpen = 'true';
     el('goTabBtn').classList.remove('active');
@@ -963,6 +969,48 @@
     el('savedPlacesBtn').classList.remove('active');
     el('savedPlacesBtn').removeAttribute('aria-current');
     el('goTabBtn').removeAttribute('aria-current');
+  }
+
+  async function hydrateCulturalRouteDistances() {
+    if (!state.userLatLng) return;
+    let changed = false;
+    for (const route of CULTURAL_ROUTES) {
+      try {
+        if (!route.fullCoords) {
+          const response = await fetch(route.fullGpx, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
+          if (!response.ok) continue;
+          route.fullCoords = parseGpx(await response.text()).coords;
+        }
+        let best = Infinity;
+        for (const pair of route.fullCoords || []) {
+          best = Math.min(best, hav({lat:state.userLatLng.lat,lon:state.userLatLng.lng},{lat:pair[0],lon:pair[1]}));
+        }
+        if (Number.isFinite(best)) {
+          route.joinDistance = best;
+          changed = true;
+        }
+      } catch (_) {}
+    }
+    if (changed && !el('exploreSheet').hidden) {
+      CULTURAL_ROUTES.sort((a,b) => (a.joinDistance ?? Infinity) - (b.joinDistance ?? Infinity));
+      renderCulturalRoutes();
+    }
+  }
+
+  function routeFromNearestPoint(coords) {
+    if (!state.userLatLng || coords.length < 3) return coords;
+    const first = coords[0], last = coords.at(-1);
+    const closes = hav({lat:first[0],lon:first[1]},{lat:last[0],lon:last[1]}) < 250;
+    if (!closes) return coords;
+    let bestIndex = 0, best = Infinity;
+    coords.forEach((pair,index) => {
+      const d = hav({lat:state.userLatLng.lat,lon:state.userLatLng.lng},{lat:pair[0],lon:pair[1]});
+      if (d < best) { best = d; bestIndex = index; }
+    });
+    const loop = coords.slice(0, -1);
+    const rotated = [...loop.slice(bestIndex), ...loop.slice(0,bestIndex)];
+    if (rotated.length) rotated.push(rotated[0]);
+    return rotated;
   }
 
   function closeExploreRoutes() {
@@ -1949,11 +1997,13 @@
       const response = await fetch(url, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
       if (!response.ok) throw new Error('GPX download returned ' + response.status);
       const parsed = parseGpx(await response.text());
+      route[variant + 'Coords'] = parsed.coords;
       closeExploreRoutes();
-      installImportedGpx(parsed.coords, title);
+      installImportedGpx(routeFromNearestPoint(parsed.coords), title);
     } catch (err) {
       console.warn('Official GPX could not be loaded directly', err);
-      window.open(url, '_blank', 'noopener');
+      const opened = window.open(url, '_blank', 'noopener');
+      if (!opened) location.href = url;
       toast('GPX opened from Get Around MK. Import the downloaded file if it does not open here.', 6000);
     }
   }
