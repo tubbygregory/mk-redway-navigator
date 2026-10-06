@@ -1375,11 +1375,18 @@
     map.on('zoomend', updateNetworkZoom);
     updateNetworkZoom();
     const groups = { superredway: [], redway: [], leisure: [], shared: [] };
+    const superLabels = new Map();
     for (const w of parsed.ways) {
-      const cls = edgeClass(w.tags || {});
+      const tags = w.tags || {};
+      const cls = edgeClass(tags);
       if (!groups[cls]) continue;
       const pts = w.nodes.map(id => parsed.nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon]);
-      if (pts.length >= 2) groups[cls].push(pts);
+      if (pts.length >= 2) {
+        groups[cls].push(pts);
+        if (cls === 'superredway' && tags._mk_route_ref && !superLabels.has(tags._mk_route_ref)) {
+          superLabels.set(tags._mk_route_ref, pts[Math.floor(pts.length / 2)]);
+        }
+      }
     }
     const add = (lines, cls) => {
       if (!lines.length) return;
@@ -1390,6 +1397,15 @@
     add(groups.redway, 'redway');
     add(groups.leisure, 'leisure');
     add(groups.superredway, 'superredway');
+    for (const [ref, point] of superLabels) {
+      const icon = L.divIcon({
+        className: 'super-route-label',
+        html: '<span>' + ref + '</span>',
+        iconSize: [34, 22],
+        iconAnchor: [17, 11]
+      });
+      L.marker(point, {icon, interactive:false}).addTo(redwayLayer);
+    }
     state.redwayReady = Object.values(groups).some(lines => lines.length > 0);
   }
 
