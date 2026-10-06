@@ -2846,7 +2846,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.13.1';
+  el('app').dataset.appVersion = '0.14.0';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -2904,10 +2904,13 @@
   renderSavedPlaces();
   syncVoiceControls();
   syncUnitControls();
+  syncRoutePreferenceControls();
+  applyTheme();
   updatePlannerFields();
   setStage('explore');
   setTurnIcon('straight');
   loadRedways();
+  const sharedRouteRestored = restoreSharedRoute();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
 
   el('layersBtn').addEventListener('click', () => {
@@ -2922,23 +2925,35 @@
     }
   });
 
+  function locationIntroSeen() {
+    try { return localStorage.getItem(LOCATION_HINT_KEY) === '1'; } catch (_) { return true; }
+  }
+  function closeLocationIntro() {
+    el('locationIntro').hidden = true;
+    try { localStorage.setItem(LOCATION_HINT_KEY, '1'); } catch (_) {}
+  }
+  el('locationIntroAllow').addEventListener('click', async () => {
+    closeLocationIntro();
+    await refreshBrowseLocation({center:false, quiet:false});
+  });
+  el('locationIntroDismiss').addEventListener('click', closeLocationIntro);
+
   (async () => {
+    if (sharedRouteRestored) return;
     try {
       const permission = await navigator.permissions?.query?.({name: 'geolocation'});
       if (permission?.state === 'granted') {
-        await refreshBrowseLocation({center: false, quiet: true});
-      } else {
-        const seen = localStorage.getItem(LOCATION_HINT_KEY) === '1';
-        if (!seen) {
-          localStorage.setItem(LOCATION_HINT_KEY, '1');
-          setTimeout(() => toast('Use the location button to show where you are. Location is only used for routing and navigation.', 5200), 700);
-        }
+        await refreshBrowseLocation({center:false, quiet:true});
+      } else if (!locationIntroSeen()) {
+        el('locationIntro').hidden = false;
       }
-    } catch (_) {}
+    } catch (_) {
+      if (!locationIntroSeen()) el('locationIntro').hidden = false;
+    }
   })();
 
   darkQuery?.addEventListener?.('change', () => {
-    document.documentElement.dataset.theme = darkQuery.matches ? 'dark' : 'light';
+    applyTheme();
     if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
       map.removeLayer(offlineVectorLayer);
       offlineVectorLayer = null;
