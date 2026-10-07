@@ -25,6 +25,21 @@ def review(browser, url):
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
         page.goto(url,wait_until='networkidle')
         expect(page.locator('html')).to_have_attribute('data-routing-source','bundled')
+        # Explicit themes must override the opposite OS scheme, including old
+        # iOS fallback surfaces that otherwise leave white-on-white controls.
+        page.locator('#visibleSettingsBtn').click()
+        for system in ['light', 'dark']:
+            page.emulate_media(color_scheme=system)
+            for choice in ['light', 'dark', 'high-contrast', 'system']:
+                page.locator(f'[data-theme-choice="{choice}"]').click()
+                effective = system if choice == 'system' else choice
+                expect(page.locator('html')).to_have_attribute('data-theme', effective)
+                expected = {'light':'rgb(255, 255, 255)', 'dark':'rgb(21, 25, 30)', 'high-contrast':'rgb(0, 0, 0)'}[effective]
+                for selector in ['.settings-sheet > .sheet-heading', '#offlineDownloadBtn']:
+                    colours = page.locator(selector).evaluate('(el) => { const s = getComputedStyle(el); return [s.backgroundColor, s.color]; }')
+                    assert colours[0] == expected, (system, choice, selector, colours)
+                    assert colours[0] != colours[1], (selector, colours)
+        page.locator('#closeSettings').click()
         # Local typing never sends a public geocoder request.
         requests=[];page.on('request',lambda r: requests.append(r.url) if 'nominatim.openstreetmap.org/search' in r.url else None)
         page.locator('#homeSearch').fill('Portway')
