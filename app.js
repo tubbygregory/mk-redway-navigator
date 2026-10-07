@@ -1843,7 +1843,7 @@
           alternatives.push(option);
           bySignature.set(signature, option);
         }
-        if (choice === pref) selected = plan;
+        if (choice === pref) selected = duplicate ? duplicate.plan : plan;
       } catch (err) {
         alternatives.push({pref: choice, prefs: [choice], error: true});
         if (choice === pref) selectedError = err;
@@ -1953,8 +1953,10 @@
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
+    document.body.appendChild(link);
     link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   function parseGpx(textValue) {
@@ -2054,15 +2056,24 @@
       installImportedGpx(routeFromNearestPoint(parsed.coords), title);
     } catch (err) {
       console.warn('Official GPX could not be loaded directly', err);
-      const opened = window.open(url, '_blank', 'noopener');
-      if (!opened) location.href = url;
-      toast('GPX opened from Get Around MK. Import the downloaded file if it does not open here.', 6000);
+      const actions = document.querySelector('.route-' + route.id + ' .cultural-route-actions');
+      if (actions && !actions.querySelector('[data-gpx-download="' + variant + '"]')) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.dataset.gpxDownload = variant;
+        link.textContent = 'Download ' + variant + ' GPX';
+        actions.appendChild(link);
+      }
+      toast('Direct loading unavailable. Use the GPX download link, then import the file in Explore.', 7000);
     }
   }
 
   async function importGpxFile(file) {
     if (!file) return;
     try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('GPX file is too large');
       const parsed = parseGpx(await file.text());
       closeExploreRoutes();
       installImportedGpx(parsed.coords, parsed.title || file.name.replace(/\.gpx$/i, ''));

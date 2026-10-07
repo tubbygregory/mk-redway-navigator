@@ -356,7 +356,7 @@
       const junction = isJunction(ids[i], graph);
       const enteredRedway = ['superredway', 'redway'].includes(outgoing?.cls) && !['superredway', 'redway'].includes(incoming?.cls);
       const namedChange = outgoing?.name && outgoing.name !== incoming?.name && !['Super Redway','Redway','Leisure route','shared path'].includes(outgoing.name);
-      const enteringTunnel = ['yes','culvert','building_passage'].includes(outgoing?.tunnel) && !['yes','culvert','building_passage'].includes(incoming?.tunnel);
+      const enteringTunnel = ['yes','culvert'].includes(outgoing?.tunnel) && !['yes','culvert'].includes(incoming?.tunnel);
       const enteringRoundabout = outgoing?.junction === 'roundabout' && incoming?.junction !== 'roundabout';
       const leavingRoundabout = incoming?.junction === 'roundabout' && outgoing?.junction !== 'roundabout';
       const enteringUnlit = outgoing?.lit === 'no' && incoming?.lit !== 'no';
@@ -443,7 +443,7 @@
     for (let i = 0; i < edges.length; i++) {
       const edge = edges[i];
       if (edge.lit === 'no') unlitDist += edge.d;
-      const tunnelNow = ['yes','culvert','building_passage'].includes(edge.tunnel);
+      const tunnelNow = ['yes','culvert'].includes(edge.tunnel);
       if (tunnelNow && !inTunnel) underpasses += 1;
       inTunnel = tunnelNow;
       if (edge.crossing && !inCrossing) roadCrossings += 1;
@@ -457,7 +457,7 @@
       while (i < edges.length && roadish.has(edges[i].cls)) distance += edges[i++].d;
       const hasPathBefore = start > 0 && !roadish.has(edges[start - 1].cls);
       const hasPathAfter = i < edges.length && !roadish.has(edges[i].cls);
-      if (hasPathBefore && hasPathAfter && distance <= 65 && !(edges.slice(start - 1, i + 1).some(e => e.crossing) || edges.slice(start, i).some(e => ['yes','culvert','building_passage'].includes(e.tunnel)))) estimatedRoadCrossings += 1;
+      if (hasPathBefore && hasPathAfter && distance <= 65 && !(edges.slice(start - 1, i + 1).some(e => e.crossing) || edges.slice(start, i).some(e => ['yes','culvert'].includes(e.tunnel)))) estimatedRoadCrossings += 1;
     }
     return {
       underpasses,

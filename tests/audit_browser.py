@@ -31,6 +31,13 @@ def review(browser, url):
         expect(page.locator('.typeahead-item').first).to_be_visible()
         assert not requests
         page.locator('#homeSearch').fill('')
+        # A CORS/source failure must stay in the app and offer a normal link.
+        page.route('**/getaroundmk.org.uk/**/*.gpx',lambda route:route.abort())
+        page.locator('#exploreRoutesBtn').click()
+        page.locator('.route-blue').get_by_role('button',name='Full route',exact=True).click()
+        expect(page.locator('.route-blue a[data-gpx-download="full"]')).to_be_visible()
+        assert page.url == url
+        page.locator('#closeExplore').click()
         upload(page,gpx(POINTS))
         expect(page.locator('#routeStatus')).to_have_text('Imported GPX · unverified track')
         expect(page.locator('#routeMix')).to_be_hidden();expect(page.locator('#routeInsights')).to_be_hidden()
