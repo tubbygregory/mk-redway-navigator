@@ -5,7 +5,6 @@ committed outputs; this helper documents the exact export geometry.
 """
 from io import BytesIO
 from pathlib import Path
-import re
 import cairosvg
 from PIL import Image
 
@@ -13,7 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 ICONS = ROOT / "icons"
 RED = "#ed001b"
 source = (ICONS / "app-logo.svg").read_text()
-mark = re.search(r'(<g id="mark"[\\s\\S]*?</g>)', source).group(1)
+mark_start = source.index('<g id="mark"')
+mark_end = source.index('</g>', mark_start) + len('</g>')
+mark = source[mark_start:mark_end]
 
 def png(svg: str, path: Path, width: int, height=None, *, opaque=False):
     height = height or width
