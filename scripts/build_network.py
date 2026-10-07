@@ -38,7 +38,7 @@ ENDPOINTS = [
 ]
 KEEP_TAGS = {
     "highway", "bicycle", "foot", "access", "oneway", "oneway:bicycle",
-    "name", "ref", "bridge", "tunnel", "lit", "surface", "tracktype",
+    "name", "ref", "bridge", "tunnel", "junction", "lit", "surface", "tracktype",
     "smoothness", "segregated",
 }
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,7 +64,7 @@ def download_geofabrik_pbf() -> Path:
     for attempt in range(3):
         try:
             print(f"Downloading current Buckinghamshire OSM extract from Geofabrik (attempt {attempt + 1}/3)…", flush=True)
-            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator/0.12.0 GitHub-Pages-build"})
+            req = urllib.request.Request(GEOFABRIK_URL, headers={"User-Agent": "MKRedwayNavigator/0.14.0 GitHub-Pages-build"})
             with urllib.request.urlopen(req, timeout=180) as r, tmp.open("wb") as out:
                 while True:
                     chunk = r.read(1024 * 1024)
@@ -175,7 +175,7 @@ def request_overpass(query: str, label: str, rotate: int = 0, attempts: int = 2)
                     headers={
                         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
                         "Accept": "application/json",
-                        "User-Agent": "MKRedwayNavigator-PoC/0.10 GitHub-Pages-build",
+                        "User-Agent": "MKRedwayNavigator/0.14.0 GitHub-Pages-build",
                     },
                     method="POST",
                 )
@@ -231,9 +231,11 @@ def super_route_lookup(rules: dict) -> tuple[dict[str, str], dict[str, str]]:
         ref = str(route.get("ref") or "").upper().strip()
         if not ref:
             continue
-        names[ref] = f"MK Redway Super Route {ref}"
+        route_aliases = [str(alias).strip() for alias in route.get("aliases", []) if str(alias).strip()]
+        road_name = next((alias for alias in route_aliases if normalise_text(alias) != normalise_text(ref)), "")
+        names[ref] = f"{ref} · {road_name}" if road_name else f"MK Redway Super Route {ref}"
         aliases[normalise_text(ref)] = ref
-        for alias in route.get("aliases", []):
+        for alias in route_aliases:
             key = normalise_text(alias)
             if key:
                 aliases[key] = ref
@@ -538,6 +540,80 @@ def infer_official_super_route(
     return route_ref if score / total >= 0.5 else None
 
 
+def grid_road_labels(rules: dict) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for route in rules.get("super_routes", []):
+        ref = str(route.get("ref") or "").upper().strip()
+        aliases = [str(x).strip() for x in route.get("aliases", []) if str(x).strip()]
+        road_name = next((x for x in aliases if normalise_text(x) != normalise_text(ref)), "")
+        if ref:
+            labels[ref] = f"{ref} {road_name}".strip()
+    return labels
+
+
+def build_grid_road_index(
+    ways_by_osm: dict[int, tuple[list[int], dict[str, str]]],
+    nodes_by_osm: dict[int, tuple[float, float]],
+    rules: dict,
+) -> dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]]:
+    """Index named H/V grid-road segments so Redway tunnels can say what they pass under."""
+    aliases, _ = super_route_lookup(rules)
+    labels = grid_road_labels(rules)
+    cell = 120.0
+    index: dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]] = {}
+    roadish = {"primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified", "residential"}
+    for _, (node_ids, tags) in ways_by_osm.items():
+        if tags.get("highway") not in roadish:
+            continue
+        route_ref = identify_super_ref(tags, aliases)
+        if not route_ref:
+            continue
+        pts = [nodes_by_osm[n] for n in node_ids if n in nodes_by_osm]
+        for a, b in zip(pts, pts[1:]):
+            ax, ay = xy_m(*a); bx, by = xy_m(*b)
+            rbearing = math.atan2(by - ay, bx - ax) % math.pi
+            minx, maxx = min(ax, bx) - 55, max(ax, bx) + 55
+            miny, maxy = min(ay, by) - 55, max(ay, by) + 55
+            item = (ax, ay, bx, by, rbearing, labels.get(route_ref, route_ref))
+            for gx in range(math.floor(minx / cell), math.floor(maxx / cell) + 1):
+                for gy in range(math.floor(miny / cell), math.floor(maxy / cell) + 1):
+                    index.setdefault((gx, gy), []).append(item)
+    return index
+
+
+def infer_under_grid_road(
+    node_ids: list[int],
+    tags: dict[str, str],
+    nodes_by_osm: dict[int, tuple[float, float]],
+    index: dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]],
+) -> str | None:
+    """Return the H/V road a mapped tunnel passes under, when the geometry supports it."""
+    if str(tags.get("tunnel") or "").lower() not in {"yes", "culvert", "building_passage"} or len(node_ids) < 2:
+        return None
+    pts = [nodes_by_osm[n] for n in node_ids if n in nodes_by_osm]
+    if len(pts) < 2:
+        return None
+    a, b = pts[0], pts[-1]
+    ax, ay = xy_m(*a); bx, by = xy_m(*b)
+    mx, my = (ax + bx) / 2, (ay + by) / 2
+    pbearing = math.atan2(by - ay, bx - ax) % math.pi
+    cell = 120.0
+    gx, gy = math.floor(mx / cell), math.floor(my / cell)
+    best: tuple[float, str] | None = None
+    for ix in range(gx - 1, gx + 2):
+        for iy in range(gy - 1, gy + 2):
+            for x1, y1, x2, y2, rbearing, label in index.get((ix, iy), []):
+                dist = point_segment_distance(mx, my, x1, y1, x2, y2)
+                if dist > 35:
+                    continue
+                crossing_angle = math.degrees(angle_diff(pbearing, rbearing))
+                if crossing_angle < 28:
+                    continue
+                if best is None or dist < best[0]:
+                    best = (dist, label)
+    return best[1] if best else None
+
+
 def existing_network_is_valid() -> bool:
     if not OUT.exists():
         return False
@@ -545,7 +621,7 @@ def existing_network_is_valid() -> bool:
         with OUT.open("r", encoding="utf-8") as f:
             data = json.load(f)
         return (
-            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2", "mk-redway-network-v3", "mk-redway-network-v4", "mk-redway-network-v5"}
+            data.get("format") in {"mk-redway-network-v1", "mk-redway-network-v2", "mk-redway-network-v3", "mk-redway-network-v4", "mk-redway-network-v6"}
             and len(data.get("nodes", [])) > 1000
             and len(data.get("ways", [])) > 100
         )
@@ -614,7 +690,7 @@ def main() -> int:
     # pretending its network was newly generated.
     if (COUNCIL_ROUTES.exists() and cached_council_hash
             and cached_council_hash == hashlib.sha256(COUNCIL_ROUTES.read_bytes()).hexdigest()
-            and existing_network_format() == "mk-redway-network-v5"):
+            and existing_network_format() == "mk-redway-network-v6"):
         previous = json.loads(OUT.read_text())
         validate_network(previous)
         previous["council_geometry_sha256"] = current_council_hash
@@ -624,7 +700,7 @@ def main() -> int:
         print("Migrated provenance hash for byte-identical council geometry; network generation date retained.", flush=True)
     if (
         existing_network_is_valid()
-        and existing_network_format() == "mk-redway-network-v5"
+        and existing_network_format() == "mk-redway-network-v6"
         and age is not None and age < 7
         and current_council_hash == cached_council_hash
         and os.environ.get("FORCE_NETWORK_REFRESH") != "1"
@@ -674,11 +750,11 @@ def main() -> int:
     # We retain OSM relations/corridor inference only as fallback where the website extract
     # is unavailable or does not cover a particular edge.
     council_features = load_council_routes()
-    # The verified leisure source contains about 150,000 short fragments.
+    # The official leisure KMZ files contain a very large number of short geometry fragments.
+    # Treat extreme counts as a validation failure without assuming why the upstream data changed.
     if len(council_features) > 200_000:
         print(
-            f"Ignoring suspicious council extract with {len(council_features):,} lines; "
-            "this indicates contaminated web-map vector data rather than cycle routes.",
+            f"Ignoring council extract with {len(council_features):,} lines because it exceeds the validated upper bound.",
             flush=True,
         )
         council_features = []
@@ -742,6 +818,15 @@ def main() -> int:
             route_names[way_id] = official_names[route_ref]
     print(f"Official identifiers added {direct:,} and corridor matching added {inferred:,} Super Redway way segments.", flush=True)
 
+    grid_road_index = build_grid_road_index(ways_by_osm, nodes_by_osm, rules)
+    underpass_names = 0
+    for _, (node_ids, tags) in ways_by_osm.items():
+        under = infer_under_grid_road(node_ids, tags, nodes_by_osm, grid_road_index)
+        if under:
+            tags["_mk_under_road"] = under
+            underpass_names += 1
+    print(f"Added grid-road context to {underpass_names:,} mapped underpass ways.", flush=True)
+
     referenced: set[int] = set()
     for node_ids, _ in ways_by_osm.values():
         referenced.update(node_ids)
@@ -770,7 +855,7 @@ def main() -> int:
         compact_ways.append([way_id, compact, tags])
 
     payload = {
-        "format": "mk-redway-network-v5",
+        "format": "mk-redway-network-v6",
         "generated_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         "bbox": [SOUTH, WEST, NORTH, EAST],
         "classification": "Get Around MK interactive-map Redway/Super Redway/Leisure geometry matched to Geofabrik/OSM routable geometry; OSM/corridor rules are fallback only",

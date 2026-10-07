@@ -42,12 +42,27 @@
         <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
         <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
       </div>
+      <div id="typeaheadSuggestions" class="typeahead-suggestions" aria-label="Search suggestions" hidden></div>
+      <div id="locationIntro" class="location-intro" hidden>
+        <div><strong>Show where you are?</strong><span>Location is used on this device for nearby results, routing and live navigation.</span></div>
+        <div class="location-intro-actions">
+          <button id="locationIntroAllow" class="primary-action" type="button">Use my location</button>
+          <button id="locationIntroDismiss" class="secondary-action" type="button">Not now</button>
+        </div>
+      </div>
     </section>
 
-    <button id="savedPlacesBtn" class="saved-fab" type="button" aria-label="Open saved places">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4Z"></path></svg>
-      <span>Saved</span>
-    </button>
+    <nav id="homeNav" class="home-nav" aria-label="Main sections">
+      <button id="goTabBtn" class="home-nav-button active" type="button" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 18-7-4-7 4 7-18Z"></path></svg><span>Go</span>
+      </button>
+      <button id="exploreRoutesBtn" class="home-nav-button" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="m15 9-2 5-5 2 2-5 5-2Z"></path></svg><span>Explore</span>
+      </button>
+      <button id="savedPlacesBtn" class="home-nav-button" type="button" aria-label="Open saved places">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4Z"></path></svg><span>Saved</span>
+      </button>
+    </nav>
 
 
     <div id="browseMapControls" class="browse-map-controls" aria-label="Map controls">
@@ -166,21 +181,36 @@
         <div id="routeMixBar" class="route-mix-bar" aria-hidden="true"></div>
         <div id="routeMixLegend" class="route-mix-legend"></div>
       </div>
+      <div id="routeInsights" class="route-insights" aria-label="Route conditions" hidden>
+        <span><b id="underpassStat">0</b> underpasses</span>
+        <span><b id="crossingStat">0</b> road crossings</span>
+        <span><b id="unlitStat">0 m</b> mapped unlit</span>
+      </div>
+      <div id="routePreferences" class="route-preferences" aria-label="Route preferences">
+        <button id="preferLitBtn" class="route-toggle" type="button" role="switch" aria-checked="false">Prefer lit paths</button>
+        <button id="preferSuperBtn" class="route-toggle" type="button" role="switch" aria-checked="false">Stay on Super Routes</button>
+      </div>
       <div id="routeAlternatives" class="route-alternatives" role="group" aria-label="Compare cycling routes"></div>
-      <small class="road-share-note">Route mix covers the mapped route; approach gaps are shown separately.</small>
+      <small class="road-share-note">Route mix covers the mapped route; lighting counts use mapped OpenStreetMap tags and may be incomplete.</small>
       <p id="approachNote" class="approach-note" hidden></p>
       <div id="routeStatus" class="route-status" aria-live="polite">Choose a start and destination.</div>
       <button id="retryRouteBtn" class="secondary-action" type="button" hidden>Retry route</button>
       <div id="routeMoreMenu" class="route-more-menu" hidden>
         <button id="moveStartBtn" type="button">Move start pin</button>
         <button id="moveEndBtn" type="button">Choose destination entrance</button>
-        <a href="https://www.milton-keynes.gov.uk/pay-report-and-apply/report-it" target="_blank" rel="noopener noreferrer">Report a path problem</a>
+        <button id="exportGpxBtn" type="button">Export GPX</button>
+        <button id="importGpxBtn" type="button">Import GPX</button>
+        <a href="https://www.milton-keynes.gov.uk/pay-report-and-apply/report-it" target="_blank" rel="noopener noreferrer">Report this path</a>
         <button id="clearBtn" type="button">Clear route</button>
       </div>
       <div class="route-actions">
         <button id="startNavBtn" class="primary-action nav-start" type="button" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 18-7-4-7 4 7-18Z"></path></svg>
           Start
+        </button>
+        <button id="sendToPhoneBtn" class="primary-action desktop-send" type="button" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M10 18h4"></path></svg>
+          Send to phone
         </button>
         <button id="routeMoreBtn" class="secondary-action" type="button" aria-expanded="false">More</button>
       </div>
@@ -241,17 +271,26 @@
       </div>
       <div id="favouritesList" class="favourites-list"></div>
 
-      <div class="offline-card">
-        <div class="offline-copy">
-          <strong>Offline Milton Keynes</strong>
-          <span id="offlineStatus">Checking map package…</span>
-        </div>
-        <button id="offlineDownloadBtn" class="compact-action offline-button" type="button">Download</button>
-      </div>
-      <div class="offline-note">Address/place search still needs an internet connection; saved places, map browsing and routing work offline.</div>
-
     </section>
 
+    <section id="exploreSheet" class="bottom-sheet explore-sheet" aria-label="Explore Milton Keynes routes" hidden>
+      <button id="exploreSheetHandle" class="sheet-handle" type="button" data-panel-label="Explore Milton Keynes" aria-expanded="true" aria-label="Collapse Explore Milton Keynes"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
+      <div class="sheet-heading sheet-summary">
+        <div><strong>Explore MK</strong><small>Curated routes from Get Around MK</small></div>
+        <button id="closeExplore" class="icon-button small-icon" type="button" aria-label="Close Explore Milton Keynes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg></button>
+      </div>
+      <div class="explore-filters" role="group" aria-label="Explore route filters">
+        <button type="button" data-explore-filter="all" class="active">All</button>
+        <button type="button" data-explore-filter="short">Under 5 mi</button>
+        <button type="button" data-explore-filter="heritage">Heritage</button>
+        <button type="button" data-explore-filter="lakes">Lakes</button>
+      </div>
+      <div id="culturalRoutesList" class="cultural-routes-list"></div>
+      <div class="explore-import">
+        <button id="exploreImportGpxBtn" class="secondary-action" type="button">Import a GPX route</button>
+        <small>Imported GPX files stay on this device and can be followed with the normal navigation screen.</small>
+      </div>
+    </section>
 
     <section id="settingsSheet" class="bottom-sheet settings-sheet" aria-label="Settings" hidden>
       <button id="settingsSheetHandle" class="sheet-handle" type="button" data-panel-label="settings" aria-expanded="true" aria-label="Collapse settings"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
@@ -282,6 +321,26 @@
           <button type="button" data-units="imperial">Miles &amp; yards <small>mi · yd</small></button>
         </div>
       </div>
+      <div class="setting-block">
+        <div class="setting-copy">
+          <strong>Appearance</strong>
+          <span>System follows your device, and switches to the low-glare night theme after sunset while navigating.</span>
+        </div>
+        <div id="themeChoice" class="theme-choice" role="group" aria-label="Appearance">
+          <button type="button" data-theme-choice="system" class="active">System</button>
+          <button type="button" data-theme-choice="light">Light</button>
+          <button type="button" data-theme-choice="dark">Dark</button>
+          <button type="button" data-theme-choice="high-contrast">High contrast</button>
+        </div>
+      </div>
+      <div class="setting-block offline-setting">
+        <div class="setting-copy">
+          <strong>Offline Milton Keynes</strong>
+          <span id="offlineStatus">Checking map package…</span>
+        </div>
+        <button id="offlineDownloadBtn" class="compact-action offline-button" type="button">Download</button>
+        <div class="offline-note">Address/place search still needs an internet connection; saved places, map browsing and routing work offline.</div>
+      </div>
       <div class="setting-row install-setting">
         <div class="setting-copy">
           <strong>Install app</strong>
@@ -299,10 +358,10 @@
           <dt>Council classification</dt><dd id="aboutCouncil">Checking…</dd>
           <dt>Offline map</dt><dd id="aboutOffline">Checking…</dd>
         </dl>
-        <p>Download the map from Saved → Offline Milton Keynes before travelling without signal. Browser storage can be cleared by your device.</p>
+        <p>Download the map from Settings → Offline Milton Keynes before travelling without signal. Browser storage can be cleared by your device.</p>
         <h3>Your privacy</h3>
         <p>Home, Work, favourites and settings stay in this browser. Routes are calculated on your device using the downloaded network. Live location is used for navigation.</p>
-        <p>Online place and address searches are sent to OpenStreetMap’s Nominatim service. Map and data downloads contact their hosting providers; if bundled data is unavailable, the app can request map data from external services. There are no user accounts or application backend.</p>
+        <p>Type-ahead suggestions are generated locally from saved places and the downloaded MK routing map. Submitted online place and address searches are sent to OpenStreetMap’s Nominatim service. Map and data downloads contact their hosting providers; if bundled data is unavailable, the app can request map data from external services. There are no user accounts or application backend.</p>
         <h3>Map and route data</h3>
         <p>Official route classification: Milton Keynes City Council / Get Around MK. Routable topology: © OpenStreetMap contributors (ODbL). Basemap: Protomaps and its data contributors.</p>
         <p>MK Redway Navigator is an independent project and is not an official Milton Keynes City Council service.</p>
@@ -314,6 +373,8 @@
         </nav>
       </details>
     </section>
+
+    <input id="gpxFileInput" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden />
 
     <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
       <button id="installSheetHandle" class="sheet-handle" type="button" data-panel-label="install instructions" aria-expanded="true" aria-label="Collapse install instructions"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>

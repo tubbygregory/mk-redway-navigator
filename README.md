@@ -10,13 +10,15 @@ Plan a journey around Milton Keynes, compare cycling routes and follow location-
 
 ## Key features
 
-- Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode.
-- Route previews with distance, estimated time, complete route mix and road share.
-- Live navigation, spoken guidance, automatic rerouting and system dark mode.
-- Home, Work and favourites saved on this device, with quick shortcuts.
-- Downloadable Milton Keynes map and routing data.
+- Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode, plus optional preferences for mapped lighting and named Super Routes.
+- Route previews with distance, estimated time, complete route mix, road share, mapped underpasses/crossings/unlit distance and alternative-route labels on the map.
+- Live navigation, spoken guidance, automatic rerouting, H/V grid-road underpass wording and low-glare night mode.
+- Home, Work and favourites saved on this device, with quick shortcuts and local type-ahead suggestions.
+- Explore MK cards for the five Get Around MK Cultural Routes, with official route-guide and GPX links.
+- GPX import/export and shareable planned-route links for moving a route from desktop to phone.
+- Downloadable Milton Keynes map and routing data managed from Settings.
 - Map key and current-location controls available while browsing.
-- Mobile portrait/landscape layouts, desktop planning controls and Home Screen installation.
+- Mobile portrait/landscape layouts, desktop planning controls, explicit appearance choices and Home Screen installation.
 
 ## Routing philosophy
 
@@ -26,13 +28,13 @@ Endpoints snap to usable path segments while retaining one-way restrictions. Gap
 
 ## Official MK route classification
 
-The build reads six explicitly selected Get Around MK KML/KMZ sources for Super Redway, Redway and Leisure Route geometry, then matches them onto OSM ways. It does not treat generic Google Maps rendering traffic as council routes.
+The build reads six explicitly selected Get Around MK KML/KMZ sources for Super Redway, Redway and Leisure Route geometry, then matches them onto OSM ways. Earlier extraction approaches risked collecting unrelated map traffic; the current extractor uses only the intended source files and validates their classes and feature counts.
 
 Council classifications take priority where matched. OSM tags, route relations and official corridor rules provide fallback classifications elsewhere. Validated cached data can be retained during source outages. About & Data and the build metadata identify this state.
 
 ## Offline operation
 
-Choose **Saved → Offline Milton Keynes → Download** before leaving signal. Saved destinations, map browsing and local routing work offline after the required files are cached. Address/place searches use Nominatim and require connectivity; use saved places, coordinates or a map pin offline.
+Choose **Settings → Offline Milton Keynes → Download** before leaving signal. Saved destinations, map browsing and local routing work offline after the required files are cached. Address/place searches use Nominatim and require connectivity; use saved places, coordinates or a map pin offline.
 
 Browser storage can be evicted or cleared. iOS can suspend GPS and speech when the app is backgrounded or the screen is locked.
 

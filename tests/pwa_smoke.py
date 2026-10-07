@@ -66,6 +66,11 @@ def review(browser, url, live=False):
     expect(page.get_by_role("button", name="Show my location", exact=True)).to_be_visible()
     page.get_by_role("button", name="Show my location", exact=True).click()
     expect(page.locator(".user-pulse")).to_be_visible()
+    page.get_by_role("button", name="Explore", exact=True).click()
+    expect(page.locator("#exploreSheet")).to_be_visible()
+    expect(page.locator(".cultural-route-card")).to_have_count(5)
+    capture(page, "explore")
+    page.get_by_role("button", name="Close Explore Milton Keynes", exact=True).click()
     page.locator("#visibleSettingsBtn").click()
     page.get_by_role("button", name="Install MK Redway as an app", exact=True).click()
     expect(page.locator("#installSheet")).to_be_visible()
@@ -159,8 +164,38 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="Exit", exact=True).click()
     page.get_by_role("button", name="More", exact=True).click()
     page.get_by_role("button", name="Clear route", exact=True).click()
+
+    # Starting an imported GPX away from its first point must preserve that track
+    # rather than silently replacing it with a normal A-to-B route.
+    gpx = """<?xml version="1.0"?>
+    <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+      <trk><name>Regression GPX</name><trkseg>
+        <trkpt lat="52.025000" lon="-0.783000"/>
+        <trkpt lat="52.026000" lon="-0.781500"/>
+        <trkpt lat="52.027000" lon="-0.780000"/>
+      </trkseg></trk>
+    </gpx>"""
+    page.locator("#gpxFileInput").set_input_files({
+        "name": "regression.gpx",
+        "mimeType": "application/gpx+xml",
+        "buffer": gpx.encode("utf-8")
+    })
+    expect(page.get_by_role("searchbox", name="Starting location", exact=True)).to_have_value("Regression GPX start")
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    page.get_by_role("button", name="Start", exact=True).click()
+    expect(page.locator("#navBanner")).to_be_visible()
+    # The planner is intentionally hidden during navigation, so inspect the
+    # underlying field directly rather than locating it by an exposed ARIA role.
+    expect(page.locator("#startSearch")).to_have_value("Regression GPX start")
+    page.get_by_role("button", name="Exit", exact=True).click()
+    page.get_by_role("button", name="More", exact=True).click()
+    page.get_by_role("button", name="Clear route", exact=True).click()
+
     page.locator("#visibleSettingsBtn").click()
     check_panel_handle(page, context, "settingsSheet", ".setting-row:not(.install-setting)")
+    page.get_by_role("button", name="High contrast", exact=True).click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "high-contrast")
+    page.get_by_role("button", name="System", exact=True).click()
     page.locator("#aboutData summary").click()
     expect(page.locator("#aboutVersion")).to_contain_text((ROOT / "VERSION").read_text().strip())
     page.get_by_role("button", name="Check for updates", exact=True).click()
@@ -178,9 +213,11 @@ def review(browser, url, live=False):
     page.get_by_role("button", name="Open saved places", exact=True).click()
     check_panel_handle(page, context, "savedSheet", ".saved-specials")
     capture(page, "saved")
+    page.get_by_role("button", name="Close saved places", exact=True).click()
+    page.locator("#visibleSettingsBtn").click()
     page.locator("#offlineDownloadBtn").click()
     expect(page.locator("#offlineStatus")).to_contain_text("available offline", timeout=120000)
-    page.get_by_role("button", name="Close saved places", exact=True).click()
+    page.get_by_role("button", name="Close settings", exact=True).click()
     context.set_offline(True)
     page.reload(wait_until="networkidle")
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
@@ -215,6 +252,10 @@ def review_dark_shell(browser, url):
     page.goto(url, wait_until="networkidle")
     expect(page.locator("html")).to_have_class(__import__("re").compile(r".*ios-standalone.*"))
     expect(page.locator("#savedPlacesBtn")).to_be_visible()
+    expect(page.locator("#locationIntro")).to_be_visible()
+    expect(page.locator("#locationIntro")).to_contain_text("Location is used on this device")
+    page.get_by_role("button", name="Not now", exact=True).click()
+    expect(page.locator("#locationIntro")).to_be_hidden()
 
     styles = page.evaluate("""() => {
       const saved = getComputedStyle(document.querySelector('#savedPlacesBtn'));

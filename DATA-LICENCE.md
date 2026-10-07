@@ -1,6 +1,6 @@
 # Data sources and licences
 
-The application code's MIT licence does not replace the licences or permissions governing map data and third-party software.
+The application code's MIT licence does not replace the licences governing map data and third-party software.
 
 ## Milton Keynes City Council / Get Around MK
 
@@ -10,7 +10,9 @@ Source attribution:
 
 > Official route classification: Milton Keynes City Council / Get Around MK.
 
-Council geometry is a build input, matched onto connected OSM ways. Raw extraction and diagnostic files are not part of the website artifact. Generic Google Maps rendering data is not used as route geometry.
+Council geometry is a build input, matched onto connected OSM ways. Raw extraction and diagnostic files are not part of the website artifact. Only the explicitly selected Get Around MK route-layer files are treated as route-classification sources.
+
+The Explore MK catalogue also links to the five Cultural Routes published by Get Around MK. Their GPX files remain hosted at the original Get Around MK URLs; the application does not bundle or republish those GPX files.
 
 ## OpenStreetMap and Geofabrik
 

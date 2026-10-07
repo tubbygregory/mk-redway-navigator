@@ -43,30 +43,43 @@ def main():
                 expect(page.locator('#placeSheet')).to_be_hidden()
                 plan(page, '52.0467,-0.7378', '52.025,-0.783')
                 expect(page.locator('#routeStatus')).to_have_text('Route ready')
-                expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
+                if width >= 900:
+                    expect(page.get_by_role('button', name='Start', exact=True)).to_be_hidden()
+                    expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_visible()
+                    expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_enabled()
+                else:
+                    expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
                 assert 1 <= page.locator('.route-option').count() <= 3
                 expect(page.locator('#roadStat')).to_contain_text('%')
                 mix_total = page.locator('#routeMixLegend b').evaluate_all("els => els.reduce((sum, el) => sum + Number(el.textContent.replace('%','')), 0)")
                 assert mix_total == 100, mix_total
                 if page.locator('#routeSheetHandle').get_attribute('aria-expanded') == 'false':
                     page.get_by_role('button', name='Expand route details', exact=True).click()
+                expect(page.locator('#routeInsights')).to_be_visible()
                 page.locator('.route-option').last.click()
-                expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
+                if width < 900:
+                    expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
                 page.get_by_role('button', name='Walk', exact=True).click()
-                expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
+                if width < 900:
+                    expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
+                else:
+                    expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_enabled()
                 expect(page.locator('.route-option')).to_have_count(0)
                 # Genuine unmapped gap must block navigation and offer recovery.
                 page.get_by_role('button', name='More', exact=True).click()
                 page.get_by_role('button', name='Clear route', exact=True).click()
                 plan(page, '52.0345,-0.774', '52.057,-0.718')
                 expect(page.locator('#routeStatus')).to_contain_text('over 150 metres')
-                expect(page.get_by_role('button', name='Start', exact=True)).to_be_disabled()
+                if width < 900:
+                    expect(page.get_by_role('button', name='Start', exact=True)).to_be_disabled()
+                else:
+                    expect(page.get_by_role('button', name='Send to phone', exact=True)).to_be_disabled()
                 expect(page.get_by_role('button', name='Retry route', exact=True)).to_be_visible()
                 page.get_by_role('button', name='More', exact=True).click()
                 expect(page.get_by_role('button', name='Choose destination entrance', exact=True)).to_be_visible()
                 assert not errors, errors
                 assert not fallbacks, fallbacks
-                print(f'PASS browser {width}x{height}: bundled v5, route choices, walking, blocked endpoint')
+                print(f'PASS browser {width}x{height}: bundled v6, route choices, walking, blocked endpoint')
                 page.get_by_role('button', name='Clear route', exact=True).click()
                 page.locator('#visibleSettingsBtn').click()
                 page.locator('#aboutData summary').click()

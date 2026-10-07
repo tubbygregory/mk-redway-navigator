@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "professionalism-release", "cleanup-v0.12.6"]
+    branches: ["main", "pdf-review-completion"]
   workflow_dispatch:
 
 permissions:
@@ -35,9 +35,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/network.json
-          key: mk-redway-routing-v7-${{ github.run_number }}
+          key: mk-redway-routing-v8-${{ github.run_number }}
           restore-keys: |
-            mk-redway-routing-v7-
+            mk-redway-routing-v8-
             mk-redway-routing-v6-
             mk-redway-routing-v5-
 
@@ -167,19 +167,21 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.13.1 beta release after production verification
+      - name: Publish v0.14.0 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.13.1" ]; then exit 0; fi
-          if gh release view v0.13.1 >/dev/null 2>&1; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.0" ]; then exit 0; fi
+          if gh release view v0.14.0 >/dev/null 2>&1; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Dark-mode hotfix for installed iOS web apps.
+          Design-review completion release.
 
-          - Remove the white Saved pill caused by legacy light-only CSS.
-          - Make the Home Screen bottom-edge viewport blend follow system dark mode.
-          - Add an installed-iOS dark-shell regression check to the release gate.
+          - Add local type-ahead suggestions, result pins, favourite chips and a first-run location explanation.
+          - Add Explore MK Cultural Route cards, GPX import/export and shareable desktop-to-phone route links.
+          - Add mapped lighting/underpass/crossing summaries, optional lit/Super Route preferences and richer turn guidance.
+          - Add automatic after-sunset navigation dark mode, explicit appearance choices and move offline map management into Settings.
+          - Generate routing network v6 with grid-road context for mapped underpasses.
 
-          The normal build, routing, browser/PWA, deployment and live-review gates must pass before publication.
+          The normal data, routing, browser/PWA, Pages-artifact, deployment and live-review gates must pass before publication.
           NOTES
-          gh release create v0.13.1 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.13.1" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create v0.14.0 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.0" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"

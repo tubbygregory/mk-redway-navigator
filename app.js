@@ -3,7 +3,6 @@
   const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
 
   const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
-  document.documentElement.dataset.theme = darkQuery?.matches ? 'dark' : 'light';
 
   const isStandalone = window.navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
   const isIOS = /iP(?:hone|ad|od)/.test(navigator.userAgent);
@@ -54,10 +53,44 @@
   const SETTINGS_KEY = 'mk-redway-settings-v1';
   const INSTALL_OFFER_KEY = 'mk-redway-install-offer-v1';
   const LOCATION_HINT_KEY = 'mk-redway-location-hint-v1';
+  const CULTURAL_ROUTES_URL = 'https://getaroundmk.org.uk/cycling/where-to-ride/cultural-routes';
+  const CULTURAL_ROUTES = [
+    {
+      id: 'blue', color: 'Blue', title: 'Ancient & Modern Milton Keynes', fullMiles: 10, shortMiles: 5,
+      tags: ['heritage'], highlights: ['Great Linford', 'Campbell Park', 'Concrete Cows', 'Bradwell Windmill'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-short.gpx'
+    },
+    {
+      id: 'yellow', color: 'Yellow', title: 'Cars, Boats & Trains', fullMiles: 9.4, shortMiles: 5,
+      tags: ['heritage','lakes'], highlights: ['Newport Pagnell', 'Tongwell Lake', 'Willen Lake'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-short.gpx'
+    },
+    {
+      id: 'green', color: 'Green', title: 'Rivers, Lakes & Dinosaurs', fullMiles: 10.1, shortMiles: 5,
+      tags: ['lakes'], highlights: ['Open University', 'Grand Union Canal', 'Peartree Bridge'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-short.gpx'
+    },
+    {
+      id: 'iron', color: 'Iron', title: 'Romans, Rivers, Trams & Trains', fullMiles: 9.5, shortMiles: 5,
+      tags: ['heritage'], highlights: ['Wolverton Mill', 'Iron Trunk Aqueduct', 'Bancroft', 'Stony Stratford'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-short.gpx'
+    },
+    {
+      id: 'cornflower', color: 'Cornflower', title: 'Woods, Frogs & a Toot', fullMiles: 8.2, shortMiles: 4,
+      tags: ['lakes'], highlights: ['Shenley Toot', 'Howe Park Wood', 'Teardrop Lakes', 'Furzton Lake'],
+      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-main.gpx',
+      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-short.gpx'
+    }
+  ];
 
   const redwayLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
+  const searchResultLayer = L.layerGroup().addTo(map);
   const userLayer = L.layerGroup().addTo(map);
 
   const state = {
@@ -82,6 +115,11 @@
     navigating: false,
     voiceEnabled: true,
     units: 'metric',
+    themeChoice: 'system',
+    preferLit: false,
+    preferSuper: false,
+    lightingCoverage: 0,
+    localSearchIndex: [],
     speechUnlocked: false,
     speechVoice: null,
     speechActive: null,
@@ -114,7 +152,11 @@
     offlineMapAvailable: false,
     offlineMapDownloaded: false,
     offlineMapBytes: 0,
-    offlineDownloadBusy: false
+    offlineDownloadBusy: false,
+    exploreFilter: 'all',
+    importedRouteName: '',
+    nightThemeActive: false,
+    lastThemeCheckAt: 0
   };
 
   function syncViewport() {
@@ -175,6 +217,9 @@
     if (!['explore', 'place'].includes(stage)) el('savedSheet').hidden = true;
     if (!['explore', 'place'].includes(stage)) el('settingsSheet').hidden = true;
     el('savedPlacesBtn').hidden = !['explore', 'place'].includes(stage);
+    el('homeNav').hidden = !['explore', 'place'].includes(stage);
+    if (!['explore','place'].includes(stage)) el('exploreSheet').hidden = true;
+    el('app').dataset.exploreOpen = el('exploreSheet').hidden ? 'false' : 'true';
     updateInstallButtonVisibility();
     setTimeout(syncViewport, 40);
   }
@@ -204,6 +249,9 @@
       const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
       if (typeof raw.voiceEnabled === 'boolean') state.voiceEnabled = raw.voiceEnabled;
       if (raw.units === 'metric' || raw.units === 'imperial') state.units = raw.units;
+      if (['system','light','dark','high-contrast'].includes(raw.themeChoice)) state.themeChoice = raw.themeChoice;
+      if (typeof raw.preferLit === 'boolean') state.preferLit = raw.preferLit;
+      if (typeof raw.preferSuper === 'boolean') state.preferSuper = raw.preferSuper;
     } catch (_) {}
   }
 
@@ -211,7 +259,10 @@
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         voiceEnabled: state.voiceEnabled,
-        units: state.units
+        units: state.units,
+        themeChoice: state.themeChoice,
+        preferLit: state.preferLit,
+        preferSuper: state.preferSuper
       }));
     } catch (_) {}
   }
@@ -234,6 +285,90 @@
     document.querySelectorAll('[data-units]').forEach(button => {
       button.classList.toggle('active', button.dataset.units === state.units);
     });
+  }
+
+  function dayOfYear(date) {
+    const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+    return Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - start) / 86400000);
+  }
+
+  function solarEvent(date, lat, lon, sunrise) {
+    const n = dayOfYear(date);
+    const lngHour = lon / 15;
+    const t = n + (((sunrise ? 6 : 18) - lngHour) / 24);
+    const m = (0.9856 * t) - 3.289;
+    let l = m + (1.916 * Math.sin(m * Math.PI / 180)) + (0.020 * Math.sin(2 * m * Math.PI / 180)) + 282.634;
+    l = (l + 360) % 360;
+    let ra = Math.atan(0.91764 * Math.tan(l * Math.PI / 180)) * 180 / Math.PI;
+    ra = (ra + 360) % 360;
+    ra += (Math.floor(l / 90) * 90) - (Math.floor(ra / 90) * 90);
+    ra /= 15;
+    const sinDec = 0.39782 * Math.sin(l * Math.PI / 180);
+    const cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (Math.cos(90.833 * Math.PI / 180) - (sinDec * Math.sin(lat * Math.PI / 180))) /
+      (cosDec * Math.cos(lat * Math.PI / 180));
+    if (cosH > 1 || cosH < -1) return null;
+    let h = sunrise ? 360 - Math.acos(cosH) * 180 / Math.PI : Math.acos(cosH) * 180 / Math.PI;
+    h /= 15;
+    const localMean = h + ra - (0.06571 * t) - 6.622;
+    const utcHours = ((localMean - lngHour) % 24 + 24) % 24;
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0) + utcHours * 3600000);
+  }
+
+  function afterSunset() {
+    const here = state.userLatLng || {lat: 52.0406, lng: -0.7594};
+    const now = new Date();
+    const sunset = solarEvent(now, here.lat, here.lng, false);
+    const sunrise = solarEvent(now, here.lat, here.lng, true);
+    return Boolean((sunset && now >= sunset) || (sunrise && now < sunrise));
+  }
+
+  function effectiveTheme() {
+    if (state.themeChoice === 'high-contrast') return 'high-contrast';
+    if (state.themeChoice === 'dark') return 'dark';
+    if (state.themeChoice === 'light') return 'light';
+    return darkQuery?.matches || (state.navigating && afterSunset()) ? 'dark' : 'light';
+  }
+
+  function applyTheme() {
+    const theme = effectiveTheme();
+    state.nightThemeActive = theme === 'dark';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark';
+    const themeColor = theme === 'high-contrast' ? '#000000' : theme === 'dark' ? '#11151a' : '#a9251d';
+    document.querySelectorAll('meta[name="theme-color"]').forEach(meta => { meta.content = themeColor; });
+    document.querySelectorAll('[data-theme-choice]').forEach(button => {
+      button.classList.toggle('active', button.dataset.themeChoice === state.themeChoice);
+    });
+  }
+
+  function setThemeChoice(choice) {
+    if (!['system','light','dark','high-contrast'].includes(choice)) return;
+    state.themeChoice = choice;
+    persistSettings();
+    applyTheme();
+    if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
+  }
+
+  function syncRoutePreferenceControls() {
+    const lit = el('preferLitBtn');
+    const sup = el('preferSuperBtn');
+    if (lit) {
+      lit.setAttribute('aria-checked', String(state.preferLit));
+      lit.classList.toggle('active', state.preferLit);
+      const coverage = Math.round((state.lightingCoverage || 0) * 100);
+      lit.title = coverage ? 'Uses explicit OSM lit tags; about ' + coverage + '% of mapped path ways have a lighting tag.' : 'Uses explicit OSM lighting tags where they are available.';
+    }
+    if (sup) {
+      sup.setAttribute('aria-checked', String(state.preferSuper));
+      sup.classList.toggle('active', state.preferSuper);
+    }
   }
 
   function setVoiceEnabled(enabled, { announce = false } = {}) {
@@ -324,7 +459,17 @@
     const quickWork = el('quickWorkBtn');
     quickHome.hidden = !home;
     quickWork.hidden = !work;
-    quick.hidden = !home && !work;
+    quick.querySelectorAll('.quick-favourite').forEach(button => button.remove());
+    for (const place of state.saved.favourites.slice(0, 3)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'quick-favourite';
+      button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"></path></svg><span></span>';
+      button.querySelector('span').textContent = place.name;
+      button.addEventListener('click', () => openSavedPlace(place));
+      quick.appendChild(button);
+    }
+    quick.hidden = !home && !work && !state.saved.favourites.length;
     const list = el('favouritesList');
     if (!list) return;
     list.innerHTML = '';
@@ -376,6 +521,7 @@
 
   function setPoint(which, latlng, label = '', address = '') {
     if (which === 'start') cancelStartLocation();
+    state.importedRouteName = '';
     state[which] = L.latLng(latlng.lat, latlng.lng);
     state[`${which}Label`] = label || fmtCoord(state[which]);
     if (which === 'end') state.endAddress = address || label || '';
@@ -411,10 +557,12 @@
     state.route = null;
     state.alternatives = [];
     el('routeAlternatives').replaceChildren();
+    el('routeInsights').hidden = true;
     el('approachNote').hidden = true;
     el('roadStat').textContent = '—';
     el('retryRouteBtn').hidden = true;
     el('startNavBtn').disabled = true;
+    el('sendToPhoneBtn').disabled = true;
     el('timeStat').textContent = '—';
     el('distanceStat').textContent = '—';
     el('redwayStat').textContent = '—';
@@ -474,6 +622,112 @@
     return chosen;
   }
 
+  function buildLocalSearchIndex(parsed) {
+    const entries = [];
+    const seen = new Set();
+    let pathWays = 0;
+    let litTaggedWays = 0;
+    for (const way of parsed?.ways || []) {
+      const tags = way.tags || {};
+      if (['superredway','redway','leisure','shared'].includes(edgeClass(tags))) {
+        pathWays += 1;
+        if (['yes','no'].includes(String(tags.lit || '').toLowerCase())) litTaggedWays += 1;
+      }
+      const candidates = [
+        [tags.name, 'Street or path'],
+        [tags._mk_route_name, tags._mk_route_ref ? 'Super Route' : 'Route'],
+        [tags._mk_route_ref, 'Super Route']
+      ];
+      const nodes = way.nodes.map(id => parsed.nodes.get(id)).filter(Boolean);
+      if (!nodes.length) continue;
+      const mid = nodes[Math.floor(nodes.length / 2)];
+      for (const pair of candidates) {
+        const textValue = String(pair[0] || '').trim();
+        const type = pair[1];
+        if (!textValue || textValue.length < 2) continue;
+        const key = textValue.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({
+          lat: mid.lat,
+          lon: mid.lon,
+          name: textValue,
+          display_name: type === 'Super Route' ? textValue + ', Milton Keynes' : 'Milton Keynes',
+          type,
+          local: true
+        });
+      }
+    }
+    state.localSearchIndex = entries;
+    state.lightingCoverage = pathWays ? litTaggedWays / pathWays : 0;
+    syncRoutePreferenceControls();
+  }
+
+  function localSuggestions(query) {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const saved = [state.saved.home, state.saved.work, ...state.saved.favourites]
+      .filter(Boolean)
+      .map(place => ({
+        lat: place.lat,
+        lon: place.lng,
+        name: place.name,
+        display_name: place.address || 'Saved place',
+        type: 'Saved place',
+        local: true
+      }));
+    const ranked = [];
+    for (const item of [...saved, ...state.localSearchIndex]) {
+      const name = String(item.name || '').toLowerCase();
+      const display = String(item.display_name || '').toLowerCase();
+      const starts = name.startsWith(q);
+      const includes = name.includes(q) || display.includes(q);
+      if (!includes) continue;
+      const d = resultDistance(item);
+      ranked.push({item, score: (starts ? 0 : 10) + Math.max(0, name.indexOf(q)) + (Number.isFinite(d) ? Math.min(20, d / 1000) : 5)});
+    }
+    ranked.sort((a,b) => a.score - b.score);
+    return dedupeSearchResults(ranked.map(x => x.item)).slice(0, 5);
+  }
+
+  function makeSuggestionButton(result, context) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'typeahead-item';
+    button.innerHTML = '<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><small></small></span>';
+    button.querySelector('strong').textContent = conciseResultName(result);
+    const bits = [resultTypeLabel(result) || result.type];
+    const d = resultDistance(result);
+    if (Number.isFinite(d)) bits.push(formatDistance(d));
+    button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
+    button.addEventListener('click', () => {
+      el('typeaheadSuggestions').hidden = true;
+      selectSearchResult(result, context);
+    });
+    return button;
+  }
+
+  function renderTypeahead(input, context) {
+    const results = localSuggestions(input.value);
+    if (input === el('homeSearch')) {
+      const box = el('typeaheadSuggestions');
+      box.replaceChildren();
+      for (const result of results) box.appendChild(makeSuggestionButton(result, context));
+      box.hidden = !results.length;
+      return;
+    }
+    if (input.value.trim().length < 2) return;
+    openPlannerSearch(context);
+    const list = el('resultsList');
+    list.replaceChildren();
+    el('resultsTitle').textContent = results.length ? 'Suggestions' : 'Search when ready';
+    if (results.length) {
+      for (const result of results) list.appendChild(makeSuggestionButton(result, context));
+    } else {
+      list.innerHTML = '<div class="result-message">Press Search for addresses and places. Suggestions are generated locally from the MK routing map.</div>';
+    }
+  }
+
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
@@ -510,6 +764,7 @@
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
+    searchResultLayer.clearLayers();
     const displayResults = dedupeSearchResults(results);
     el('resultsTitle').textContent = displayResults.length ? `Results for “${query}”` : 'No matching places';
 
@@ -519,7 +774,7 @@
       msg.textContent = 'No Milton Keynes match found. Try a full postcode, street address or place name.';
       list.appendChild(msg);
     } else {
-      for (const result of displayResults) {
+      displayResults.forEach((result, index) => {
         const primary = conciseResultName(result);
         const secondary = resultSecondary(result, primary);
         const button = document.createElement('button');
@@ -534,7 +789,21 @@
         button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
         button.addEventListener('click', () => selectSearchResult(result, context));
         list.appendChild(button);
-      }
+        const lat = Number(result.lat), lon = Number(result.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          const icon = L.divIcon({
+            className: 'search-result-marker',
+            html: '<span>' + String(index + 1) + '</span>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 28]
+          });
+          L.marker([lat, lon], {icon}).addTo(searchResultLayer).on('click', () => selectSearchResult(result, context));
+        }
+      });
+      const coords = displayResults
+        .map(result => [Number(result.lat), Number(result.lon)])
+        .filter(pair => pair.every(Number.isFinite));
+      if (coords.length > 1) map.fitBounds(coords, {padding:[50,70], maxZoom:15});
     }
     el('resultsSheet').hidden = false;
   }
@@ -556,16 +825,25 @@
     searchRevision += 1;
     state.plannerSearchOpen = false;
     el('resultsSheet').hidden = true;
+    el('typeaheadSuggestions').hidden = true;
+    searchResultLayer.clearLayers();
     el('routeSheet').hidden = state.stage !== 'planner';
   }
 
   for (const [id, context] of [['startSearch', 'start'], ['endSearch', 'end']]) {
-    el(id).addEventListener('focus', () => openPlannerSearch(context));
+    const input = el(id);
+    input.addEventListener('focus', () => openPlannerSearch(context));
+    input.addEventListener('input', () => renderTypeahead(input, context));
   }
+  el('homeSearch').addEventListener('input', () => {
+    const context = state.pendingSaveKind ? 'save-' + state.pendingSaveKind : 'destination';
+    renderTypeahead(el('homeSearch'), context);
+  });
 
   async function runSearch(context, input) {
     const query = input.value.trim();
     if (!query) { input.focus(); return; }
+    el('typeaheadSuggestions').hidden = true;
     if (context === 'start' || context === 'end') openPlannerSearch(context);
     const revision = ++searchRevision;
     input.blur();
@@ -631,6 +909,120 @@
     setStage('place');
   }
 
+
+  function culturalRouteMatches(route) {
+    if (state.exploreFilter === 'all') return true;
+    if (state.exploreFilter === 'short') return route.shortMiles <= 5;
+    return route.tags.includes(state.exploreFilter);
+  }
+
+  function renderCulturalRoutes() {
+    const list = el('culturalRoutesList');
+    if (!list) return;
+    list.replaceChildren();
+    for (const route of CULTURAL_ROUTES.filter(culturalRouteMatches)) {
+      const card = document.createElement('article');
+      card.className = 'cultural-route-card route-' + route.id;
+      const header = document.createElement('div');
+      header.className = 'cultural-route-heading';
+      header.innerHTML = '<span class="cultural-swatch" aria-hidden="true"></span><div><strong></strong><small></small></div>';
+      header.querySelector('strong').textContent = route.color + ' · ' + route.title;
+      header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi short';
+      const highlights = document.createElement('p');
+      highlights.textContent = route.highlights.join(' · ');
+      const join = document.createElement('small');
+      join.className = 'cultural-join';
+      join.textContent = Number.isFinite(route.joinDistance)
+        ? 'Nearest join ' + formatDistance(route.joinDistance) + ' away'
+        : 'Choose a version to load the official GPX';
+      const actions = document.createElement('div');
+      actions.className = 'cultural-route-actions';
+      const full = document.createElement('button');
+      full.type = 'button';
+      full.textContent = 'Full route';
+      full.addEventListener('click', () => loadOfficialGpx(route, 'full'));
+      const short = document.createElement('button');
+      short.type = 'button';
+      short.textContent = 'Short route';
+      short.addEventListener('click', () => loadOfficialGpx(route, 'short'));
+      const source = document.createElement('a');
+      source.href = CULTURAL_ROUTES_URL;
+      source.target = '_blank';
+      source.rel = 'noopener noreferrer';
+      source.textContent = 'Route guide';
+      actions.append(full, short, source);
+      card.append(header, highlights, join, actions);
+      list.appendChild(card);
+    }
+  }
+
+  function openExploreRoutes() {
+    if (state.pendingSaveKind) finishSavedSearch();
+    el('savedSheet').hidden = true;
+    el('settingsSheet').hidden = true;
+    el('installSheet').hidden = true;
+    renderCulturalRoutes();
+    hydrateCulturalRouteDistances().catch(() => {});
+    el('exploreSheet').hidden = false;
+    el('app').dataset.exploreOpen = 'true';
+    el('goTabBtn').classList.remove('active');
+    el('exploreRoutesBtn').classList.add('active');
+    el('exploreRoutesBtn').setAttribute('aria-current', 'page');
+    el('savedPlacesBtn').classList.remove('active');
+    el('savedPlacesBtn').removeAttribute('aria-current');
+    el('goTabBtn').removeAttribute('aria-current');
+  }
+
+  async function hydrateCulturalRouteDistances() {
+    if (!state.userLatLng) return;
+    let changed = false;
+    for (const route of CULTURAL_ROUTES) {
+      try {
+        if (!route.fullCoords) {
+          const response = await fetch(route.fullGpx, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
+          if (!response.ok) continue;
+          route.fullCoords = parseGpx(await response.text()).coords;
+        }
+        let best = Infinity;
+        for (const pair of route.fullCoords || []) {
+          best = Math.min(best, hav({lat:state.userLatLng.lat,lon:state.userLatLng.lng},{lat:pair[0],lon:pair[1]}));
+        }
+        if (Number.isFinite(best)) {
+          route.joinDistance = best;
+          changed = true;
+        }
+      } catch (_) {}
+    }
+    if (changed && !el('exploreSheet').hidden) {
+      CULTURAL_ROUTES.sort((a,b) => (a.joinDistance ?? Infinity) - (b.joinDistance ?? Infinity));
+      renderCulturalRoutes();
+    }
+  }
+
+  function routeFromNearestPoint(coords) {
+    if (!state.userLatLng || coords.length < 3) return coords;
+    const first = coords[0], last = coords.at(-1);
+    const closes = hav({lat:first[0],lon:first[1]},{lat:last[0],lon:last[1]}) < 250;
+    if (!closes) return coords;
+    let bestIndex = 0, best = Infinity;
+    coords.forEach((pair,index) => {
+      const d = hav({lat:state.userLatLng.lat,lon:state.userLatLng.lng},{lat:pair[0],lon:pair[1]});
+      if (d < best) { best = d; bestIndex = index; }
+    });
+    const loop = coords.slice(0, -1);
+    const rotated = [...loop.slice(bestIndex), ...loop.slice(0,bestIndex)];
+    if (rotated.length) rotated.push(rotated[0]);
+    return rotated;
+  }
+
+  function closeExploreRoutes() {
+    el('exploreSheet').hidden = true;
+    el('app').dataset.exploreOpen = 'false';
+    el('exploreRoutesBtn').classList.remove('active');
+    el('exploreRoutesBtn').removeAttribute('aria-current');
+    el('goTabBtn').classList.add('active');
+    el('goTabBtn').setAttribute('aria-current', 'page');
+  }
 
   // All visible sheet handles share touch, mouse and keyboard behaviour.
   function setSheetCollapsed(sheet, collapsed) {
@@ -707,17 +1099,31 @@
 
   el('savedPlacesBtn').addEventListener('click', () => {
     if (state.pendingSaveKind) finishSavedSearch();
+    closeExploreRoutes();
     renderSavedPlaces();
     el('settingsSheet').hidden = true;
     el('savedSheet').hidden = false;
-    probeOfflineMap().catch(() => {});
+    el('goTabBtn').classList.remove('active');
+    el('goTabBtn').removeAttribute('aria-current');
+    el('savedPlacesBtn').classList.add('active');
+    el('savedPlacesBtn').setAttribute('aria-current', 'page');
   });
-  el('closeSaved').addEventListener('click', () => { el('savedSheet').hidden = true; });
+  el('closeSaved').addEventListener('click', () => {
+    el('savedSheet').hidden = true;
+    el('savedPlacesBtn').classList.remove('active');
+    el('savedPlacesBtn').removeAttribute('aria-current');
+    el('goTabBtn').classList.add('active');
+    el('goTabBtn').setAttribute('aria-current', 'page');
+  });
   function openSettings() {
+    closeExploreRoutes();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
     syncVoiceControls();
     syncUnitControls();
+    syncRoutePreferenceControls();
+    applyTheme();
+    probeOfflineMap().catch(() => {});
     el('settingsSheet').hidden = false;
   }
 
@@ -728,6 +1134,28 @@
   });
   document.querySelectorAll('[data-units]').forEach(button => {
     button.addEventListener('click', () => setUnits(button.dataset.units));
+  });
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    button.addEventListener('click', () => setThemeChoice(button.dataset.themeChoice));
+  });
+  document.querySelectorAll('[data-explore-filter]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.exploreFilter = button.dataset.exploreFilter;
+      document.querySelectorAll('[data-explore-filter]').forEach(x => x.classList.toggle('active', x === button));
+      renderCulturalRoutes();
+    });
+  });
+  el('exploreRoutesBtn').addEventListener('click', openExploreRoutes);
+  el('closeExplore').addEventListener('click', closeExploreRoutes);
+  el('goTabBtn').addEventListener('click', () => {
+    closeExploreRoutes();
+    el('savedSheet').hidden = true;
+    el('savedPlacesBtn').classList.remove('active');
+    el('savedPlacesBtn').removeAttribute('aria-current');
+    el('settingsSheet').hidden = true;
+    el('goTabBtn').classList.add('active');
+    el('goTabBtn').setAttribute('aria-current', 'page');
+    setStage('explore');
   });
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
   el('quickHomeBtn').addEventListener('click', () => openSavedPlace(state.saved.home));
@@ -911,11 +1339,28 @@
     el('walkBtn').classList.toggle('active', mode === 'walk');
     el('prefBtn').hidden = true;
     el('prefMenu').hidden = true;
+    el('routePreferences').hidden = mode !== 'cycle';
     invalidateRoute();
     maybeCalculateRoute();
   }
   el('cycleBtn').addEventListener('click', () => setMode('cycle'));
   el('walkBtn').addEventListener('click', () => setMode('walk'));
+  el('preferLitBtn').addEventListener('click', () => {
+    state.preferLit = !state.preferLit;
+    persistSettings();
+    syncRoutePreferenceControls();
+    state.graphCache.clear();
+    invalidateRoute();
+    maybeCalculateRoute();
+  });
+  el('preferSuperBtn').addEventListener('click', () => {
+    state.preferSuper = !state.preferSuper;
+    persistSettings();
+    syncRoutePreferenceControls();
+    state.graphCache.clear();
+    invalidateRoute();
+    maybeCalculateRoute();
+  });
 
   const PREF_LABEL = { maximum: 'Max Redway', balanced: 'Balanced', fastest: 'Fastest' };
   el('prefBtn').addEventListener('click', () => {
@@ -978,6 +1423,7 @@
       const parsed = parseBundledNetwork(await response.json());
       if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Bundled routing network is incomplete');
       state.routingNetwork = parsed;
+      buildLocalSearchIndex(parsed);
       state.networkSource = 'bundled';
       document.documentElement.dataset.routingSource = 'bundled';
       state.graphCache.clear();
@@ -1010,11 +1456,18 @@
     map.on('zoomend', updateNetworkZoom);
     updateNetworkZoom();
     const groups = { superredway: [], redway: [], leisure: [], shared: [] };
+    const superLabels = new Map();
     for (const w of parsed.ways) {
-      const cls = edgeClass(w.tags || {});
+      const tags = w.tags || {};
+      const cls = edgeClass(tags);
       if (!groups[cls]) continue;
       const pts = w.nodes.map(id => parsed.nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon]);
-      if (pts.length >= 2) groups[cls].push(pts);
+      if (pts.length >= 2) {
+        groups[cls].push(pts);
+        if (cls === 'superredway' && tags._mk_route_ref && !superLabels.has(tags._mk_route_ref)) {
+          superLabels.set(tags._mk_route_ref, pts[Math.floor(pts.length / 2)]);
+        }
+      }
     }
     const add = (lines, cls) => {
       if (!lines.length) return;
@@ -1025,6 +1478,15 @@
     add(groups.redway, 'redway');
     add(groups.leisure, 'leisure');
     add(groups.superredway, 'superredway');
+    for (const [ref, point] of superLabels) {
+      const icon = L.divIcon({
+        className: 'super-route-label',
+        html: '<span>' + ref + '</span>',
+        iconSize: [34, 22],
+        iconAnchor: [17, 11]
+      });
+      L.marker(point, {icon, interactive:false}).addTo(redwayLayer);
+    }
     state.redwayReady = Object.values(groups).some(lines => lines.length > 0);
   }
 
@@ -1040,17 +1502,21 @@
   }
 
   function getGraph(parsed, mode, pref) {
+    const options = {
+      preferLit: mode === 'cycle' && state.preferLit,
+      preferSuper: mode === 'cycle' && state.preferSuper
+    };
     if (parsed === state.routingNetwork) {
-      const key = `${mode}:${pref}`;
+      const key = mode + ':' + pref + ':' + (options.preferLit ? 'lit' : '-') + ':' + (options.preferSuper ? 'super' : '-');
       if (!state.graphCache.has(key)) {
         // Keep memory predictable on phones; an old graph can still be referenced by
         // an active route even after it drops out of this small cache.
-        if (state.graphCache.size >= 2) state.graphCache.clear();
-        state.graphCache.set(key, buildGraph(parsed, mode, pref));
+        if (state.graphCache.size >= 4) state.graphCache.clear();
+        state.graphCache.set(key, buildGraph(parsed, mode, pref, options));
       }
       return state.graphCache.get(key);
     }
-    return buildGraph(parsed, mode, pref);
+    return buildGraph(parsed, mode, pref, options);
   }
 
   function corridorBBox(a, b) {
@@ -1205,10 +1671,77 @@
     }
   }
 
+  function renderAlternativeMapRoutes() {
+    routeLayer.eachLayer(layer => {
+      const className = layer.options?.className || layer.options?.icon?.options?.className || '';
+      if (className === 'route-alt-line' || className === 'route-alt-time') routeLayer.removeLayer(layer);
+    });
+    if (state.mode !== 'cycle' || !state.route) return;
+    for (const option of state.alternatives) {
+      if (!option.plan || option.plan === state.route) continue;
+      const line = L.polyline(option.plan.coords, {className:'route-alt-line', interactive:false}).addTo(routeLayer);
+      line.bringToBack?.();
+      const coords = option.plan.coords;
+      if (coords.length) {
+        const point = coords[Math.floor(coords.length / 2)];
+        const icon = L.divIcon({
+          className: 'route-alt-time',
+          html: '<span>' + formatDuration(option.mins) + '</span>',
+          iconSize: [54, 24],
+          iconAnchor: [27, 12]
+        });
+        L.marker(point, {icon, interactive:false}).addTo(routeLayer);
+      }
+    }
+  }
+
+  function renderUnlitSegments(plan) {
+    const edges = plan?.result?.edges || [];
+    const coords = plan?.coords || [];
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) L.polyline(run, {className:'route-unlit-line', interactive:false}).addTo(routeLayer);
+      run = [];
+    };
+    for (let i = 0; i < edges.length && i + 1 < coords.length; i++) {
+      if (edges[i].lit === 'no') {
+        if (!run.length) run.push(coords[i]);
+        run.push(coords[i + 1]);
+      } else {
+        flush();
+      }
+    }
+    flush();
+  }
+
+  function renderRouteInsights(plan) {
+    const insights = plan?.insights;
+    const box = el('routeInsights');
+    if (!insights) {
+      box.hidden = true;
+      return;
+    }
+    el('underpassStat').textContent = String(insights.underpasses || 0);
+    el('crossingStat').textContent = String(insights.roadCrossings || 0);
+    el('unlitStat').textContent = formatDistance(insights.unlitDist || 0);
+    box.querySelectorAll('.super-route-badge').forEach(node => node.remove());
+    for (const route of insights.superRoutes || []) {
+      const badge = document.createElement('span');
+      badge.className = 'super-route-badge';
+      const usefulName = route.name && route.name !== route.ref && !route.name.includes('MK Redway Super Route');
+      badge.textContent = usefulName ? route.name : route.ref + ' Super Route';
+      box.appendChild(badge);
+    }
+    box.hidden = false;
+  }
+
   function renderAlternatives() {
     const container = el('routeAlternatives');
     container.replaceChildren();
-    if (state.mode !== 'cycle') return;
+    if (state.mode !== 'cycle') {
+      renderAlternativeMapRoutes();
+      return;
+    }
     for (const option of state.alternatives) {
       const prefs = option.prefs || [option.pref];
       const selectedHere = prefs.includes(state.pref);
@@ -1235,6 +1768,7 @@
       });
       container.append(button);
     }
+    renderAlternativeMapRoutes();
   }
 
   function renderApproachNote() {
@@ -1263,13 +1797,16 @@
   function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
     state.route = plan;
     drawRoute(plan.coords, fit);
+    renderUnlitSegments(plan);
     el('timeStat').textContent = formatDuration(plan.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
     el('distanceStat').textContent = formatDistance(plan.dist);
     el('redwayStat').textContent = `${plan.redwayPercent}%`;
     el('roadStat').textContent = `${plan.roadPercent}%`;
     el('startNavBtn').disabled = false;
+    el('sendToPhoneBtn').disabled = false;
     renderRouteMix(plan);
+    renderRouteInsights(plan);
     renderApproachNote();
     setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
     setRouteSheetCollapsed(collapse);
@@ -1384,6 +1921,206 @@
     else if (!state.start) setRouteStatus('Use your location or search for a starting point.');
     else setRouteStatus('Search for a destination.');
   }
+
+  function xmlEscape(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch]));
+  }
+
+  function routeToGpx(plan, name = 'MK Redway route') {
+    const points = (plan?.coords || []).map(pair =>
+      '      <trkpt lat="' + Number(pair[0]).toFixed(6) + '" lon="' + Number(pair[1]).toFixed(6) + '"></trkpt>'
+    ).join('\n');
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<gpx version="1.1" creator="MK Redway Navigator" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+      '  <metadata><name>' + xmlEscape(name) + '</name></metadata>\n' +
+      '  <trk><name>' + xmlEscape(name) + '</name><trkseg>\n' + points + '\n  </trkseg></trk>\n' +
+      '</gpx>\n';
+  }
+
+  function downloadText(filename, textValue, type) {
+    const blob = new Blob([textValue], {type});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function parseGpx(textValue) {
+    const doc = new DOMParser().parseFromString(textValue, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('Invalid GPX file');
+    let points = [...doc.getElementsByTagNameNS('*', 'trkpt')];
+    if (!points.length) points = [...doc.getElementsByTagNameNS('*', 'rtept')];
+    const coords = points.map(node => [Number(node.getAttribute('lat')), Number(node.getAttribute('lon'))])
+      .filter(pair => pair.every(Number.isFinite));
+    if (coords.length < 2) throw new Error('GPX file does not contain a usable track');
+    const title = doc.getElementsByTagNameNS('*', 'name')[0]?.textContent?.trim() || 'Imported GPX route';
+    return {coords, title};
+  }
+
+  function importedPlan(coords, title) {
+    const cumulative = buildCumulative(coords);
+    const edges = [];
+    for (let i = 0; i < coords.length - 1; i++) {
+      edges.push({
+        d: cumulative[i + 1] - cumulative[i],
+        cls: 'shared',
+        name: title,
+        wayId: 'gpx-' + i,
+        lit: '',
+        tunnel: '',
+        junction: ''
+      });
+    }
+    const distance = cumulative.at(-1) || 0;
+    return {
+      coords,
+      cumulative,
+      result: {ids: coords.map((_, i) => 'gpx-' + i), edges},
+      networkDist: distance,
+      approachDist: 0,
+      dist: distance,
+      mins: distance / (state.mode === 'cycle' ? 4.17 : 1.34) / 60,
+      snaps: {start:0,end:0},
+      mixPercent: {superredway:0,redway:0,leisure:0,shared:100,road:0},
+      redwayPercent: 0,
+      roadPercent: 0,
+      insights: {underpasses:0,roadCrossings:0,unlitDist:0,superRoutes:[]},
+      maneuvers: buildManeuvers(coords, edges, cumulative, {
+        ids: coords.map((_, i) => 'gpx-' + i),
+        endLabel: title,
+        endGap: 0
+      }),
+      initialInstruction: initialInstruction(coords, edges)
+    };
+  }
+
+  function installImportedGpx(coords, title) {
+    stopNavigation({keepRoute:false});
+    state.importedRouteName = title;
+    state.start = L.latLng(coords[0][0], coords[0][1]);
+    state.end = L.latLng(coords.at(-1)[0], coords.at(-1)[1]);
+    state.startLabel = title + ' start';
+    state.endLabel = title + ' finish';
+    state.endAddress = 'Imported GPX';
+    state.alternatives = [];
+    setStage('planner');
+    updatePlannerFields();
+    redrawMarkers();
+    installRoute(importedPlan(coords, title), {fit:true, collapse: window.innerWidth < 900});
+    renderAlternatives();
+    toast('GPX route ready');
+  }
+
+  async function loadOfficialGpx(route, variant) {
+    const url = variant === 'short' ? route.shortGpx : route.fullGpx;
+    const title = route.color + ' · ' + route.title + (variant === 'short' ? ' short' : '');
+    try {
+      const response = await fetch(url, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
+      if (!response.ok) throw new Error('GPX download returned ' + response.status);
+      const parsed = parseGpx(await response.text());
+      route[variant + 'Coords'] = parsed.coords;
+      closeExploreRoutes();
+      installImportedGpx(routeFromNearestPoint(parsed.coords), title);
+    } catch (err) {
+      console.warn('Official GPX could not be loaded directly', err);
+      const opened = window.open(url, '_blank', 'noopener');
+      if (!opened) location.href = url;
+      toast('GPX opened from Get Around MK. Import the downloaded file if it does not open here.', 6000);
+    }
+  }
+
+  async function importGpxFile(file) {
+    if (!file) return;
+    try {
+      const parsed = parseGpx(await file.text());
+      closeExploreRoutes();
+      installImportedGpx(parsed.coords, parsed.title || file.name.replace(/\.gpx$/i, ''));
+    } catch (err) {
+      console.error(err);
+      toast('That GPX file could not be read');
+    }
+  }
+
+  function routeShareUrl() {
+    if (!state.start || !state.end) return location.href.split('?')[0];
+    const url = new URL(location.href);
+    url.search = '';
+    url.searchParams.set('from', state.start.lat.toFixed(6) + ',' + state.start.lng.toFixed(6));
+    url.searchParams.set('to', state.end.lat.toFixed(6) + ',' + state.end.lng.toFixed(6));
+    url.searchParams.set('mode', state.mode);
+    url.searchParams.set('pref', state.pref);
+    if (state.preferLit) url.searchParams.set('lit', '1');
+    if (state.preferSuper) url.searchParams.set('super', '1');
+    return url.href;
+  }
+
+  async function sendRouteToPhone() {
+    if (!state.route) return;
+    const url = routeShareUrl();
+    const data = {title:'MK Redway route', text:'Open this route in MK Redway Navigator', url};
+    try {
+      if (navigator.share) {
+        await navigator.share(data);
+        return;
+      }
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast('Route link copied — open it on your phone');
+        return;
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      console.warn(err);
+    }
+    window.prompt('Copy this route link to your phone:', url);
+  }
+
+  function restoreSharedRoute() {
+    const params = new URLSearchParams(location.search);
+    const parsePoint = key => {
+      const match = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(params.get(key) || '');
+      if (!match) return null;
+      const lat = Number(match[1]), lng = Number(match[2]);
+      if (![lat,lng].every(Number.isFinite) || lat < MK.south || lat > MK.north || lng < MK.west || lng > MK.east) return null;
+      return L.latLng(lat,lng);
+    };
+    const from = parsePoint('from'), to = parsePoint('to');
+    if (!from || !to) return false;
+    state.mode = params.get('mode') === 'walk' ? 'walk' : 'cycle';
+    state.pref = ['maximum','balanced','fastest'].includes(params.get('pref')) ? params.get('pref') : 'maximum';
+    state.preferLit = params.get('lit') === '1';
+    state.preferSuper = params.get('super') === '1';
+    state.start = from;
+    state.end = to;
+    state.startLabel = 'Shared route start';
+    state.endLabel = 'Shared route destination';
+    state.endAddress = '';
+    el('cycleBtn').classList.toggle('active', state.mode === 'cycle');
+    el('walkBtn').classList.toggle('active', state.mode === 'walk');
+    el('routePreferences').hidden = state.mode !== 'cycle';
+    syncRoutePreferenceControls();
+    setStage('planner');
+    updatePlannerFields();
+    redrawMarkers();
+    maybeCalculateRoute();
+    return true;
+  }
+
+  el('exportGpxBtn').addEventListener('click', () => {
+    if (!state.route) return;
+    downloadText('mk-redway-route.gpx', routeToGpx(state.route, state.endLabel || 'MK Redway route'), 'application/gpx+xml');
+  });
+  for (const id of ['importGpxBtn','exploreImportGpxBtn']) {
+    el(id).addEventListener('click', () => el('gpxFileInput').click());
+  }
+  el('gpxFileInput').addEventListener('change', event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    importGpxFile(file);
+  });
+  el('sendToPhoneBtn').addEventListener('click', sendRouteToPhone);
 
   el('retryRouteBtn').addEventListener('click', () => calculateRoute());
   el('routeMoreBtn').addEventListener('click', () => {
@@ -1590,6 +2327,11 @@
       'slight-right': '<path d="m6 19 10-10M10 9h6v6"></path>',
       'sharp-left': '<path d="M18 20v-8a4 4 0 0 0-4-4H7M11 4 7 8l4 4"></path>',
       'sharp-right': '<path d="M6 20v-8a4 4 0 0 1 4-4h7M13 4l4 4-4 4"></path>',
+      'u-turn-left': '<path d="M18 20V10a6 6 0 0 0-12 0v3M3 10l3 3 3-3"></path>',
+      'u-turn-right': '<path d="M6 20V10a6 6 0 0 1 12 0v3M15 10l3 3 3-3"></path>',
+      roundabout: '<circle cx="12" cy="12" r="5"></circle><path d="M12 20v-3M12 7V4M6.5 15.5 4 17M17.5 8.5 20 7"></path><path d="m15 5-3-1 1-3"></path>',
+      'roundabout-exit': '<circle cx="10" cy="13" r="4"></circle><path d="M10 21v-4M13 10l6-6M15 4h4v4"></path>',
+      underpass: '<path d="M3 17c2-6 5-9 9-9s7 3 9 9"></path><path d="M4 17h16M12 17V9"></path>',
       arrive: '<circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2"></circle>'
     };
     return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[kind] || paths.straight}</svg>`;
@@ -1789,14 +2531,43 @@
     state.userLatLng = latlng;
     state.lastPositionAt = Date.now();
     setUserMarker(latlng);
+    if (state.themeChoice === 'system' && Date.now() - state.lastThemeCheckAt > 30000) {
+      state.lastThemeCheckAt = Date.now();
+      const before = document.documentElement.dataset.theme;
+      applyTheme();
+      if (before !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+        map.removeLayer(offlineVectorLayer);
+        offlineVectorLayer = null;
+        if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+        baseLayer = onlineBaseLayer;
+        activatePackagedBasemap().catch(console.warn);
+      }
+    }
 
     const snap = nearestOnRoute(latlng);
     if (!snap) return;
     const heading = resolveTravelHeading(position, snap, latlng);
     state.lastSegment = snap.segment;
-    state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
-    const progress = Math.max(state.navProgressMeters, snap.progress);
+    const progressThreshold = state.mode === 'cycle' ? 80 : 60;
+    const closeEnoughForProgress = snap.distance <= progressThreshold;
+    if (closeEnoughForProgress) {
+      state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
+    }
+    const progress = closeEnoughForProgress ? Math.max(state.navProgressMeters, snap.progress) : state.navProgressMeters;
     state.navProgressMeters = progress;
+
+    if (state.importedRouteName && !closeEnoughForProgress) {
+      el('navEta').textContent = 'Join route';
+      el('navRemain').textContent = `${formatDistance(snap.distance)} to nearest point`;
+      setTurnIcon('straight');
+      el('turnDistance').textContent = formatDistance(snap.distance);
+      el('turnText').textContent = 'Join the imported route';
+      el('nextTurnText').textContent = 'Guidance will continue from the nearest point once you reach the track.';
+      state.offRouteCount += 1;
+      if (state.offRouteCount >= 2 && Date.now() - state.lastRerouteAt > 25000) rerouteFromPosition(latlng);
+      if (state.followUser) followNavigationView(latlng, heading, true);
+      return;
+    }
 
     const total = state.route.networkDist;
     const remaining = Math.max(0, total - progress);
@@ -1841,6 +2612,16 @@
   async function rerouteFromPosition(latlng) {
     if (!state.route || state.routing) return;
     state.lastRerouteAt = Date.now(); state.offRouteCount = 0;
+    if (state.importedRouteName) {
+      const snap = nearestOnRoute(latlng);
+      const gap = snap?.distance;
+      const message = Number.isFinite(gap)
+        ? `Return to the imported route — nearest point is ${formatDistance(gap)} away.`
+        : 'Return to the imported route.';
+      toast(message, 4200);
+      speak(message, { priority: 3, dedupeMs: 12000 });
+      return;
+    }
     toast('Rerouting…'); speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
     state.start = latlng; state.startLabel = 'Your location';
     invalidateRoute();
@@ -1868,7 +2649,7 @@
     if (!current) { toast('Allow location access to start navigation'); return; }
     state.userLatLng = current.latlng;
     const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
-    if (distanceFromPlannedStart > 60) {
+    if (distanceFromPlannedStart > 60 && !state.importedRouteName) {
       state.start = current.latlng; state.startLabel = 'Your location';
       invalidateRoute();
       await calculateRoute({ fit: false, quiet: true });
@@ -1880,7 +2661,25 @@
 
     state.navigating = true;
     state.followUser = true;
+    const themeBeforeNavigation = document.documentElement.dataset.theme;
+    applyTheme();
+    if (themeBeforeNavigation !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
     resetNavigationProgress();
+    if (state.importedRouteName) {
+      const importedSnap = nearestOnRoute(current.latlng);
+      if (importedSnap && importedSnap.distance <= 100) {
+        state.lastSegment = importedSnap.segment;
+        state.navProgressMeters = importedSnap.progress;
+      } else if (importedSnap) {
+        toast(`Imported route is ${formatDistance(importedSnap.distance)} away — head to the nearest point to join it.`, 6000);
+      }
+    }
     redrawMarkers();
     setStage('navigation');
     redwayLayer.remove(); // declutter sat-nav view; the chosen route remains visible.
@@ -1912,6 +2711,15 @@
   function stopNavigation({ keepRoute = true, arrived = false } = {}) {
     if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null; state.navigating = false; state.followUser = true;
+    const themeBeforeExit = document.documentElement.dataset.theme;
+    applyTheme();
+    if (themeBeforeExit !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+      map.removeLayer(offlineVectorLayer);
+      offlineVectorLayer = null;
+      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+      baseLayer = onlineBaseLayer;
+      activatePackagedBasemap().catch(console.warn);
+    }
     resetMapOrientation();
     userLayer.clearLayers();
     if (state.userLatLng) setUserMarker(state.userLatLng);
@@ -2006,7 +2814,7 @@
     try {
       offlineVectorLayer = window.protomapsL.leafletLayer({
         url: OFFLINE_MAP_URL,
-        flavor: darkQuery?.matches ? 'dark' : 'light',
+        flavor: ['dark','high-contrast'].includes(effectiveTheme()) ? 'dark' : 'light',
         lang: 'en',
         attribution: '<a href="https://protomaps.com/">Protomaps</a>'
       });
@@ -2206,7 +3014,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.13.1';
+  el('app').dataset.appVersion = '0.14.0';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -2264,10 +3072,13 @@
   renderSavedPlaces();
   syncVoiceControls();
   syncUnitControls();
+  syncRoutePreferenceControls();
+  applyTheme();
   updatePlannerFields();
   setStage('explore');
   setTurnIcon('straight');
   loadRedways();
+  const sharedRouteRestored = restoreSharedRoute();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
 
   el('layersBtn').addEventListener('click', () => {
@@ -2282,23 +3093,34 @@
     }
   });
 
+  function locationIntroSeen() {
+    try { return localStorage.getItem(LOCATION_HINT_KEY) === '1'; } catch (_) { return true; }
+  }
+  function closeLocationIntro() {
+    el('locationIntro').hidden = true;
+    try { localStorage.setItem(LOCATION_HINT_KEY, '1'); } catch (_) {}
+  }
+  el('locationIntroAllow').addEventListener('click', async () => {
+    closeLocationIntro();
+    await refreshBrowseLocation({center:false, quiet:false});
+  });
+  el('locationIntroDismiss').addEventListener('click', closeLocationIntro);
+
   (async () => {
     try {
       const permission = await navigator.permissions?.query?.({name: 'geolocation'});
       if (permission?.state === 'granted') {
-        await refreshBrowseLocation({center: false, quiet: true});
-      } else {
-        const seen = localStorage.getItem(LOCATION_HINT_KEY) === '1';
-        if (!seen) {
-          localStorage.setItem(LOCATION_HINT_KEY, '1');
-          setTimeout(() => toast('Use the location button to show where you are. Location is only used for routing and navigation.', 5200), 700);
-        }
+        await refreshBrowseLocation({center:false, quiet:true});
+      } else if (!sharedRouteRestored && !locationIntroSeen()) {
+        el('locationIntro').hidden = false;
       }
-    } catch (_) {}
+    } catch (_) {
+      if (!sharedRouteRestored && !locationIntroSeen()) el('locationIntro').hidden = false;
+    }
   })();
 
   darkQuery?.addEventListener?.('change', () => {
-    document.documentElement.dataset.theme = darkQuery.matches ? 'dark' : 'light';
+    applyTheme();
     if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
       map.removeLayer(offlineVectorLayer);
       offlineVectorLayer = null;
