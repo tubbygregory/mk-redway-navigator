@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo"]
   workflow_dispatch:
 
 permissions:
@@ -170,35 +170,29 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.0 beta release after production verification
+      - name: Publish v0.14.1 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.0" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.1" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Design-review completion release.
+          Branding update: approved MKRW roundabout logo.
 
-          - Add local type-ahead suggestions, result pins, favourite chips and a first-run location explanation.
-          - Add Explore MK Cultural Route cards, GPX import/export and shareable desktop-to-phone route links.
-          - Add mapped lighting/underpass/crossing summaries, optional lit/Super Route preferences and richer turn guidance.
-          - Add automatic after-sunset navigation dark mode, explicit appearance choices and move offline map management into Settings.
-          - Generate routing network v6 with grid-road context for mapped underpasses.
+          - New vector app logo, Apple touch icon and iPhone launch screen.
+          - Dedicated maskable icon with safe margins and SVG/PNG/ICO favicons.
+          - Supplied wordmark in About and versioned icon URLs for cache refresh.
+          - Routing and navigation behaviour unchanged.
 
-          - Final audit: validate GPX coordinates and XML, keep imported geometry and unknown conditions distinct, escape map labels, and share imported tracks as files.
-          - Keep discounted-route A* optimal, respect bicycle-specific one-way/roundabout rules, validate metadata types and label crossing estimates honestly.
-
-          Limits: crossing estimates and OSM lighting coverage are incomplete. Cultural-route POI narration and calculated connectors to loops are not included. Multi-section GPX files use the longest continuous section rather than inventing connections.
-
-          The normal data, routing, browser/PWA, focused audit, Pages-artifact, deployment and live-review gates pass before publication.
+          Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.0 >/dev/null 2>&1; then
+          if gh release view v0.14.1 >/dev/null 2>&1; then
             # The handoff's merge published this beta while the final audit was running.
             # Only advance a beta tag to a validated descendant; never rewrite history.
-            test "$(gh release view v0.14.0 --json isPrerelease --jq .isPrerelease)" = true
-            relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/v0.14.0...$GITHUB_SHA" --jq .status)
+            test "$(gh release view v0.14.1 --json isPrerelease --jq .isPrerelease)" = true
+            relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/v0.14.1...$GITHUB_SHA" --jq .status)
             case "$relation" in ahead|identical) ;; *) exit 1 ;; esac
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v0.14.0" -f sha="$GITHUB_SHA" -F force=false
-            gh release edit v0.14.0 --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v0.14.1" -f sha="$GITHUB_SHA" -F force=false
+            gh release edit v0.14.1 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.0 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.0" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.1 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.1" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

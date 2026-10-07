@@ -13,9 +13,12 @@
   <meta name="description" content="Redway-first walking and cycling navigation for Milton Keynes." />
   <title>MK Redway Navigator</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="icon" href="./icons/icon-192.png" sizes="192x192" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+  <link rel="icon" href="./icons/favicon.ico?v=0.14.1" sizes="any" />
+  <link rel="icon" href="./icons/favicon-32.png?v=0.14.1" type="image/png" sizes="32x32" />
+  <link rel="icon" href="./icons/favicon-16.png?v=0.14.1" type="image/png" sizes="16x16" />
+  <link rel="icon" href="./icons/app-logo.svg?v=0.14.1" type="image/svg+xml" sizes="any" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=0.14.1" />
+  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png?v=0.14.1" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
   <link rel="stylesheet" href="./vendor/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -27,7 +30,7 @@
     <section id="exploreUI" class="top-overlay" aria-label="Destination search">
       <form id="homeSearchForm" class="search-pill">
         <span class="search-logo-static" aria-hidden="true">
-          <img src="./icons/app-logo.svg" class="search-logo" width="32" height="32" alt="" />
+          <img src="./icons/app-logo.svg?v=0.14.1" class="search-logo" width="32" height="32" alt="" />
         </span>
         <label class="sr-only" for="homeSearch">Search for a destination</label>
         <input id="homeSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Search places or postcodes" />
@@ -350,6 +353,7 @@
       </div>
       <details id="aboutData" class="about-data">
         <summary>About &amp; Data</summary>
+        <img src="./icons/wordmark.png?v=0.14.1" alt="MK Redway" width="2172" height="724" style="display:block;width:100%;max-width:300px;height:auto;background:white;border-radius:12px;margin:16px 0" />
         <h2>MK Redway Navigator</h2>
         <p id="aboutVersion">Loading version…</p>
         <dl class="data-details">
@@ -379,7 +383,7 @@
     <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
       <button id="installSheetHandle" class="sheet-handle" type="button" data-panel-label="install instructions" aria-expanded="true" aria-label="Collapse install instructions"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
       <div class="install-heading sheet-summary">
-        <img src="./icons/apple-touch-icon.png" width="64" height="64" alt="" aria-hidden="true" />
+        <img src="./icons/apple-touch-icon.png?v=0.14.1" width="64" height="64" alt="" aria-hidden="true" />
         <div><strong>Install MK Redway</strong><span>Keep it on your Home Screen like an app.</span></div>
         <button id="closeInstall" class="icon-button small-icon" type="button" aria-label="Close install instructions">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>

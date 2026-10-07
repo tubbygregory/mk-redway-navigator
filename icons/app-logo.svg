@@ -1,22 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MK Redway Navigator app icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">MK Redway — MKRW roundabout</title>
+  <rect width="512" height="512" fill="#fff"/>
+  <rect x="24" y="24" width="464" height="464" rx="44" fill="#ed001b"/>
+  <!-- Four neighbourhood blocks joined by a centred roundabout. -->
+  <path d="M256 24v464M24 256h464" fill="none" stroke="#fff" stroke-width="16"/>
+  <circle cx="256" cy="256" r="58" fill="#fff"/>
+  <circle cx="256" cy="256" r="41" fill="#ed001b"/>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#c83228"/>
-      <stop offset="1" stop-color="#8f1713"/>
-    </linearGradient>
+    <path id="m" d="M64 187V79Q64 66 77 66H91Q97 66 103 72L142 113L181 72Q187 66 194 66H209Q222 66 222 79V183Q222 189 217 194L204 205Q199 209 192 209Q181 209 181 196V127L152 157Q142 166 132 157L103 127V196Q103 209 90 209H77Q64 209 64 196Z"/>
   </defs>
-  <!-- Full-bleed square: iOS/Android apply their own icon mask. -->
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <!-- Route symbol kept inside the platform-safe central area. -->
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M138 356 C188 324 183 273 230 250 C278 227 306 262 347 233 C372 215 383 184 382 150" stroke-width="34"/>
-    <path d="M230 250 C206 218 184 199 151 185" stroke-width="23" opacity=".94"/>
-    <path d="M347 233 C368 263 379 288 384 316" stroke-width="23" opacity=".94"/>
-  </g>
-  <g>
-    <circle cx="138" cy="356" r="27" fill="#fff"/><circle cx="138" cy="356" r="13" fill="#26734d"/>
-    <circle cx="382" cy="150" r="27" fill="#fff"/><circle cx="382" cy="150" r="13" fill="#242426"/>
-    <circle cx="230" cy="250" r="17" fill="#fff"/>
-    <circle cx="347" cy="233" r="17" fill="#fff"/>
+  <g fill="#fff">
+    <use href="#m"/>
+    <!-- W is exactly the M rotated around the centre of the mark. -->
+    <use href="#m" transform="rotate(180 256 256)"/>
+    <path d="M290 194V79Q290 66 303 66H318Q331 66 331 79V120L396 70Q401 66 407 66H446Q460 66 450 78L376 133L450 196Q462 209 445 209H407Q401 209 396 204L345 157L331 168V196Q331 209 318 209H307Q301 209 296 204Z"/>
+    <path fill-rule="evenodd" d="M64 435V318Q64 303 79 303H172C221 303 231 365 182 386L223 433Q233 447 215 447H182Q175 447 171 442L126 395H104V434Q104 447 91 447H78Q64 447 64 435ZM104 337V360H157C177 360 177 337 157 337Z"/>
   </g>
 </svg>
