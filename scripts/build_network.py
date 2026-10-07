@@ -39,7 +39,7 @@ ENDPOINTS = [
 KEEP_TAGS = {
     "highway", "bicycle", "foot", "access", "oneway", "oneway:bicycle",
     "name", "ref", "bridge", "tunnel", "junction", "lit", "surface", "tracktype",
-    "smoothness", "segregated",
+    "smoothness", "segregated", "footway", "cycleway", "crossing",
 }
 ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = ROOT / "scripts" / "official_route_rules.json"
@@ -588,7 +588,7 @@ def infer_under_grid_road(
     index: dict[tuple[int, int], list[tuple[float, float, float, float, float, str]]],
 ) -> str | None:
     """Return the H/V road a mapped tunnel passes under, when the geometry supports it."""
-    if str(tags.get("tunnel") or "").lower() not in {"yes", "culvert", "building_passage"} or len(node_ids) < 2:
+    if str(tags.get("tunnel") or "").lower() not in {"yes", "culvert"} or len(node_ids) < 2:
         return None
     pts = [nodes_by_osm[n] for n in node_ids if n in nodes_by_osm]
     if len(pts) < 2:
@@ -608,6 +608,13 @@ def infer_under_grid_road(
                     continue
                 crossing_angle = math.degrees(angle_diff(pbearing, rbearing))
                 if crossing_angle < 28:
+                    continue
+                # Nearby is not proof of passing under a particular road. Require
+                # the tunnel chord and road segment to actually intersect.
+                def side(px, py, qx, qy, rx, ry):
+                    return (qx - px) * (ry - py) - (qy - py) * (rx - px)
+                if (side(ax, ay, bx, by, x1, y1) * side(ax, ay, bx, by, x2, y2) > 0
+                        or side(x1, y1, x2, y2, ax, ay) * side(x1, y1, x2, y2, bx, by) > 0):
                     continue
                 if best is None or dist < best[0]:
                     best = (dist, label)

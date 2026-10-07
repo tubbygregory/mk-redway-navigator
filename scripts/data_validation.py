@@ -80,9 +80,17 @@ def validate_network(data):
         if not -90 <= node[1] <= 90 or not -180 <= node[2] <= 180:
             raise ValueError("Routing coordinate out of range")
         ids.add(node[0])
+    way_ids = set()
     for way in ways:
         if len(way) != 3 or len(way[1]) < 2 or not isinstance(way[2], dict):
             raise ValueError("Malformed routing way")
+        if not isinstance(way[0], int) or way[0] in way_ids:
+            raise ValueError("Invalid or duplicate routing way ID")
+        way_ids.add(way[0])
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in way[2].items()):
+            raise ValueError("Routing tags must be strings, including v6 metadata")
+        if way[2].get("_mk_class") not in {None, "redway", "super_redway", "leisure"}:
+            raise ValueError("Unknown route classification")
         if not all(node in ids for node in way[1]):
             raise ValueError("Routing way references missing node")
     return {"nodes": len(nodes), "ways": len(ways)}

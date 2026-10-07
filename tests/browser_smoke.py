@@ -57,6 +57,7 @@ def main():
                     page.get_by_role('button', name='Expand route details', exact=True).click()
                 expect(page.locator('#routeInsights')).to_be_visible()
                 page.locator('.route-option').last.click()
+                assert page.locator('.route-alt-time').count() <= page.locator('.route-option').count() - 1
                 if width < 900:
                     expect(page.get_by_role('button', name='Start', exact=True)).to_be_enabled()
                 page.get_by_role('button', name='Walk', exact=True).click()
