@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.1
+
+- Adopt the approved MKRW roundabout identity across the app, install icon, launch screen and About wordmark.
+- Add scalable SVG, 16/32px PNG and multi-size ICO favicons; provide a separate maskable icon with a safe central mark.
+- Version icon URLs and refresh the shell cache so existing installations can obtain the new artwork.
+
 ## 0.14.0
 
 - Fix explicit Dark and High Contrast Settings/download surfaces independently of the device theme; verify all appearance choices against both OS schemes.

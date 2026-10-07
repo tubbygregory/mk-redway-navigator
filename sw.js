@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'mk-redway-shell-v29';
+const SHELL_CACHE = 'mk-redway-shell-v30';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',
@@ -19,11 +19,16 @@ const SHELL = [
   './vendor/images/marker-icon-2x.png',
   './vendor/images/marker-shadow.png',
   './manifest.webmanifest',
-  './icons/app-logo.svg',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
-  './icons/iphone16-splash.png'
+  './icons/app-logo.svg?v=0.14.1',
+  './icons/icon-maskable-512.png?v=0.14.1',
+  './icons/favicon.ico?v=0.14.1',
+  './icons/favicon-16.png?v=0.14.1',
+  './icons/favicon-32.png?v=0.14.1',
+  './icons/wordmark.png?v=0.14.1',
+  './icons/icon-192.png?v=0.14.1',
+  './icons/icon-512.png?v=0.14.1',
+  './icons/apple-touch-icon.png?v=0.14.1',
+  './icons/iphone16-splash.png?v=0.14.1'
 ];
 
 
