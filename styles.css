@@ -1778,6 +1778,28 @@ html.ios-standalone .toast {
 .desktop-send { display: none; }
 
 /* Explicit theme selectors override system-media fallbacks when the user chooses a theme. */
+/* These surfaces must follow the chosen theme, not just the OS media query. */
+html[data-theme] .saved-fab,
+html[data-theme] .install-fab,
+html[data-theme] .offline-button,
+html[data-theme] .settings-sheet > .sheet-heading {
+  background: var(--surface-solid);
+  color: var(--text);
+  border-color: var(--border);
+}
+html[data-theme="dark"] .leaflet-control-attribution,
+html[data-theme="high-contrast"] .leaflet-control-attribution {
+  background: var(--surface-solid) !important;
+  color: var(--text);
+}
+html[data-theme="dark"] .leaflet-control-attribution a,
+html[data-theme="high-contrast"] .leaflet-control-attribution a { color: var(--blue); }
+html[data-theme="high-contrast"] .route-option,
+html[data-theme="high-contrast"] .approach-note {
+  background: var(--surface-solid);
+  color: var(--text);
+  border-color: var(--border);
+}
 html[data-theme="light"] {
   color-scheme: light;
   --text: #202020;

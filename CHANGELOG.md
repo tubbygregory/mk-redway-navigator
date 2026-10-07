@@ -2,6 +2,7 @@
 
 ## 0.14.0
 
+- Fix explicit Dark and High Contrast Settings/download surfaces independently of the device theme; verify all appearance choices against both OS schemes.
 - Implement the practical October design-review improvements; see `REVIEW-AUDIT.md` for verified scope and deliberate limitations.
 - Add local type-ahead suggestions, numbered search-result pins and favourite shortcut chips without using the public Nominatim service for autocomplete.
 - Add Explore MK with the five Get Around MK Cultural Routes and official full/short GPX source links.

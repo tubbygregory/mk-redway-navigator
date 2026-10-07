@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance"]
   workflow_dispatch:
 
 permissions:
