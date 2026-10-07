@@ -2,7 +2,7 @@
 
 ## 0.14.0
 
-- Complete the remaining practical recommendations from the October design review.
+- Implement the practical October design-review improvements; see `REVIEW-AUDIT.md` for verified scope and deliberate limitations.
 - Add local type-ahead suggestions, numbered search-result pins and favourite shortcut chips without using the public Nominatim service for autocomplete.
 - Add Explore MK with the five Get Around MK Cultural Routes and official full/short GPX source links.
 - Add GPX import/export and shareable route links for sending a planned journey to a phone.
@@ -11,6 +11,10 @@
 - Add automatic after-sunset navigation dark mode, explicit light/dark/high-contrast appearance choices, and move offline-map management from Saved into Settings.
 - Add a first-run location explanation and explicit opt-in control, plus route alternatives with time labels directly on the map.
 - Bump the generated routing-data format to v6 so the new underpass and route metadata is rebuilt and validated.
+
+- Final validation: reject malformed/out-of-range GPX, treat imported labels as text, preserve imported geometry across mode changes, disclose unknown route conditions, and transfer imported tracks as GPX files.
+- Correct the A* lower bound for combined optional preferences without changing routing weights; respect bicycle-specific direction and implicit roundabout one-way rules.
+- Count contiguous mapped crossing ways, label short-road-link estimates, and preserve unlit warnings at underpasses.
 
 ## 0.13.1
 

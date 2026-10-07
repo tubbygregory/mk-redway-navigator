@@ -38,3 +38,16 @@ class DataValidationTests(unittest.TestCase):
                      {"type": "FeatureCollection", "features": [{}] * 200001}):
             with self.assertRaises(ValueError):
                 validate_council(data)
+
+    def test_v6_metadata_types_and_unique_way_ids(self):
+        data = self.network()
+        data["ways"][0][2].update(lit="no", tunnel="yes", footway="crossing", _mk_under_road="H5 Portway", _mk_route_ref="H5", _mk_route_name="Portway")
+        validate_network(data)
+        for key in ("lit", "tunnel", "_mk_under_road", "_mk_route_ref"):
+            bad = copy.deepcopy(data)
+            bad["ways"][0][2][key] = True
+            with self.assertRaises(ValueError):
+                validate_network(bad)
+        data["ways"][1][0] = data["ways"][0][0]
+        with self.assertRaises(ValueError):
+            validate_network(data)

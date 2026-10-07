@@ -547,7 +547,7 @@
     }
     if (state.end) {
       L.circleMarker(state.end, { radius: 8, color: '#fff', weight: 3, fillColor: '#a9251d', fillOpacity: 1 })
-        .addTo(markerLayer).bindTooltip(state.endLabel || 'Destination');
+        .addTo(markerLayer).bindTooltip(document.createTextNode(state.endLabel || 'Destination'));
     }
   }
 
@@ -1002,7 +1002,7 @@
   function routeFromNearestPoint(coords) {
     if (!state.userLatLng || coords.length < 3) return coords;
     const first = coords[0], last = coords.at(-1);
-    const closes = hav({lat:first[0],lon:first[1]},{lat:last[0],lon:last[1]}) < 250;
+    const closes = first[0] === last[0] && first[1] === last[1];
     if (!closes) return coords;
     let bestIndex = 0, best = Infinity;
     coords.forEach((pair,index) => {
@@ -1010,6 +1010,7 @@
       if (d < best) { best = d; bestIndex = index; }
     });
     const loop = coords.slice(0, -1);
+    bestIndex %= loop.length;
     const rotated = [...loop.slice(bestIndex), ...loop.slice(0,bestIndex)];
     if (rotated.length) rotated.push(rotated[0]);
     return rotated;
@@ -1339,7 +1340,11 @@
     el('walkBtn').classList.toggle('active', mode === 'walk');
     el('prefBtn').hidden = true;
     el('prefMenu').hidden = true;
-    el('routePreferences').hidden = mode !== 'cycle';
+    el('routePreferences').hidden = mode !== 'cycle' || Boolean(state.importedRouteName);
+    if (state.route?.imported) {
+      installRoute(importedPlan(state.route.coords, state.importedRouteName));
+      return;
+    }
     invalidateRoute();
     maybeCalculateRoute();
   }
@@ -1801,14 +1806,18 @@
     el('timeStat').textContent = formatDuration(plan.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
     el('distanceStat').textContent = formatDistance(plan.dist);
-    el('redwayStat').textContent = `${plan.redwayPercent}%`;
-    el('roadStat').textContent = `${plan.roadPercent}%`;
+    el('redwayStat').textContent = plan.imported ? 'Unknown' : `${plan.redwayPercent}%`;
+    el('roadStat').textContent = plan.imported ? 'Unknown' : `${plan.roadPercent}%`;
+    el('routePreferences').hidden = plan.imported || state.mode !== 'cycle';
+    document.querySelector('.road-share-note').textContent = plan.imported
+      ? 'Imported track: path types, access and conditions are unverified. Follows file geometry, not a calculated Redway route.'
+      : 'Mapped conditions may be incomplete. Crossing estimates include short road links; unknown lighting is not counted as unlit.';
     el('startNavBtn').disabled = false;
     el('sendToPhoneBtn').disabled = false;
     renderRouteMix(plan);
     renderRouteInsights(plan);
     renderApproachNote();
-    setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
+    setRouteStatus(plan.imported ? 'Imported GPX · unverified track' : routeReadyStatus(), plan.imported ? 'warn' : state.networkSource === 'bundled' ? 'good' : 'warn');
     setRouteSheetCollapsed(collapse);
     offerInstallOnce();
   }
@@ -1917,6 +1926,7 @@
 
   function maybeCalculateRoute() {
     updatePlannerFields();
+    if (state.importedRouteName) return;
     if (state.start && state.end) calculateRoute();
     else if (!state.start) setRouteStatus('Use your location or search for a starting point.');
     else setRouteStatus('Search for a destination.');
@@ -1948,15 +1958,29 @@
   }
 
   function parseGpx(textValue) {
+    if (textValue.length > 10 * 1024 * 1024 || /<!DOCTYPE|<!ENTITY/i.test(textValue)) throw new Error('Unsupported GPX file');
     const doc = new DOMParser().parseFromString(textValue, 'application/xml');
-    if (doc.querySelector('parsererror')) throw new Error('Invalid GPX file');
-    let points = [...doc.getElementsByTagNameNS('*', 'trkpt')];
-    if (!points.length) points = [...doc.getElementsByTagNameNS('*', 'rtept')];
-    const coords = points.map(node => [Number(node.getAttribute('lat')), Number(node.getAttribute('lon'))])
-      .filter(pair => pair.every(Number.isFinite));
-    if (coords.length < 2) throw new Error('GPX file does not contain a usable track');
-    const title = doc.getElementsByTagNameNS('*', 'name')[0]?.textContent?.trim() || 'Imported GPX route';
-    return {coords, title};
+    if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'gpx') throw new Error('Invalid GPX file');
+    // Never draw invented links across separate tracks or recording gaps. Use the
+    // longest continuous segment and tell the user when the file contains more.
+    let groups = [...doc.getElementsByTagNameNS('*', 'trkseg')].map(segment => [...segment.children].filter(n => n.localName === 'trkpt'));
+    if (!groups.length) groups = [...doc.getElementsByTagNameNS('*', 'rte')].map(route => [...route.children].filter(n => n.localName === 'rtept'));
+    let count = 0;
+    const segments = groups.map(points => {
+      count += points.length;
+      if (count > 100000) throw new Error('GPX has too many points');
+      return points.map(node => {
+        const lat = node.getAttribute('lat'), lon = node.getAttribute('lon');
+        if (!lat?.trim() || !lon?.trim()) throw new Error('Missing GPX coordinate');
+        const pair = [Number(lat), Number(lon)];
+        if (!pair.every(Number.isFinite) || Math.abs(pair[0]) > 90 || Math.abs(pair[1]) > 180) throw new Error('Invalid GPX coordinate');
+        return pair;
+      }).filter((point, i, all) => !i || point.some((v, j) => v !== all[i - 1][j]));
+    }).filter(coords => coords.length >= 2);
+    if (!segments.length) throw new Error('GPX file does not contain a usable track');
+    segments.sort((a, b) => buildCumulative(b).at(-1) - buildCumulative(a).at(-1));
+    const title = (doc.getElementsByTagNameNS('*', 'name')[0]?.textContent?.trim() || 'Imported GPX route').slice(0, 160);
+    return {coords: segments[0], title, multipleSegments: segments.length > 1};
   }
 
   function importedPlan(coords, title) {
@@ -1983,10 +2007,11 @@
       dist: distance,
       mins: distance / (state.mode === 'cycle' ? 4.17 : 1.34) / 60,
       snaps: {start:0,end:0},
-      mixPercent: {superredway:0,redway:0,leisure:0,shared:100,road:0},
+      imported: true,
+      mixPercent: null,
       redwayPercent: 0,
       roadPercent: 0,
-      insights: {underpasses:0,roadCrossings:0,unlitDist:0,superRoutes:[]},
+      insights: null,
       maneuvers: buildManeuvers(coords, edges, cumulative, {
         ids: coords.map((_, i) => 'gpx-' + i),
         endLabel: title,
@@ -1997,6 +2022,10 @@
   }
 
   function installImportedGpx(coords, title) {
+    cancelStartLocation();
+    closeSearch();
+    invalidateRoute();
+    state.pendingRoute = false;
     stopNavigation({keepRoute:false});
     state.importedRouteName = title;
     state.start = L.latLng(coords[0][0], coords[0][1]);
@@ -2037,6 +2066,7 @@
       const parsed = parseGpx(await file.text());
       closeExploreRoutes();
       installImportedGpx(parsed.coords, parsed.title || file.name.replace(/\.gpx$/i, ''));
+      if (parsed.multipleSegments) toast('Multiple GPX sections: showing the longest continuous section.', 6000);
     } catch (err) {
       console.error(err);
       toast('That GPX file could not be read');
@@ -2058,6 +2088,16 @@
 
   async function sendRouteToPhone() {
     if (!state.route) return;
+    if (state.route.imported) {
+      const file = new File([routeToGpx(state.route, state.importedRouteName)], 'mk-redway-route.gpx', {type:'application/gpx+xml'});
+      if (navigator.canShare?.({files:[file]})) {
+        try { await navigator.share({files:[file], title:'Imported route'}); } catch (err) { if (err.name !== 'AbortError') toast('Could not share the GPX file'); }
+      } else {
+        downloadText(file.name, routeToGpx(state.route, state.importedRouteName), file.type);
+        toast('GPX exported — transfer this file to your phone and import it in Explore.', 6000);
+      }
+      return;
+    }
     const url = routeShareUrl();
     const data = {title:'MK Redway route', text:'Open this route in MK Redway Navigator', url};
     try {
@@ -2547,10 +2587,10 @@
     const snap = nearestOnRoute(latlng);
     if (!snap) return;
     const heading = resolveTravelHeading(position, snap, latlng);
-    state.lastSegment = snap.segment;
     const progressThreshold = state.mode === 'cycle' ? 80 : 60;
-    const closeEnoughForProgress = snap.distance <= progressThreshold;
+    const closeEnoughForProgress = snap.distance <= progressThreshold && Number.isFinite(position.coords.accuracy) && position.coords.accuracy <= 100;
     if (closeEnoughForProgress) {
+      state.lastSegment = snap.segment;
       state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
     }
     const progress = closeEnoughForProgress ? Math.max(state.navProgressMeters, snap.progress) : state.navProgressMeters;
@@ -2561,7 +2601,7 @@
       el('navRemain').textContent = `${formatDistance(snap.distance)} to nearest point`;
       setTurnIcon('straight');
       el('turnDistance').textContent = formatDistance(snap.distance);
-      el('turnText').textContent = 'Join the imported route';
+      el('turnText').textContent = position.coords.accuracy > 100 ? 'Waiting for an accurate location' : 'Join the imported route';
       el('nextTurnText').textContent = 'Guidance will continue from the nearest point once you reach the track.';
       state.offRouteCount += 1;
       if (state.offRouteCount >= 2 && Date.now() - state.lastRerouteAt > 25000) rerouteFromPosition(latlng);
@@ -2673,7 +2713,7 @@
     resetNavigationProgress();
     if (state.importedRouteName) {
       const importedSnap = nearestOnRoute(current.latlng);
-      if (importedSnap && importedSnap.distance <= 100) {
+      if (importedSnap && importedSnap.distance <= (state.mode === 'cycle' ? 80 : 60) && current.accuracy <= 100) {
         state.lastSegment = importedSnap.segment;
         state.navProgressMeters = importedSnap.progress;
       } else if (importedSnap) {
@@ -2699,7 +2739,13 @@
     el('turnDistance').textContent = 'Start';
     el('turnText').textContent = state.route.initialInstruction;
     el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
-    speak(`Navigation started. ${state.route.initialInstruction}.`, { priority: 3, dedupeMs: 1000 });
+    if (state.importedRouteName && initialSnap?.distance > (state.mode === 'cycle' ? 80 : 60)) {
+      el('navEta').textContent = 'Join route';
+      el('turnText').textContent = 'Join the imported route';
+      el('turnDistance').textContent = formatDistance(initialSnap.distance);
+      el('nextTurnText').textContent = 'Follow the imported track once you reach it.';
+      speak('Join the imported route to begin guidance.', {priority:3});
+    } else speak(`Navigation started. ${state.route.initialInstruction}.`, { priority: 3, dedupeMs: 1000 });
 
     state.watchId = navigator.geolocation.watchPosition(
       updateNavigation,

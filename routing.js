@@ -99,8 +99,9 @@
       const t = w.tags || {};
       if (!allowed(t, mode)) continue;
       const cls = edgeClass(t);
-      const reverse = t.oneway === '-1';
-      const oneWay = mode === 'cycle' && ['yes', '1', 'true', '-1'].includes(t.oneway) && t['oneway:bicycle'] !== 'no';
+      const direction = t['oneway:bicycle'] ?? t.oneway ?? (t.junction === 'roundabout' ? 'yes' : 'no');
+      const reverse = direction === '-1';
+      const oneWay = mode === 'cycle' && ['yes', '1', 'true', '-1'].includes(direction);
       const name = edgeDisplayName(t, cls);
       for (let i = 0; i < w.nodes.length - 1; i++) {
         const ida = w.nodes[i];
@@ -129,6 +130,7 @@
           lit: String(t.lit || '').toLowerCase(),
           tunnel: String(t.tunnel || '').toLowerCase(),
           junction: String(t.junction || '').toLowerCase(),
+          crossing: t.footway === 'crossing' || t.cycleway === 'crossing' || t.highway === 'crossing',
           underRoad: t._mk_under_road || '',
           routeRef: t._mk_route_ref || '',
           routeName: t._mk_route_name || ''
@@ -161,6 +163,8 @@
     return best.filter(x => x.d <= maxDistance);
   }
 
+  // Minimum cost/metre is .62 * .66 * .92 = .376464 with both preferences.
+  // Keep the heuristic below this bound without changing routing weights.
   function aStarMulti(parsed, graph, startCandidates, endCandidates, targetLatLng) {
     if (!startCandidates.length || !endCandidates.length) return null;
     const open = new MinHeap();
@@ -179,7 +183,7 @@
         g.set(s.id, initial);
         sourceSnap.set(s.id, s.d);
         const n = parsed.nodes.get(s.id);
-        open.push(s.id, initial + (n ? hav(n, target) * .60 : 0));
+        open.push(s.id, initial + (n ? hav(n, target) * .35 : 0));
       }
     }
 
@@ -205,7 +209,7 @@
           prevEdge.set(e.to, e);
           sourceSnap.set(e.to, sourceSnap.get(cur));
           const n = parsed.nodes.get(e.to);
-          open.push(e.to, ng + (n ? hav(n, target) * .60 : 0));
+          open.push(e.to, ng + (n ? hav(n, target) * .35 : 0));
         }
       }
     }
@@ -292,7 +296,7 @@
         if (ng < (g.get(e.to) ?? Infinity)) {
           g.set(e.to, ng); prev.set(e.to, cur); prevEdge.set(e.to, e);
           const n = parsed.nodes.get(e.to);
-          open.push(e.to, ng + hav(n, goal) * .70);
+          open.push(e.to, ng + hav(n, goal) * .35);
         }
       }
     }
@@ -358,15 +362,15 @@
       const enteringUnlit = outgoing?.lit === 'no' && incoming?.lit !== 'no';
       if (enteringTunnel) {
         const under = outgoing.underRoad ? ` under ${outgoing.underRoad}` : ' through the underpass';
-        maneuvers.push({ index: i, at: cumulative[i], icon: 'underpass', instruction: `Continue${under}` });
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'underpass', instruction: `Continue${under}${enteringUnlit ? '; unlit path ahead' : ''}` });
         continue;
       }
       if (enteringRoundabout) {
-        maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout', instruction: 'Enter the roundabout' });
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout', instruction: 'Enter the roundabout' + (enteringUnlit ? '; unlit path ahead' : '') });
         continue;
       }
       if (leavingRoundabout) {
-        maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout-exit', instruction: `Exit the roundabout${targetPhrase(outgoing)}` });
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'roundabout-exit', instruction: `Exit the roundabout${targetPhrase(outgoing)}${enteringUnlit ? '; unlit path ahead' : ''}` });
         continue;
       }
       if (enteringUnlit && abs < 28 && !namedChange) {
@@ -431,6 +435,8 @@
     let unlitDist = 0;
     let underpasses = 0;
     let roadCrossings = 0;
+    let inCrossing = false;
+    let estimatedRoadCrossings = 0;
     const superRoutes = new Map();
     let inTunnel = false;
     const roadish = new Set(['quiet','road','tertiary','secondary','primary']);
@@ -440,7 +446,9 @@
       const tunnelNow = ['yes','culvert','building_passage'].includes(edge.tunnel);
       if (tunnelNow && !inTunnel) underpasses += 1;
       inTunnel = tunnelNow;
-      if (edge.routeRef) superRoutes.set(edge.routeRef, edge.routeName || edge.routeRef);
+      if (edge.crossing && !inCrossing) roadCrossings += 1;
+      inCrossing = Boolean(edge.crossing);
+      if (edge.routeRef && edge.cls === 'superredway') superRoutes.set(edge.routeRef, edge.routeName || edge.routeRef);
     }
     for (let i = 0; i < edges.length;) {
       if (!roadish.has(edges[i].cls)) { i++; continue; }
@@ -449,11 +457,12 @@
       while (i < edges.length && roadish.has(edges[i].cls)) distance += edges[i++].d;
       const hasPathBefore = start > 0 && !roadish.has(edges[start - 1].cls);
       const hasPathAfter = i < edges.length && !roadish.has(edges[i].cls);
-      if (hasPathBefore && hasPathAfter && distance <= 65) roadCrossings += 1;
+      if (hasPathBefore && hasPathAfter && distance <= 65 && !(edges.slice(start - 1, i + 1).some(e => e.crossing) || edges.slice(start, i).some(e => ['yes','culvert','building_passage'].includes(e.tunnel)))) estimatedRoadCrossings += 1;
     }
     return {
       underpasses,
-      roadCrossings,
+      roadCrossings: roadCrossings + estimatedRoadCrossings,
+      estimatedRoadCrossings,
       unlitDist,
       superRoutes: [...superRoutes.entries()].map(([ref, name]) => ({ref, name}))
     };

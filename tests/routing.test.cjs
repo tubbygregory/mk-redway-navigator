@@ -43,7 +43,7 @@ test('lighting and Super Route preferences change graph costs without changing a
 
 test('route insights count mapped underpasses, short road crossings, unlit distance and Super Routes',()=>{
  const edges=[
-  {d:100,cls:'redway',lit:'no',tunnel:'yes',routeRef:'H5',routeName:'Portway'},
+  {d:100,cls:'superredway',lit:'no',tunnel:'yes',routeRef:'H5',routeName:'Portway'},
   {d:20,cls:'road',lit:'yes',tunnel:''},
   {d:100,cls:'redway',lit:'yes',tunnel:''}
  ];
@@ -114,4 +114,58 @@ test('generated MK data supports representative journeys in all four modes',()=>
  console.log(JSON.stringify(summary));
  // Original point in/near the lake must no longer silently accept a 236m gap.
  assert.throws(()=>R.planRoute(parsed,R.buildGraph(parsed,'cycle','maximum'),{lat:52.0345,lng:-.774},{lat:52.057,lng:-.718}),/over 150 metres/);
+});
+
+test('unknown lighting stays unknown and both preferences retain legal connectivity',()=>{
+ const p=network([[1,52,-.78],[2,52,-.779],[3,52,-.778],[4,52,-.777]],[
+  [1,[1,2],tags],[2,[2,3],{...tags,lit:'no'}],[3,[3,4],{...tags,lit:'yes'}]]);
+ const g=R.buildGraph(p,'cycle','maximum',{preferLit:true,preferSuper:true});
+ assert.equal(g.get(1)[0].lit,'');
+ const result=R.aStar(p,g,1,4);
+ assert.deepEqual(result.ids,[1,2,3,4]);
+ assert.ok(Math.abs(R.routeInsights(result.edges).unlitDist-result.edges[1].d)<.01);
+});
+
+test('discounted Super Route A* agrees with an independent Dijkstra oracle',()=>{
+ const p=network([[1,52,-.78],[2,52.001,-.78],[3,52.001,-.779],[4,52,-.779]],[
+  [1,[1,4],{highway:'cycleway'}],
+  [2,[1,2,3,4],{...tags,_mk_class:'super_redway',lit:'yes'}]]);
+ // Short connector and deeply discounted corridor deliberately offer competing paths.
+ for(const pref of ['maximum','balanced','fastest']) for(const preferLit of [false,true]) for(const preferSuper of [false,true]) {
+  const g=R.buildGraph(p,'cycle',pref,{preferLit,preferSuper});
+  const distances=new Map([[1,0]]),pending=new Set(g.keys());
+  while(pending.size){
+   const id=[...pending].sort((a,b)=>(distances.get(a)??Infinity)-(distances.get(b)??Infinity))[0];pending.delete(id);
+   for(const e of g.get(id)||[]) if(pending.has(e.to)) distances.set(e.to,Math.min(distances.get(e.to)??Infinity,(distances.get(id)??Infinity)+e.cost));
+  }
+  for(const route of [R.aStar(p,g,1,4),R.aStarMulti(p,g,[{id:1,d:0}],[{id:4,d:0}],{lat:52,lng:-.779})])
+   assert.ok(Math.abs(route.edges.reduce((n,e)=>n+e.cost,0)-distances.get(4))<.001);
+ }
+});
+
+test('roundabouts and bicycle-specific one-way overrides respect direction',()=>{
+ for(const t of [{junction:'roundabout'},{'oneway:bicycle':'yes'},{oneway:'no','oneway:bicycle':'yes'}]) {
+  const p=network([[1,52,-.78],[2,52,-.77]],[[1,[1,2],{...tags,...t}]]);
+  assert.equal(R.buildGraph(p,'cycle','balanced').get(2).length,0);
+  assert.equal(R.buildGraph(p,'walk','balanced').get(2).length,1);
+ }
+ const p=network([[1,52,-.78],[2,52,-.77]],[[1,[1,2],{...tags,oneway:'yes','oneway:bicycle':'no'}]]);
+ assert.equal(R.buildGraph(p,'cycle','balanced').get(2).length,1);
+});
+
+test('crossings count contiguous sections, distinguish estimates, and ignore bridges and long roads',()=>{
+ const path={cls:'redway',d:10};
+ const insights=R.routeInsights([path,{...path,crossing:true},{...path,crossing:true},path,{cls:'road',d:15},{cls:'road',d:15},path]);
+ assert.equal(insights.roadCrossings,2);assert.equal(insights.estimatedRoadCrossings,1);
+ assert.equal(R.routeInsights([path,{cls:'road',d:70},path]).roadCrossings,0);
+ assert.equal(R.routeInsights([{...path,bridge:'yes'},{...path,tunnel:'no'}]).underpasses,0);
+ assert.equal(R.routeInsights([{...path,tunnel:'yes'},{...path,tunnel:'yes'},path,{...path,tunnel:'yes'}]).underpasses,2);
+});
+
+test('unlit warning survives underpass maneuver and roundabout exits never invent exit numbers',()=>{
+ const coords=[[52,-.78],[52,-.779],[52,-.778]], c=R.buildCumulative(coords);
+ const maneuvers=R.buildManeuvers(coords,[{cls:'redway'},{cls:'redway',tunnel:'yes',underRoad:'H5 Portway',lit:'no'}],c);
+ assert.match(maneuvers[0].instruction,/under H5 Portway; unlit path ahead/);
+ const round=R.buildManeuvers(coords,[{junction:'roundabout'},{cls:'redway'}],c);
+ assert.equal(round[0].icon,'roundabout-exit');assert.doesNotMatch(round[0].instruction,/\d|third/);
 });

@@ -39,7 +39,7 @@ ENDPOINTS = [
 KEEP_TAGS = {
     "highway", "bicycle", "foot", "access", "oneway", "oneway:bicycle",
     "name", "ref", "bridge", "tunnel", "junction", "lit", "surface", "tracktype",
-    "smoothness", "segregated",
+    "smoothness", "segregated", "footway", "cycleway", "crossing",
 }
 ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = ROOT / "scripts" / "official_route_rules.json"
