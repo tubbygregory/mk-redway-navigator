@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit"]
   workflow_dispatch:
 
 permissions:
@@ -85,6 +85,11 @@ jobs:
         continue-on-error: true
         timeout-minutes: 15
         run: bash scripts/build_offline_map.sh
+
+      - name: Generate branded PWA and browser icons
+        run: |
+          python3 -m pip install --disable-pip-version-check cairosvg==2.8.2 Pillow==11.3.0
+          python3 scripts/build_icons.py
 
       - name: Validate data and build runtime-only artifact
         run: python3 scripts/build_site.py
@@ -170,29 +175,29 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.1 beta release after production verification
+      - name: Publish v0.14.2 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.1" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.2" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Branding update: approved MKRW roundabout logo.
+          Branding fit update: refined MKRW roundabout logo.
 
-          - New vector app logo, Apple touch icon and iPhone launch screen.
-          - Dedicated maskable icon with safe margins and SVG/PNG/ICO favicons.
-          - Supplied wordmark in About and versioned icon URLs for cache refresh.
+          - Increase internal padding so MKRW remains legible at launcher, favicon and search-bar sizes.
+          - Use an opaque full-bleed Apple touch icon and a dedicated maskable export with essential artwork inside the safe zone.
+          - Remove the old white launcher border, refresh SVG/PNG/ICO assets and use the live vector mark in About.
           - Routing and navigation behaviour unchanged.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.1 >/dev/null 2>&1; then
+          if gh release view v0.14.2 >/dev/null 2>&1; then
             # The handoff's merge published this beta while the final audit was running.
             # Only advance a beta tag to a validated descendant; never rewrite history.
-            test "$(gh release view v0.14.1 --json isPrerelease --jq .isPrerelease)" = true
-            relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/v0.14.1...$GITHUB_SHA" --jq .status)
+            test "$(gh release view v0.14.2 --json isPrerelease --jq .isPrerelease)" = true
+            relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/v0.14.2...$GITHUB_SHA" --jq .status)
             case "$relation" in ahead|identical) ;; *) exit 1 ;; esac
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v0.14.1" -f sha="$GITHUB_SHA" -F force=false
-            gh release edit v0.14.1 --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v0.14.2" -f sha="$GITHUB_SHA" -F force=false
+            gh release edit v0.14.2 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.1 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.1" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.2 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.2" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

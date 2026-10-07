@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.2
+
+- Refine the MKRW roundabout mark for small app-icon and search-bar use with more internal breathing room and no white launcher border.
+- Export an opaque full-bleed Apple touch icon, a dedicated full-bleed maskable icon with the essential mark inside the platform safe zone, and refreshed standard/favicons.
+- Replace the raster About wordmark with the live vector mark plus theme-aware text, and bump the service-worker shell so existing installs can pick up the new branding.
+
+
 ## 0.14.1
 
 - Adopt the approved MKRW roundabout identity across the app, install icon, launch screen and About wordmark.
