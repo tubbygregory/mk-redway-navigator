@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def png_header(path):
     data = path.read_bytes()[:26]
-    if data[:8] != b"\\x89PNG\\r\\n\\x1a\\n":
+    if data[:8].hex() != "89504e470d0a1a0a":
         raise AssertionError(f"Not a PNG: {path}")
     width, height = struct.unpack(">II", data[16:24])
     return width, height, data[25]
