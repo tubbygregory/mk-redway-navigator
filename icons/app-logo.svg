@@ -1,14 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">MK Redway — MKRW roundabout</title>
-  <desc id="desc">A red rounded-square map mark with a central roundabout and the letters M, K, R and W.</desc>
-  <rect id="tile" x="4" y="4" width="504" height="504" rx="112" fill="#ed001b"/>
-  <g id="mark" fill="#fff">
-    <path d="M256 4v504M4 256h504" fill="none" stroke="#fff" stroke-width="18"/>
-    <circle cx="256" cy="256" r="58"/>
-    <circle cx="256" cy="256" r="39" fill="#ed001b"/>
-    <path transform="matrix(.82 0 0 .82 25.74 24.66)" d="M64 187V79Q64 66 77 66H91Q97 66 103 72L142 113L181 72Q187 66 194 66H209Q222 66 222 79V183Q222 189 217 194L204 205Q199 209 192 209Q181 209 181 196V127L152 157Q142 166 132 157L103 127V196Q103 209 90 209H77Q64 209 64 196Z"/>
-    <path transform="matrix(.82 0 0 .82 67.5 24.66)" d="M290 194V79Q290 66 303 66H318Q331 66 331 79V120L396 70Q401 66 407 66H446Q460 66 450 78L376 133L450 196Q462 209 445 209H407Q401 209 396 204L345 157L331 168V196Q331 209 318 209H307Q301 209 296 204Z"/>
-    <path transform="matrix(.82 0 0 .82 26.1 67.5)" fill-rule="evenodd" d="M64 435V318Q64 303 79 303H172C221 303 231 365 182 386L223 433Q233 447 215 447H182Q175 447 171 442L126 395H104V434Q104 447 91 447H78Q64 447 64 435ZM104 337V360H157C177 360 177 337 157 337Z"/>
-    <path transform="matrix(-.82 0 0 -.82 486.26 487.34)" d="M64 187V79Q64 66 77 66H91Q97 66 103 72L142 113L181 72Q187 66 194 66H209Q222 66 222 79V183Q222 189 217 194L204 205Q199 209 192 209Q181 209 181 196V127L152 157Q142 166 132 157L103 127V196Q103 209 90 209H77Q64 209 64 196Z"/>
+  <title id="title">MK Redway Navigator</title>
+  <desc id="desc">A red walking and cycling route draws M and K across a pale Milton Keynes street map and finishes with a north-east arrow.</desc>
+  <defs><clipPath id="tile-clip"><rect x="4" y="4" width="504" height="504" rx="108"/></clipPath></defs>
+  <rect id="tile" x="4" y="4" width="504" height="504" rx="108" fill="#fafafa"/>
+  <g clip-path="url(#tile-clip)">
+    <g fill="#e8eaed">
+      <path d="M-24 77 91 131 129 42 235 76 211 152 343 214 407 131 547 204v43L425 193 367 269 208 189 159 289 31 226-24 260Z"/>
+      <path d="M-14 338 101 387 175 294 261 338 220 440 325 528h-66L182 458 215 357 165 333 111 430-18 376Z"/>
+      <path d="m274-28 51 23-54 116 105 51 65-130 44 24-89 178-172-81Z"/>
+      <path d="m513 297-80-43-66 89 99 74 66-57-6-47Z"/>
+    </g>
+    <g fill="none" stroke="#d7dbe0" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-17 70 115 137 163 26"/>
+      <path d="M-18 223 127 295 192 170 331 243 426 103 531 157"/>
+      <path d="M-26 364 112 435 174 320 285 381 233 505"/>
+      <path d="M291-24 235 134 390 213 511 34"/>
+      <path d="M346 544 333 410 413 304 540 379"/>
+      <path d="m84 522 90-202"/>
+      <circle cx="142" cy="446" r="37"/>
+    </g>
+    <g fill="#d8e7d0"><path d="M4 4h131L95 80 4 40Z"/><path d="m438 508 70-142v142Z"/></g>
+    <path fill="#c1dff2" d="m472 508 36-78v78Z"/>
+    <g id="mark" fill="none" stroke="#f20d24" stroke-width="27" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M77 312Q100 311 115 287V166L198 261 281 166V329L325 278 404 350"/>
+      <path d="M281 242 358 165 449 86"/>
+    </g>
+    <circle cx="66" cy="313" r="22" fill="#fff"/>
+    <circle cx="66" cy="313" r="15" fill="#f20d24"/>
+    <path d="m415 91 45-17-10 47-12-21Z" fill="#f20d24" stroke="#f20d24" stroke-linejoin="round" stroke-width="12"/>
   </g>
 </svg>
