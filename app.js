@@ -2484,16 +2484,22 @@
   }
 
   function renderApproachNote() {
-    const route = state.route, note = el('approachNote');
+    const route = state.route, note = el('approachNote'), summary = el('routeApproachSummary');
     const startGap = route?.snaps?.start || 0;
     const endGap = route?.snaps?.end || 0;
     const significant = Math.max(startGap, endGap) > 50;
     note.hidden = !route || !significant;
+    summary.hidden = note.hidden;
+    summary.textContent = '';
     if (!route || !significant) return;
     const messages = [];
     if (startGap > 50) messages.push(`The first ${formatDistance(startGap)} isn't a mapped path`);
     if (endGap > 50) messages.push(`The last ${formatDistance(endGap)} isn't a mapped path`);
     note.textContent = `${messages.join('. ')}. Check that you can get through.`;
+    const checks = [];
+    if (startGap > 50) checks.push(`first ${formatDistance(startGap)}`);
+    if (endGap > 50) checks.push(`final ${formatDistance(endGap)}`);
+    summary.textContent = `Check ${checks.join(' and ')} · unmapped approach`;
   }
 
   function installOfferSeen() {
@@ -2507,6 +2513,7 @@
   }
 
   function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
+    clearArrivalSummary();
     state.route = plan;
     const cultural = state.culturalRoute;
     const followingTrack = cultural?.phase === 'track';
@@ -2517,6 +2524,9 @@
     el('timeStat').textContent = formatDuration(total.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(total.mins)}`;
     el('distanceStat').textContent = formatDistance(total.dist);
+    el('routeModeLabel').textContent = state.mode === 'walk' ? 'Walking' : 'Cycling';
+    el('routeClassification').hidden = unverified;
+    el('routeTrackStatus').hidden = !unverified;
     el('redwayStat').textContent = unverified ? 'Unknown' : `${plan.redwayPercent}%`;
     el('roadStat').textContent = unverified ? 'Unknown' : `${plan.roadPercent}%`;
     el('routePreferences').hidden = unverified || state.mode !== 'cycle';
@@ -2524,9 +2534,7 @@
       ? (cultural.phase === 'joining' ? 'The red joining leg uses mapped paths. ' : '') + 'The official GPX track has unverified access, path types and conditions; combined percentages are unknown.'
       : plan.imported ? 'Imported track: path types, access and conditions are unverified. Follows file geometry, not a calculated Redway route.'
       : 'Mapped conditions may be incomplete. Crossing estimates include short road links; unknown lighting is not counted as unlit.';
-    const legend = el('culturalRouteLegend');
-    legend.hidden = !cultural;
-    if (cultural) legend.textContent = (followingTrack ? '' : cultural.phase === 'joining' ? 'Red: route to Cultural Route start / join · ' : 'Joining leg not calculated · ') + cultural.color + ': official GPX track';
+    renderCulturalLegend(cultural);
     el('startNavBtn').disabled = false;
     el('sendToPhoneBtn').disabled = false;
     renderRouteMix(cultural ? null : plan);
@@ -2534,8 +2542,41 @@
     renderApproachNote();
     setRouteStatus(cultural ? (followingTrack ? cultural.color + ' Cultural Route · unverified track' : 'Route to Cultural Route start / join · then ' + cultural.color + ' track')
       : plan.imported ? 'Imported GPX · unverified track' : routeReadyStatus(), unverified ? 'warn' : state.networkSource === 'bundled' ? 'good' : 'warn');
+    el('routeStatus').classList.toggle('is-ready-preview', true);
     setRouteSheetCollapsed(collapse);
     offerInstallOnce();
+  }
+
+  function renderCulturalLegend(cultural) {
+    el('culturalRouteLegend').hidden = !cultural;
+    if (!cultural) return;
+    el('culturalJoinLegend').hidden = cultural.phase === 'track';
+    el('culturalJoinLabel').textContent = cultural.phase === 'joining'
+      ? 'Red: start / join' : 'Joining leg not calculated';
+    el('culturalTrackLabel').textContent = cultural.color + ': official GPX track';
+    el('culturalTrackSwatch').style.backgroundColor = CULTURAL_ROUTE_COLOURS[cultural.id];
+  }
+
+  function clearArrivalSummary() {
+    state.arrivalSummary = null;
+    el('arrivalSummary').hidden = true;
+  }
+
+  function showArrivalSummary(completed) {
+    if (!completed || completed.route !== state.route || completed.routeRevision !== state.routeRevision ||
+        completed.navigationRevision + 1 !== navigationStartRevision || state.stage !== 'planner' || state.navigating) return;
+    state.arrivalSummary = completed;
+    el('arrivalDestination').textContent = completed.name || 'Your destination';
+    el('arrivalDetail').textContent = completed.address && completed.address !== completed.name
+      ? completed.address : 'Navigation has finished.';
+    el('arrivalSummary').hidden = false;
+    el('arrivalDoneBtn').focus({preventScroll: true});
+  }
+
+  function finishArrivalSummary() {
+    if (!state.arrivalSummary) return;
+    clearArrivalSummary();
+    setStage('explore');
   }
 
   async function solveRouteOnNetwork(parsed, { fit = true } = {}) {
@@ -3018,7 +3059,7 @@
     if (!menu.hidden) {
       setRouteSheetCollapsed(false);
       requestAnimationFrame(() => {
-        if (!menu.hidden) el('routeMoreBtn').scrollIntoView({block: 'end', inline: 'nearest'});
+        if (!menu.hidden) menu.scrollTop = 0;
       });
     }
   });
@@ -3517,7 +3558,9 @@
     if (hasArrived(position, state.end, remaining)) {
       speak(`You have arrived at ${state.endLabel || 'your destination'}.`, { priority: 4, dedupeMs: 10000 });
       toast('You have arrived', 4000);
+      const completed = {route: state.route, routeRevision: state.routeRevision, navigationRevision: navigationStartRevision, name: state.endLabel, address: state.endAddress};
       stopNavigation({ keepRoute: true, arrived: true });
+      showArrivalSummary(completed);
       return;
     }
 
@@ -3626,6 +3669,7 @@
         }
       }
 
+      clearArrivalSummary();
       state.navigating = true;
       state.followUser = true;
       const themeBeforeNavigation = document.documentElement.dataset.theme;
@@ -3687,6 +3731,7 @@
   }
 
   function stopNavigation({ keepRoute = true, arrived = false } = {}) {
+    clearArrivalSummary();
     cancelNavigationStart();
     if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null; state.navigating = false; state.followUser = true;
@@ -3714,6 +3759,7 @@
 
   el('startNavBtn').addEventListener('click', startNavigation);
   el('exitNavBtn').addEventListener('click', () => stopNavigation({ keepRoute: true }));
+  el('arrivalDoneBtn').addEventListener('click', finishArrivalSummary);
   el('recenterBtn').addEventListener('click', () => {
     state.followUser = true;
     if (state.userLatLng) followNavigationView(state.userLatLng, state.heading, true);
