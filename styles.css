@@ -215,7 +215,7 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
   min-height: 42px;
   padding: 0 13px;
   background: var(--soft);
-  color: #3a3a3c;
+  color: var(--text);
   font-size: 13px;
 }
 .mode-chip svg { width: 19px; height: 19px; }
@@ -1046,10 +1046,10 @@ html.ios-standalone .toast {
 .route-option strong { display: block; font-size: 12px; }
 .route-option span { display: block; font-size: 11px; line-height: 1.5; margin-top: 4px; }
 .route-option.selected { border: 2px solid var(--red); background: #fff6f3; padding: 7px 5px; }
-.road-share-note { display: block; font-size: 10px; color: #555; line-height: 1.4; }
+.road-share-note { display: block; font-size: 10px; color: var(--muted); line-height: 1.4; }
 .approach-note { padding: 8px; margin: 8px 0; background: #fff2d5; color: #674400; border-radius: 8px; font-size: 11px; line-height: 1.4; }
 .endpoint-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.endpoint-actions button { flex: 1; min-height: 36px; border: 1px solid #ddd; border-radius: 8px; background: #f4f4f4; color: #333; font-size: 11px; padding: 5px; }
+.endpoint-actions button { flex: 1; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--soft); color: var(--text); font-size: 11px; padding: 5px; }
 .route-status { display: block; max-height: none; overflow: visible; }
 @media (orientation: landscape) { .route-sheet { max-height: calc(100dvh - 12px); } }
 
@@ -1702,7 +1702,7 @@ html.ios-standalone .toast {
 .explore-filters button.active {
   background: rgba(35,134,74,.13);
   border-color: rgba(35,134,74,.45);
-  color: #176536;
+  color: var(--green);
   font-weight: 800;
 }
 .cultural-routes-list { display: grid; gap: 9px; }
@@ -1747,7 +1747,7 @@ html.ios-standalone .toast {
 #app[data-explore-open="true"] .explore-sheet { border-top-color: rgba(35,134,74,.35); }
 #app[data-explore-open="true"] .home-nav-button.active {
   background: rgba(35,134,74,.14);
-  color: #23864a;
+  color: var(--green);
 }
 #app[data-explore-open="true"] .search-pill,
 #app[data-explore-open="true"] .map-fab {
@@ -1805,6 +1805,8 @@ html[data-theme="high-contrast"] .approach-note {
 html[data-theme="light"] {
   color-scheme: light;
   --accent-text: #a9251d;
+  --green: #1f7a4d;
+  --blue: #2457d6;
   --text: #202020;
   --muted: #666;
   --surface: rgba(255,255,255,.95);
@@ -1844,6 +1846,8 @@ html[data-theme="dark"] #app,
 html[data-theme="dark"] #map { background:#11151a !important; }
 html[data-theme="dark"] .route-option { background:#191e24; color:var(--text); border-color:var(--border); }
 html[data-theme="dark"] .route-option.selected { background:#2a1b1a; border-color:#d66a61; }
+html[data-theme="dark"] .route-status.warn,
+html[data-theme="high-contrast"] .route-status.warn { color:#ffd58c; }
 html[data-theme="dark"] .approach-note { background:#3a2c13; color:#ffd58c; }
 html[data-theme="dark"] .leaflet-tile-pane img { filter:brightness(.62) contrast(1.08) saturate(.78); }
 html[data-theme="dark"] .super-route-label span { background:rgba(21,25,30,.94); color:#e7afea; border-color:#aa69b3; }

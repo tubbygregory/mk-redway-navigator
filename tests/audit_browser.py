@@ -56,6 +56,7 @@ def review(browser, url):
         # A CORS/source failure must stay in the app and offer a normal link.
         page.route('**/getaroundmk.org.uk/**/*.gpx',lambda route:route.abort())
         page.locator('#exploreRoutesBtn').click()
+        assert page.locator('.explore-filters button.active').evaluate('(el) => getComputedStyle(el).color') == 'rgb(92, 198, 138)'
         page.locator('.route-blue').get_by_role('button',name='Full route',exact=True).click()
         expect(page.locator('.route-blue a[data-gpx-download="full"]')).to_be_visible()
         assert page.url == url
