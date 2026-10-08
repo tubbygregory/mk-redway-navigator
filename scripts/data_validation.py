@@ -11,6 +11,11 @@ SOURCES = {
     **{f"LeisureRouteNetwork_9_04_2019-{i}.kmz": "leisure" for i in range(1, 5)},
 }
 
+def safe_integer(value):
+    # JSON numbers become JavaScript Numbers; match Number.isSafeInteger there.
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and abs(value) <= 2 ** 53 - 1 and value == int(value))
+
 def source_class(url):
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != "getaroundmk.org.uk":
@@ -73,9 +78,9 @@ def validate_network(data):
         raise ValueError("Routing graph is empty or implausibly small")
     ids = set()
     for node in nodes:
-        if len(node) != 3 or not isinstance(node[0], int) or node[0] in ids:
+        if len(node) != 3 or not safe_integer(node[0]) or node[0] in ids:
             raise ValueError("Invalid or duplicate routing node")
-        if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in node[1:]):
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in node[1:]):
             raise ValueError("Non-finite routing coordinate")
         if not -90 <= node[1] <= 90 or not -180 <= node[2] <= 180:
             raise ValueError("Routing coordinate out of range")
@@ -84,13 +89,13 @@ def validate_network(data):
     for way in ways:
         if len(way) != 3 or len(way[1]) < 2 or not isinstance(way[2], dict):
             raise ValueError("Malformed routing way")
-        if not isinstance(way[0], int) or way[0] in way_ids:
+        if not safe_integer(way[0]) or way[0] in way_ids:
             raise ValueError("Invalid or duplicate routing way ID")
         way_ids.add(way[0])
         if not all(isinstance(k, str) and isinstance(v, str) for k, v in way[2].items()):
             raise ValueError("Routing tags must be strings, including v6 metadata")
         if way[2].get("_mk_class") not in {None, "redway", "super_redway", "leisure"}:
             raise ValueError("Unknown route classification")
-        if not all(node in ids for node in way[1]):
+        if not all(safe_integer(node) and node in ids for node in way[1]):
             raise ValueError("Routing way references missing node")
     return {"nodes": len(nodes), "ways": len(ways)}

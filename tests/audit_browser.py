@@ -4,6 +4,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 import os
+import re
 import xml.etree.ElementTree as ET
 from playwright.sync_api import sync_playwright, expect
 
@@ -16,6 +17,46 @@ def gpx(points, name='Audit route'):
     return f'<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>{name}</name><trkseg>{points}</trkseg></trk></gpx>'
 
 POINTS = '<trkpt lat="52.025" lon="-.783"/><trkpt lat="52.026" lon="-.7815"/><trkpt lat="52.027" lon="-.780"/>'
+
+def contrast_ratio(foreground, background):
+    def luminance(colour):
+        channels = [int(value) / 255 for value in re.findall(r'\d+', colour)[:3]]
+        linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in channels]
+        return sum(value * weight for value, weight in zip(linear, [.2126, .7152, .0722]))
+    dark, light = sorted([luminance(foreground), luminance(background)])
+    return (light + .05) / (dark + .05)
+
+def assert_action_contrast(page, selector):
+    expect(page.locator(selector)).to_be_visible()
+    expect(page.locator(selector)).to_be_enabled()
+    colours = page.locator(selector).evaluate('(el) => { const s = getComputedStyle(el); return [s.color, s.backgroundColor]; }')
+    assert contrast_ratio(*colours) >= 4.5, (selector, colours)
+
+def review_action_contrast(browser, url):
+    ctx = browser.new_context(viewport={'width':390,'height':844}, service_workers='block',
+                              permissions=['geolocation'], geolocation={'latitude':52.0467,'longitude':-.7378,'accuracy':5})
+    page = ctx.new_page()
+    page.set_default_timeout(30000)
+    page.goto(url, wait_until='networkidle')
+    for system in ['light', 'dark']:
+        page.emulate_media(color_scheme=system)
+        for choice in ['light', 'dark', 'high-contrast', 'system']:
+            page.locator('#visibleSettingsBtn').click()
+            page.locator(f'[data-theme-choice="{choice}"]').click()
+            page.locator('#closeSettings').click()
+            page.locator('#homeSearch').fill('52.025,-0.783')
+            page.locator('#homeSearchSubmit').click()
+            page.locator('.result-item').first.click()
+            assert_action_contrast(page, '#directionsBtn')
+            page.locator('#directionsBtn').click()
+            upload(page, gpx(POINTS))
+            assert_action_contrast(page, '#startNavBtn')
+            page.locator('#startNavBtn').click()
+            assert_action_contrast(page, '#exitNavBtn')
+            page.locator('#exitNavBtn').click()
+            page.locator('#plannerBack').click()
+    print('PASS action contrast: Directions, Start and Exit in all themes on light/dark systems')
+    ctx.close()
 
 def review(browser, url):
     for width, height in [(390,844),(844,390),(1280,900)]:
@@ -46,6 +87,11 @@ def review(browser, url):
                     assert page.locator(selector).evaluate('(el) => getComputedStyle(el).color') == accent
                 about_color = page.locator('#aboutData').evaluate('(el) => getComputedStyle(el).color')
                 assert about_color == {'light':'rgb(32, 32, 32)', 'dark':'rgb(243, 244, 246)', 'high-contrast':'rgb(255, 255, 255)'}[effective]
+                # Search prompts must remain readable when the explicit theme
+                # differs from the operating system's colour scheme.
+                for selector in ['#homeSearch', '#startSearch', '#endSearch']:
+                    placeholder = page.locator(selector).evaluate('(el) => getComputedStyle(el, "::placeholder").color')
+                    assert contrast_ratio(placeholder, expected) >= 4.5, (system, choice, selector, placeholder, expected)
         page.locator('#closeSettings').click()
         # Local typing never sends a public geocoder request.
         requests=[];page.on('request',lambda r: requests.append(r.url) if 'nominatim.openstreetmap.org/search' in r.url else None)
@@ -60,7 +106,15 @@ def review(browser, url):
         page.locator('.route-blue').get_by_role('button',name='Full route',exact=True).click()
         expect(page.locator('.route-blue a[data-gpx-download="full"]')).to_be_visible()
         assert page.url == url
+        # The sticky handle must not cover Explore's header or Close control
+        # after browsing the lower route cards.
+        assert page.locator('#exploreSheet').evaluate('(el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; }') > 0
+        assert page.locator('#closeExplore').evaluate('''(el) => {
+            const rect = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+        }''')
         page.locator('#closeExplore').click()
+        expect(page.locator('#exploreSheet')).to_be_hidden()
         upload(page,gpx(POINTS))
         expect(page.locator('#routeStatus')).to_have_text('Imported GPX · unverified track')
         expect(page.locator('#routeMix')).to_be_hidden();expect(page.locator('#routeInsights')).to_be_hidden()
@@ -101,6 +155,16 @@ def review(browser, url):
         expect(page.locator('#routeStatus')).to_have_text('Route ready')
         expect(page.locator('#walkBtn')).to_have_class('mode-chip active')
         expect(page.locator('#routePreferences')).to_be_hidden()
+        # Filled action labels need normal-text contrast even in the
+        # high-contrast theme, including mobile Start and desktop handoff.
+        page.locator('#plannerBack').click()
+        page.locator('#visibleSettingsBtn').click()
+        page.locator('[data-theme-choice="high-contrast"]').click()
+        page.locator('#closeSettings').click()
+        assert_action_contrast(page, '#directionsBtn')
+        page.locator('#directionsBtn').click()
+        action = '#startNavBtn' if width < 900 else '#sendToPhoneBtn'
+        assert_action_contrast(page, action)
         assert not errors,errors
         (ROOT/'test-results').mkdir(exist_ok=True)
         page.screenshot(path=str(ROOT/'test-results'/f'audit-{width}.png'))
@@ -113,7 +177,9 @@ def main():
     try:
         with sync_playwright() as p:
             browser=p.chromium.launch()
-            review(browser,os.environ.get('LIVE_URL') or f'http://127.0.0.1:{server.server_port}/')
+            url = os.environ.get('LIVE_URL') or f'http://127.0.0.1:{server.server_port}/'
+            review_action_contrast(browser, url)
+            review(browser, url)
             browser.close()
     finally:server.shutdown()
 if __name__=='__main__':main()

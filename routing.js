@@ -139,6 +139,7 @@
           highway: t.highway || '',
           lit: String(t.lit || '').toLowerCase(),
           tunnel: String(t.tunnel || '').toLowerCase(),
+          bridge: String(t.bridge || '').toLowerCase(),
           junction: String(t.junction || '').toLowerCase(),
           crossing: t.footway === 'crossing' || t.cycleway === 'crossing' || t.highway === 'crossing',
           underRoad: t._mk_under_road || '',
@@ -359,20 +360,22 @@
     for (let i = 1; i < coords.length - 1; i++) {
       // Look beyond tiny digitisation segments, without smoothing across a nearby junction.
       let a = i - 1, b = i + 1;
-      while (a > 0 && cumulative[i] - cumulative[a] < 10 && !isJunction(ids[a], graph)) a--;
-      while (b < coords.length - 1 && cumulative[b] - cumulative[i] < 10 && !isJunction(ids[b], graph)) b++;
+      while (a > 0 && cumulative[i] - cumulative[a] < 10 && !isJunction(ids[a], graph, ids[a - 1])) a--;
+      while (b < coords.length - 1 && cumulative[b] - cumulative[i] < 10 && !isJunction(ids[b], graph, ids[b - 1])) b++;
       const delta = angleDiff(bearing(coords[a], coords[i]), bearing(coords[i], coords[b]));
       const abs = Math.abs(delta), incoming = edges[i - 1], outgoing = edges[i];
-      const junction = isJunction(ids[i], graph);
+      const junction = isJunction(ids[i], graph, ids[i - 1]);
       const enteredRedway = ['superredway', 'redway'].includes(outgoing?.cls) && !['superredway', 'redway'].includes(incoming?.cls);
       const namedChange = outgoing?.name && outgoing.name !== incoming?.name && !['Super Redway','Redway','Leisure route','shared path'].includes(outgoing.name);
       const enteringTunnel = ['yes','culvert'].includes(outgoing?.tunnel) && !['yes','culvert'].includes(incoming?.tunnel);
       const enteringRoundabout = outgoing?.junction === 'roundabout' && incoming?.junction !== 'roundabout';
       const leavingRoundabout = incoming?.junction === 'roundabout' && outgoing?.junction !== 'roundabout';
       const enteringUnlit = outgoing?.lit === 'no' && incoming?.lit !== 'no';
+      const turn = turnGuidance(delta, junction && abs >= 165 && incoming?.wayId === outgoing?.wayId);
       if (enteringTunnel) {
         const under = outgoing.underRoad ? ` under ${outgoing.underRoad}` : ' through the underpass';
-        maneuvers.push({ index: i, at: cumulative[i], icon: 'underpass', instruction: `Continue${under}${enteringUnlit ? '; unlit path ahead' : ''}` });
+        const action = leavingRoundabout ? 'Exit the roundabout' : enteringRoundabout ? 'Enter the roundabout' : junction || abs >= 150 ? turn.action : 'Continue';
+        maneuvers.push({ index: i, at: cumulative[i], icon: 'underpass', instruction: `${action}${under}${enteringUnlit ? '; unlit path ahead' : ''}` });
         continue;
       }
       if (enteringRoundabout) {
@@ -390,13 +393,8 @@
       // Following a curving path is not a succession of turns. Keep decision points
       // and genuine hairpins, rather than suppressing real junctions by distance.
       if (!enteredRedway && !(junction && (abs >= 28 || namedChange)) && abs < 150) continue;
-      let icon = 'straight', instruction;
-      const uturn = junction && abs >= 165 && incoming?.wayId === outgoing?.wayId;
-      if (uturn) { icon = delta > 0 ? 'u-turn-right' : 'u-turn-left'; instruction = `Make a U-turn${targetPhrase(outgoing)}`; }
-      else if (abs >= 150) { icon = delta > 0 ? 'sharp-right' : 'sharp-left'; instruction = `Follow the sharp bend${targetPhrase(outgoing)}`; }
-      else if (abs >= 58) { icon = delta > 0 ? 'right' : 'left'; instruction = `Turn ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
-      else if (abs >= 28) { icon = delta > 0 ? 'slight-right' : 'slight-left'; instruction = `Bear ${delta > 0 ? 'right' : 'left'}${targetPhrase(outgoing)}`; }
-      else instruction = `Continue${targetPhrase(outgoing)}`;
+      const icon = turn.icon;
+      let instruction = `${turn.action}${targetPhrase(outgoing)}`;
       if (enteringUnlit) instruction += '; unlit path ahead';
       const previous = maneuvers[maneuvers.length - 1];
       if (!junction && previous && cumulative[i] - previous.at < 25 && previous.instruction === instruction) continue;
@@ -408,8 +406,21 @@
     return maneuvers;
   }
 
-  function isJunction(id, graph) {
-    return graph && new Set((graph.get(id) || []).map(e => e.to)).size > 2;
+  function turnGuidance(delta, uturn) {
+    const abs = Math.abs(delta), side = delta > 0 ? 'right' : 'left';
+    if (uturn) return { icon: `u-turn-${side}`, action: 'Make a U-turn' };
+    if (abs >= 150) return { icon: `sharp-${side}`, action: 'Follow the sharp bend' };
+    if (abs >= 58) return { icon: side, action: `Turn ${side}` };
+    if (abs >= 28) return { icon: `slight-${side}`, action: `Bear ${side}` };
+    return { icon: 'straight', action: 'Continue' };
+  }
+
+  function isJunction(id, graph, previousId) {
+    if (!graph) return false;
+    const neighbours = new Set((graph.get(id) || []).map(e => e.to));
+    // The incoming edge may be one-way, so its predecessor is absent from graph[id].
+    if (previousId !== undefined) neighbours.add(previousId);
+    return neighbours.size > 2;
   }
 
   function initialInstruction(coords, edges) {
@@ -467,7 +478,8 @@
       while (i < edges.length && roadish.has(edges[i].cls)) distance += edges[i++].d;
       const hasPathBefore = start > 0 && !roadish.has(edges[start - 1].cls);
       const hasPathAfter = i < edges.length && !roadish.has(edges[i].cls);
-      if (hasPathBefore && hasPathAfter && distance <= 65 && !(edges.slice(start - 1, i + 1).some(e => e.crossing) || edges.slice(start, i).some(e => ['yes','culvert'].includes(e.tunnel)))) estimatedRoadCrossings += 1;
+      const gradeSeparated = edges.slice(start, i).some(e => ['yes','culvert'].includes(e.tunnel) || !['','no','false','0'].includes(e.bridge || ''));
+      if (hasPathBefore && hasPathAfter && distance <= 65 && !gradeSeparated && !edges.slice(start - 1, i + 1).some(e => e.crossing)) estimatedRoadCrossings += 1;
     }
     return {
       underpasses,

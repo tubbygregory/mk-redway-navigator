@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.5
+
+- Discard delayed pin lookups, submitted search results and GPX loads after their destination, query or screen changes.
+- Cancel pending navigation starts when the selected route changes and preserve planned routes when initial GPS accuracy is poor.
+- Keep online shell, routing and basemap requests working when browser cache storage is unavailable.
+- Validate complete PMTiles downloads and existing cached maps before reporting offline readiness; distinguish connection failures from missing deployment data.
+- Restore turn instructions at one-way forks and turning tunnel entries while retaining underpass context and unlit warnings.
+- Exclude mapped bridges from estimated road crossings and align producer/consumer numeric validation without changing routing weights or the v6 schema.
+- Keep Explore's Close control reachable while scrolling and improve placeholder and primary-button contrast in explicit themes.
+- Display the selected route in the app's primary red in both planning and navigation.
+- Adopt the newly supplied MK route-map logo, match its route mark to the app's primary red, and regenerate favicons, Apple/PWA/maskable icons and the launch image.
+- Repair the branding-test syntax error introduced with the new logo so the deployment gates can run.
+- Add focused regressions while preserving launcher sizing, installed-iPhone dark surfaces and all release gates.
+
 ## 0.14.4
 
 - Align the Explore close button to the top-right of its header, with a 44px touch target.

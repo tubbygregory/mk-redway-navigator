@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'mk-redway-shell-v34';
+const SHELL_CACHE = 'mk-redway-shell-v35';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',
@@ -19,15 +19,15 @@ const SHELL = [
   './vendor/images/marker-icon-2x.png',
   './vendor/images/marker-shadow.png',
   './manifest.webmanifest',
-  './icons/app-logo.svg?v=0.14.4',
-  './icons/icon-maskable-512.png?v=0.14.4',
-  './icons/favicon.ico?v=0.14.4',
-  './icons/favicon-16.png?v=0.14.4',
-  './icons/favicon-32.png?v=0.14.4',
-  './icons/icon-192.png?v=0.14.4',
-  './icons/icon-512.png?v=0.14.4',
-  './icons/apple-touch-icon.png?v=0.14.4',
-  './icons/iphone16-splash.png?v=0.14.4'
+  './icons/app-logo.svg?v=0.14.5',
+  './icons/icon-maskable-512.png?v=0.14.5',
+  './icons/favicon.ico?v=0.14.5',
+  './icons/favicon-16.png?v=0.14.5',
+  './icons/favicon-32.png?v=0.14.5',
+  './icons/icon-192.png?v=0.14.5',
+  './icons/icon-512.png?v=0.14.5',
+  './icons/apple-touch-icon.png?v=0.14.5',
+  './icons/iphone16-splash.png?v=0.14.5'
 ];
 
 
@@ -40,21 +40,33 @@ self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     // Retain a previously downloaded routing graph when replacing the app shell.
     const networkUrl = new URL('data/network.json', self.registration.scope).href;
-    const offline = await caches.open(OFFLINE_CACHE);
-    if (!await offline.match(networkUrl)) {
-      const previous = await caches.match(networkUrl);
-      if (previous?.ok) await offline.put(networkUrl, previous);
+    try {
+      const offline = await caches.open(OFFLINE_CACHE);
+      if (!await offline.match(networkUrl)) {
+        const previous = await caches.match(networkUrl);
+        if (previous?.ok) await offline.put(networkUrl, previous);
+      }
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k.startsWith('mk-redway-shell-') && k !== SHELL_CACHE).map(k => caches.delete(k)));
+    } catch (_) {
+      // Keep older shells if their graph could not be safely retained.
     }
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k.startsWith('mk-redway-shell-') && k !== SHELL_CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
 
+async function openCache(name) {
+  try { return await caches.open(name); } catch (_) { return null; }
+}
+
+async function matchCache(cache, request) {
+  try { return await cache?.match(request); } catch (_) { return undefined; }
+}
+
 async function cachedOfflineMap() {
-  const cache = await caches.open(OFFLINE_CACHE);
+  const cache = await openCache(OFFLINE_CACHE);
   const url = new URL('data/mk-basemap.pmtiles', self.registration.scope).href;
-  return cache.match(url);
+  return matchCache(cache, url);
 }
 
 function rangeResponse(fullResponse, rangeHeader) {
@@ -111,7 +123,7 @@ async function handlePmtiles(request) {
 
 // A full cache must not turn a successful network response into a failed request.
 async function storeResponse(cache, request, response) {
-  if (response.ok && response.status !== 206) {
+  if (cache && response.ok && response.status !== 206) {
     try { await cache.put(request, response.clone()); } catch (_) {}
   }
 }
@@ -130,7 +142,7 @@ self.addEventListener('fetch', event => {
 
   if (url.pathname === new URL('data/network.json', scope).pathname) {
     event.respondWith((async () => {
-      const cache = await caches.open(OFFLINE_CACHE);
+      const cache = await openCache(OFFLINE_CACHE);
       const key = new URL('data/network.json', scope).href;
       let response;
       try {
@@ -140,19 +152,19 @@ self.addEventListener('fetch', event => {
           return response;
         }
       } catch (_) {}
-      return (await cache.match(key)) || (await caches.match(key)) || response || Response.error();
+      return (await matchCache(cache, key)) || (await matchCache(caches, key)) || response || Response.error();
     })());
     return;
   }
 
   event.respondWith((async () => {
-    const cache = await caches.open(SHELL_CACHE);
+    const cache = await openCache(SHELL_CACHE);
     // Route handoff parameters belong to the URL, not to a separate app document.
     // Only the actual entry points may use this fallback; missing files stay missing.
     const isAppNavigation = request.mode === 'navigate' &&
       [scope.pathname, new URL('index.html', scope).pathname].includes(url.pathname);
     const key = isAppNavigation ? new URL('index.html', scope).href : request;
-    const cached = await cache.match(key);
+    const cached = await matchCache(cache, key);
     if (cached) return cached;
     const response = await fetch(request);
     await storeResponse(cache, key, response);

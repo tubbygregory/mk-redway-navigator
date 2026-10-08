@@ -21,12 +21,12 @@
     </g>
     <g fill="#d8e7d0"><path d="M4 4h131L95 80 4 40Z"/><path d="m438 508 70-142v142Z"/></g>
     <path fill="#c1dff2" d="m472 508 36-78v78Z"/>
-    <g id="mark" fill="none" stroke="#f20d24" stroke-width="27" stroke-linecap="round" stroke-linejoin="round">
+    <g id="mark" fill="none" stroke="#a9251d" stroke-width="27" stroke-linecap="round" stroke-linejoin="round">
       <path d="M77 312Q100 311 115 287V166L198 261 281 166V329L325 278 404 350"/>
       <path d="M281 242 358 165 449 86"/>
     </g>
     <circle cx="66" cy="313" r="22" fill="#fff"/>
-    <circle cx="66" cy="313" r="15" fill="#f20d24"/>
-    <path d="m415 91 45-17-10 47-12-21Z" fill="#f20d24" stroke="#f20d24" stroke-linejoin="round" stroke-width="12"/>
+    <circle cx="66" cy="313" r="15" fill="#a9251d"/>
+    <path d="m415 91 45-17-10 47-12-21Z" fill="#a9251d" stroke="#a9251d" stroke-linejoin="round" stroke-width="12"/>
   </g>
 </svg>

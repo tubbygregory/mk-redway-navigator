@@ -51,3 +51,36 @@ class DataValidationTests(unittest.TestCase):
         data["ways"][1][0] = data["ways"][0][0]
         with self.assertRaises(ValueError):
             validate_network(data)
+
+    def test_rejects_boolean_coordinates_and_non_browser_integer_ids(self):
+        for coordinate in (1, 2):
+            for value in (True, False):
+                data = self.network()
+                data["nodes"][0][coordinate] = value
+                with self.subTest(coordinate=coordinate, value=value), self.assertRaises(ValueError):
+                    validate_network(data)
+        for value in (True, False, 1.5, 2 ** 53, -(2 ** 53)):
+            for collection in ("nodes", "ways"):
+                data = self.network()
+                data[collection][0][0] = value
+                if collection == "nodes":
+                    data["ways"][0][1][0] = value
+                with self.subTest(collection=collection, value=value), self.assertRaises(ValueError):
+                    validate_network(data)
+            data = self.network()
+            data["ways"][0][1][0] = value
+            with self.subTest(reference=value), self.assertRaises(ValueError):
+                validate_network(data)
+
+    def test_safe_integer_boundaries_match_browser_numbers(self):
+        data = self.network()
+        data["nodes"][0][0] = 2 ** 53 - 1
+        data["ways"][0][1][0] = 2 ** 53 - 1
+        data["ways"][0][0] = -(2 ** 53 - 1)
+        validate_network(data)
+        # JSON's 0 and 0.0 both become the same integral Number in the browser.
+        data = self.network()
+        data["nodes"][0][0] = 0.0
+        data["ways"][0][1][0] = 0.0
+        data["ways"][0][0] = 0.0
+        validate_network(data)
