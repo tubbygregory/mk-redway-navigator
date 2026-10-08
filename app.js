@@ -504,6 +504,132 @@
     return !!first && !!second && Math.abs(first.lat - second.lat) < 0.00002 && Math.abs(first.lng - second.lng) < 0.00002;
   }
 
+  function favouriteName(value) {
+    return typeof value === 'string' && value.length <= 80 && !/[\x00-\x1f\x7f]/.test(value) ? value.trim() : null;
+  }
+
+  function nextSavedPinName() {
+    const used = new Set(state.saved.favourites.map(place => place.name));
+    let number = 1;
+    while (used.has('Saved pin ' + number)) number++;
+    return 'Saved pin ' + number;
+  }
+
+  function savedSnapshotForChange() {
+    try {
+      const value = localStorage.getItem(SAVED_KEY);
+      const raw = JSON.parse(value || '{}');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid saved places');
+      return {value, saved: {
+        home: normalizeSavedPlace(raw.home), work: normalizeSavedPlace(raw.work),
+        favourites: Array.isArray(raw.favourites) ? raw.favourites.map(normalizeSavedPlace).filter(Boolean) : []
+      }};
+    } catch (_) {
+      toast('Saved places could not be read. Try again before making changes.', 6000);
+      return null;
+    }
+  }
+
+  function renderSavedUndo() {
+    const undo = state.favouriteUndo;
+    el('savedUndoNotice').hidden = !undo;
+    if (undo) el('savedUndoText').textContent = undo.place.name + ' removed.';
+  }
+
+  function removeFavourite(place) {
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return false;
+    const index = snapshot.saved.favourites.findIndex(saved => saved.id === place.id && sameSavedPlace(saved, place));
+    if (index < 0) {
+      state.saved = snapshot.saved; renderSavedPlaces();
+      toast('This favourite has already been removed.'); return false;
+    }
+    const favourites = [...snapshot.saved.favourites];
+    const removed = favourites.splice(index, 1)[0];
+    if (!persistSavedPlaces({...snapshot.saved, favourites}, snapshot.value)) return false;
+    state.favouriteUndo = {place: removed, index, count: snapshot.saved.favourites.length,
+      remainingIds: new Set(favourites.map(saved => saved.id))};
+    if (state.favouriteNameTarget?.id === removed.id) closeFavouriteNameEditor();
+    renderSavedUndo();
+    el('undoFavouriteBtn').focus();
+    return true;
+  }
+
+  function undoFavouriteRemoval() {
+    const undo = state.favouriteUndo;
+    if (!undo) return false;
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return false;
+    const favourites = [...snapshot.saved.favourites];
+    if (favourites.some(saved => saved.id === undo.place.id || sameSavedPlace(saved, undo.place))) {
+      state.saved = snapshot.saved;
+      state.favouriteUndo = null;
+      renderSavedPlaces(); renderSavedUndo();
+      toast('That favourite is already saved.');
+      return false;
+    }
+    // Preserve a legitimate pre-existing list above the current limit, but do
+    // not let Undo bypass capacity after other favourites have been added.
+    const capacity = undo.count > 30 && favourites.every(saved => undo.remainingIds.has(saved.id)) ? undo.count : 30;
+    if (favourites.length >= capacity) {
+      state.saved = snapshot.saved; renderSavedPlaces();
+      toast('Remove another favourite before restoring this one. Your saved places have been kept.', 6000);
+      return false;
+    }
+    favourites.splice(Math.min(undo.index, favourites.length), 0, undo.place);
+    if (!persistSavedPlaces({...snapshot.saved, favourites}, snapshot.value)) return false;
+    state.favouriteUndo = null;
+    renderSavedUndo();
+    toast('Favourite restored.');
+    return true;
+  }
+
+  function openFavouriteNameEditor(place) {
+    state.favouriteNameTarget = {...place};
+    el('favouriteNameInput').value = place.name;
+    el('favouriteNameEditor').hidden = false;
+    el('favouriteNameInput').focus();
+    el('favouriteNameInput').select();
+    el('favouriteNameEditor').scrollIntoView({block: 'nearest'});
+  }
+
+  function closeFavouriteNameEditor() {
+    const id = state.favouriteNameTarget?.id;
+    state.favouriteNameTarget = null;
+    el('favouriteNameEditor').hidden = true;
+    el('favouriteNameInput').value = '';
+    const buttons = el('favouritesList').querySelectorAll?.('.saved-rename') || [];
+    Array.from(buttons).find(button => button.dataset.favouriteId === id)?.focus();
+  }
+
+  function saveFavouriteName() {
+    const target = state.favouriteNameTarget;
+    if (!target) return false;
+    const name = favouriteName(el('favouriteNameInput').value);
+    if (!name) { toast('Enter a name of up to 80 characters, without line breaks.', 6000); return false; }
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return false;
+    const index = snapshot.saved.favourites.findIndex(saved => saved.id === target.id && sameSavedPlace(saved, target));
+    if (index < 0 || snapshot.saved.favourites[index].name !== target.name) {
+      state.saved = snapshot.saved; renderSavedPlaces();
+      toast('This favourite changed elsewhere. Close this editor and choose it again.', 6000);
+      return false;
+    }
+    const favourites = [...snapshot.saved.favourites];
+    favourites[index] = {...favourites[index], name};
+    if (!persistSavedPlaces({...snapshot.saved, favourites}, snapshot.value)) return false;
+    closeFavouriteNameEditor();
+    toast('Favourite name updated.');
+    return true;
+  }
+
+  el('undoFavouriteBtn').addEventListener('click', undoFavouriteRemoval);
+  el('favouriteNameEditor').addEventListener('submit', event => { event.preventDefault(); saveFavouriteName(); });
+  el('favouriteNameCancelBtn').addEventListener('click', closeFavouriteNameEditor);
+  el('favouriteNameInput').addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); closeFavouriteNameEditor(); }
+  });
+
   function syncSaveFavouriteButton() {
     const saved = state.saved.favourites.some(place => sameSavedPlace(place, state.end));
     el('saveFavouriteLabel').textContent = saved ? 'Saved' : 'Save';
@@ -524,8 +650,14 @@
     }
   }
 
-  function persistSavedPlaces(nextSaved = state.saved) {
-    try { localStorage.setItem(SAVED_KEY, JSON.stringify(nextSaved)); }
+  function persistSavedPlaces(nextSaved = state.saved, expectedValue) {
+    try {
+      if (arguments.length > 1 && localStorage.getItem(SAVED_KEY) !== expectedValue) {
+        toast('Saved places changed in another tab. Open Saved and try again.', 6000);
+        return false;
+      }
+      localStorage.setItem(SAVED_KEY, JSON.stringify(nextSaved));
+    }
     catch (_) { toast('Saved places could not be updated. Browser storage is full or unavailable.', 6000); return false; }
     state.saved = nextSaved;
     renderSavedPlaces();
@@ -533,6 +665,11 @@
   }
 
   function savePlace(kind, candidate) {
+    if (kind === 'favourite' && state.pendingSaveKind === 'favourite') {
+      const name = favouriteName(el('savedFavouriteNameInput').value);
+      if (name === null) { toast('Use a name of up to 80 characters, without line breaks.', 6000); return {ok: false}; }
+      if (name) candidate = {...candidate, name};
+    }
     const place = normalizeSavedPlace(candidate);
     if (!place || !['home', 'work', 'favourite'].includes(kind)) return {ok: false};
     const duplicate = kind === 'favourite' && state.saved.favourites.some(saved => sameSavedPlace(saved, place));
@@ -585,6 +722,7 @@
   function openSavedPlace(place) {
     place = normalizeSavedPlace(place);
     if (!place) return;
+    closeFavouriteNameEditor();
     if (state.pendingSaveKind) finishSavedSearch();
     const point = L.latLng(place.lat, place.lng);
     setPoint('end', point, place.name, place.address || '');
@@ -596,10 +734,11 @@
 
   function renderSavedPlaces() {
     syncSaveFavouriteButton();
+    renderSavedUndo();
     const home = state.saved.home;
     const work = state.saved.work;
-    el('homeSavedLabel').textContent = home ? (home.name === 'Home' ? home.address || home.name : home.name) : 'Not set';
-    el('workSavedLabel').textContent = work ? (work.name === 'Work' ? work.address || work.name : work.name) : 'Not set';
+    el('homeSavedLabel').textContent = home ? (home.name === 'Home' ? home.address || home.name : home.name) : 'Add Home for a quicker start';
+    el('workSavedLabel').textContent = work ? (work.name === 'Work' ? work.address || work.name : work.name) : 'Add Work when you need it';
     el('setHomeBtn').textContent = home ? 'Change Home' : 'Set Home';
     el('setWorkBtn').textContent = work ? 'Change Work' : 'Set Work';
     const quick = el('quickPlaces');
@@ -612,20 +751,32 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'quick-favourite';
+      button.setAttribute('aria-label', place.name);
+      button.title = place.name;
       button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"></path></svg><span></span>';
       button.querySelector('span').textContent = place.name;
       button.addEventListener('click', () => openSavedPlace(place));
       quick.appendChild(button);
     }
     quick.hidden = !home && !work && !state.saved.favourites.length;
+    el('quickPlacesShell').hidden = quick.hidden;
+    if (!quick.dataset.scrollCueReady) {
+      quick.addEventListener('scroll', updateQuickPlacesOverflow, {passive: true});
+      window.addEventListener('resize', updateQuickPlacesOverflow, {passive: true});
+      quick.dataset.scrollCueReady = 'true';
+    }
+    requestAnimationFrame(updateQuickPlacesOverflow);
     const list = el('favouritesList');
     if (!list) return;
     list.innerHTML = '';
     if (!state.saved.favourites.length) {
       const empty = document.createElement('div');
       empty.className = 'saved-empty';
-      empty.textContent = 'No favourites yet.';
-      list.appendChild(empty);
+      empty.textContent = 'Keep your regular stops handy.';
+      const hint = document.createElement('p');
+      hint.className = 'saved-empty-hint';
+      hint.textContent = 'Add a place or a map pin. Your favourites stay on this device.';
+      list.append(empty, hint);
       return;
     }
     for (const place of state.saved.favourites) {
@@ -638,22 +789,39 @@
       open.querySelector('strong').textContent = place.name;
       open.querySelector('small').textContent = place.address || '';
       open.addEventListener('click', () => openSavedPlace(place));
+      const actions = document.createElement('div');
+      actions.className = 'saved-favourite-actions';
+      const rename = document.createElement('button');
+      rename.type = 'button';
+      rename.className = 'saved-rename';
+      rename.dataset.favouriteId = place.id;
+      rename.setAttribute('aria-label', `Rename ${place.name}`);
+      rename.title = 'Rename favourite';
+      rename.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4L4 16Zm10-10 4 4"></path></svg>';
+      rename.addEventListener('click', () => openFavouriteNameEditor(place));
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'saved-remove';
       remove.setAttribute('aria-label', `Remove ${place.name}`);
       remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path></svg>';
-      remove.addEventListener('click', () => {
-        persistSavedPlaces({...state.saved, favourites: state.saved.favourites.filter(x => x.id !== place.id)});
-      });
-      row.append(open, remove);
+      remove.addEventListener('click', () => removeFavourite(place));
+      actions.append(rename, remove);
+      row.append(open, actions);
       list.appendChild(row);
     }
+  }
+
+  function updateQuickPlacesOverflow() {
+    const quick = el('quickPlaces');
+    const maxScroll = quick.scrollWidth - quick.clientWidth;
+    el('quickPlacesShell').dataset.canScroll = String(!quick.hidden && maxScroll > 2 && quick.scrollLeft < maxScroll - 2);
   }
 
   function beginSavedSearch(kind) {
     if (!['home', 'work', 'favourite'].includes(kind)) return;
     closeSearch();
+    closeFavouriteNameEditor();
+    el('savedFavouriteNameInput').value = '';
     state.pendingSaveKind = kind;
     state.savedPickOnMap = false;
     state.savedPickRevision = (state.savedPickRevision || 0) + 1;
@@ -670,6 +838,8 @@
   function renderSavedPicker() {
     const kind = state.pendingSaveKind;
     el('savedPlacePicker').hidden = !kind;
+    el('savedFavouriteNameField').hidden = kind !== 'favourite';
+    if (state.savedPickOnMap) el('savedFavouriteNameInput').blur();
     if (!kind) return;
     const label = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'a favourite';
     el('savedPlacePickerTitle').textContent = kind === 'favourite' ? 'Add a favourite' : `Set ${label}`;
@@ -686,7 +856,7 @@
       return true;
     }
     const kind = state.pendingSaveKind;
-    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'Dropped pin';
+    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : nextSavedPinName();
     const candidate = {id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, address: fmtCoord(latlng), lat: latlng.lat, lng: latlng.lng};
     const result = savePlace(kind, candidate);
     if (!result.ok) return true;
@@ -701,6 +871,7 @@
     state.pendingSaveKind = null;
     state.savedPickOnMap = false;
     state.savedPickRevision = (state.savedPickRevision || 0) + 1;
+    el('savedFavouriteNameInput').value = '';
     renderSavedPicker();
     el('homeSearch').value = '';
     el('homeSearch').placeholder = 'Search places';

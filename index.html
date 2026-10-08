@@ -44,14 +44,21 @@
       <section id="savedPlacePicker" class="saved-place-picker" aria-labelledby="savedPlacePickerTitle" hidden>
         <strong id="savedPlacePickerTitle">Save a place</strong>
         <p id="savedPlacePickerHint" role="status">Search for a place or choose on the map.</p>
+        <div id="savedFavouriteNameField" class="saved-favourite-name-field" hidden>
+          <label for="savedFavouriteNameInput">Name this favourite (optional)</label>
+          <input id="savedFavouriteNameInput" type="text" maxlength="80" autocomplete="off" placeholder="e.g. Riverside start" />
+        </div>
         <div class="saved-place-picker-actions">
           <button id="pickSavedOnMapBtn" class="secondary-action" type="button">Choose on map</button>
           <button id="cancelSavedPickBtn" class="secondary-action" type="button">Cancel</button>
         </div>
       </section>
-      <div id="quickPlaces" class="quick-places" aria-label="Saved place shortcuts" hidden>
-        <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
-        <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
+      <div id="quickPlacesShell" class="quick-places-shell" hidden>
+        <div id="quickPlaces" class="quick-places" aria-label="Saved place shortcuts" hidden>
+          <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
+          <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
+        </div>
+        <span class="quick-place-scroll-hint" aria-hidden="true">›</span>
       </div>
       <div id="typeaheadSuggestions" class="typeahead-suggestions" aria-label="Search suggestions" hidden></div>
       <div id="locationIntro" class="location-intro" hidden>
@@ -265,15 +272,31 @@
         </button>
       </div>
 
+      <p class="saved-local-note">Your regular places, kept on this device.</p>
+      <div id="savedUndoNotice" class="saved-undo-notice" role="status" hidden>
+        <span id="savedUndoText"></span>
+        <button id="undoFavouriteBtn" class="text-action" type="button">Undo</button>
+      </div>
+      <form id="favouriteNameEditor" class="favourite-name-editor" hidden>
+        <strong id="favouriteNameEditorTitle">Rename favourite</strong>
+        <label for="favouriteNameInput">Favourite name</label>
+        <input id="favouriteNameInput" type="text" maxlength="80" autocomplete="off" required aria-describedby="favouriteNamePrivacy" />
+        <small id="favouriteNamePrivacy">This name stays on your device.</small>
+        <div class="favourite-name-editor-actions">
+          <button id="favouriteNameSaveBtn" class="primary-action" type="submit">Save name</button>
+          <button id="favouriteNameCancelBtn" class="secondary-action" type="button">Cancel</button>
+        </div>
+      </form>
+
       <div class="saved-specials">
         <button id="homeSavedRow" class="saved-row" type="button">
           <span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg></span>
-          <span class="saved-row-copy"><strong>Home</strong><small id="homeSavedLabel">Not set</small></span>
+          <span class="saved-row-copy"><strong>Home</strong><small id="homeSavedLabel">Add Home for a quicker start</small></span>
           <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
         <button id="workSavedRow" class="saved-row" type="button">
           <span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18M10 12v3h4v-3"></path></svg></span>
-          <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Not set</small></span>
+          <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Add Work when you need it</small></span>
           <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
       </div>
