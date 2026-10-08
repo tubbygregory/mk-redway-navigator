@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 import tempfile
 from playwright.sync_api import sync_playwright, expect
 from browser_smoke import plan
-from audit_browser import review_cultural_tracks
+from audit_browser import local_place_fixtures, review_cultural_tracks, review_local_place_search
 
 ROOT = Path(__file__).resolve().parents[1]
 def capture(page, name):
@@ -384,12 +384,21 @@ def review_offline_cultural_tracks(browser, url):
     page.locator("#offlineDownloadBtn").click()
     expect(page.locator("#offlineStatus")).to_contain_text("available offline", timeout=120000)
     page.get_by_role("button", name="Close settings", exact=True).click()
+    places = local_place_fixtures(page, url)
     context.set_offline(True)
     page.reload(wait_until="networkidle")
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
+    # Chromium can reset its native online indicator during a cache-only SW
+    # reload while requests remain blocked. Resend a real network transition;
+    # never override navigator or satisfy offline searches through mocks.
+    if page.evaluate("navigator.onLine"):
+        context.set_offline(False)
+        context.set_offline(True)
+    assert page.evaluate("navigator.onLine") is False
+    review_local_place_search(page, url, offline=True, fixtures=places)
     review_cultural_tracks(page, url)
     assert not errors, errors
-    print("PASS unseen offline Cultural Routes: all ten source geometries, installed-iOS Chromium emulation: " + url)
+    print("PASS unseen offline places and Cultural Routes: canonical local addresses/POIs, all ten source geometries, installed-iOS Chromium emulation: " + url)
     context.close()
 
 def main():

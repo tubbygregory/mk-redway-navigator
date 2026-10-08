@@ -8,6 +8,7 @@ import shutil
 from urllib.request import urlopen
 from data_validation import validate_network, validate_council, council_digest
 from cultural_routes import validate_cultural_routes
+from place_validation import validate_places
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
@@ -41,6 +42,10 @@ def main():
                 print(f"Removed obsolete source notices from cached {name}; geometry unchanged.")
     network = json.loads((data / "network.json").read_text())
     counts = validate_network(network)
+    places = json.loads((data / "places.json").read_text())
+    place_counts = validate_places(places)
+    place_stamp = dt.datetime.fromisoformat(places["source_timestamp"].replace("Z", "+00:00"))
+    place_age = (dt.datetime.now(dt.timezone.utc) - place_stamp).total_seconds() / 86400
     council = read_optional(data / "council-meta.json")
     extract = read_optional(data / "council_routes.geojson")
     if extract:
@@ -63,6 +68,10 @@ def main():
                     "sha256": sha(data / "network.json"), "age_days": round(age, 1),
                     "stale": age >= 7, **counts},
         "osm": {"source": network.get("osm_source"), "updated_at": network.get("osm_updated_at")},
+        "places": {"format": places["format"], "source": places["source"],
+                   "source_timestamp": places["source_timestamp"], "source_sha256": places["source_sha256"],
+                   "generated_at": places["generated_at"], "sha256": sha(data / "places.json"),
+                   "age_days": round(place_age, 1), "stale": place_age >= 7, **place_counts},
         "council": {"status": status, "extracted_at": council.get("extracted_at") if linked else None,
                     "geometry_sha256": network.get("council_geometry_sha256"),
                     "source": network.get("council_geometry_source"), "matches_latest_extract": linked},
@@ -71,6 +80,8 @@ def main():
     }
     if status != "fresh" or age >= 7 or not linked:
         print(f"::warning::Publishing validated last-known-good data: council={status}, network age={age:.1f} days, latest classification matched={linked}")
+    if place_age >= 7:
+        print(f"::warning::Publishing validated older place data: source age={place_age:.1f} days")
     shutil.rmtree(DIST, ignore_errors=True)
     (DIST / "data").mkdir(parents=True)
     for name in RUNTIME:
@@ -79,7 +90,7 @@ def main():
     (DIST / "cultural-routes").mkdir()
     for name in cultural_files:
         shutil.copy2(ROOT / "cultural-routes" / name, DIST / "cultural-routes" / name)
-    for name in ("network.json", "mk-basemap.pmtiles"):
+    for name in ("network.json", "places.json", "mk-basemap.pmtiles"):
         shutil.copy2(data / name, DIST / "data" / name)
     (DIST / "data" / "data-meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     dependencies = json.loads((ROOT / "runtime-dependencies.json").read_text())
@@ -94,7 +105,7 @@ def main():
         target.write_bytes(body)
         item["sha256"] = digest
     print("DEPENDENCY_LOCK=" + json.dumps(dependencies, separators=(",", ":")))
-    allowed = set(RUNTIME) | {"data/network.json", "data/mk-basemap.pmtiles", "data/data-meta.json"}
+    allowed = set(RUNTIME) | {"data/network.json", "data/places.json", "data/mk-basemap.pmtiles", "data/data-meta.json"}
     allowed.update(item["path"] for item in dependencies)
     allowed.update("cultural-routes/" + name for name in cultural_files)
     allowed.update(str(path.relative_to(ROOT)) for path in (ROOT / "icons").glob("*") if path.is_file())

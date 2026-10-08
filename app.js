@@ -134,6 +134,10 @@
     preferSuper: false,
     lightingCoverage: 0,
     localSearchIndex: [],
+    placeSearchIndex: [],
+    placeSearchStatus: 'loading',
+    placeSearchPromise: null,
+    searchSubmissionActive: false,
     speechUnlocked: false,
     speechVoice: null,
     speechActive: null,
@@ -211,6 +215,9 @@
     state.stage = stage;
     state.plannerSearchOpen = false;
     searchRevision += 1;
+    state.localSuggestionInput = null;
+    state.localSuggestionContext = null;
+    state.searchSubmissionActive = false;
     el('app').dataset.stage = stage;
     el('exploreUI').hidden = !['explore', 'place'].includes(stage);
     el('plannerUI').hidden = stage !== 'planner';
@@ -582,27 +589,44 @@
     el('arrivalStat').textContent = 'Route preview';
   }
 
+  function searchText(value) {
+    return typeof value === 'string' ? value.trim() : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+  }
+
+  function validateSearchResult(result) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+    if (![result.lat, result.lon].every(value =>
+      (typeof value === 'number' || typeof value === 'string' && value.trim() !== '') && Number.isFinite(Number(value)))) return false;
+    const lat = Number(result.lat), lon = Number(result.lon);
+    return lat >= MK.south && lat <= MK.north && lon >= MK.west && lon <= MK.east;
+  }
+
   function conciseResultName(result) {
-    const a = result.address || {};
+    const a = result?.address || {};
     const parts = [];
-    const namedPlace = a.shop || a.amenity || a.tourism || a.leisure || a.office || a.building;
-    if (namedPlace) parts.push(namedPlace);
-    if (!namedPlace && result.name) parts.push(result.name);
-    if (!parts.length && (a.house_number || a.road)) parts.push([a.house_number, a.road].filter(Boolean).join(' '));
-    const locality = a.suburb || a.neighbourhood || a.village || a.town || a.city_district || a.city;
-    if (locality && !parts.includes(locality)) parts.push(locality);
-    if (a.postcode) parts.push(a.postcode);
-    return parts.filter(Boolean).join(', ') || result.display_name;
+    const namedPlace = [a.shop, a.amenity, a.tourism, a.leisure, a.office, a.building].map(searchText).find(Boolean);
+    const name = namedPlace || searchText(result?.name);
+    const house = searchText(a.house_number), road = searchText(a.road);
+    const address = [house, road].filter(Boolean).join(' ');
+    // Nominatim may name a house result after its street. Preserve the number,
+    // while retaining a named business or building alongside its street address.
+    if (name && !(house && road && [house, road, address].some(value => value.toLowerCase() === name.toLowerCase()))) parts.push(name);
+    if (address && (house && road || !parts.length || road && !name.toLowerCase().endsWith(road.toLowerCase()))) parts.push(address);
+    const locality = [a.suburb, a.neighbourhood, a.village, a.town, a.city_district, a.city].map(searchText).find(Boolean);
+    if (locality && !parts.some(part => part.toLowerCase() === locality.toLowerCase())) parts.push(locality);
+    if (searchText(a.postcode)) parts.push(searchText(a.postcode));
+    return parts.join(', ') || searchText(result?.display_name) || 'Map location';
   }
 
   function resultSecondary(result, primary) {
-    const text = result.display_name || '';
+    if (result.matchNote) return result.matchNote;
+    const text = searchText(result.display_name);
     if (!text || text === primary) return 'Milton Keynes';
     return text.length > 130 ? `${text.slice(0, 127)}…` : text;
   }
 
   function resultTypeLabel(result) {
-    const raw = String(result.type || result.addresstype || '').replaceAll('_', ' ');
+    const raw = (searchText(result.type) || searchText(result.addresstype)).replaceAll('_', ' ');
     return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
   }
 
@@ -611,6 +635,7 @@
   }
 
   function resultDistance(result) {
+    if (!validateSearchResult(result)) return null;
     const origin = resultOrigin();
     const lat = Number(result.lat), lon = Number(result.lon);
     return origin && Number.isFinite(lat) && Number.isFinite(lon)
@@ -620,15 +645,22 @@
 
   function dedupeSearchResults(results) {
     const chosen = [];
-    const ordered = [...results].sort((a, b) => (resultDistance(a) ?? Infinity) - (resultDistance(b) ?? Infinity));
-    for (const result of ordered) {
-      const primary = conciseResultName(result);
+    const localAddress = result => {
+      const a = result.address || {};
+      const fields = [a.house_number, a.road, a.postcode, a.suburb || a.neighbourhood || a.village || a.town || a.city_district || a.city]
+        .map(value => searchText(value).toLowerCase());
+      return fields.some(Boolean) ? fields.join('|') : searchText(result.display_name).toLowerCase();
+    };
+    for (const result of Array.isArray(results) ? results : []) {
+      if (!validateSearchResult(result)) continue;
+      const primary = conciseResultName(result).toLowerCase();
       const lat = Number(result.lat), lon = Number(result.lon);
-      const duplicate = chosen.some(other =>
-        conciseResultName(other).toLowerCase() === primary.toLowerCase() &&
-        Number.isFinite(lat) && Number.isFinite(lon) &&
-        hav({lat, lon}, {lat: Number(other.lat), lon: Number(other.lon)}) < 700
-      );
+      const duplicate = chosen.some(other => {
+        if (searchText(result.osm_type) && searchText(result.osm_id) &&
+            result.osm_type === other.osm_type && String(result.osm_id) === String(other.osm_id)) return true;
+        return conciseResultName(other).toLowerCase() === primary && localAddress(other) === localAddress(result) &&
+          hav({lat, lon}, {lat: Number(other.lat), lon: Number(other.lon)}) < 50;
+      });
       if (!duplicate) chosen.push(result);
       if (chosen.length >= 6) break;
     }
@@ -654,6 +686,7 @@
       const nodes = way.nodes.map(id => parsed.nodes.get(id)).filter(Boolean);
       if (!nodes.length) continue;
       const mid = nodes[Math.floor(nodes.length / 2)];
+      if (!validateSearchResult({lat: mid.lat, lon: mid.lon})) continue;
       for (const pair of candidates) {
         const textValue = String(pair[0] || '').trim();
         const type = pair[1];
@@ -700,7 +733,183 @@
       ranked.push({item, score: (starts ? 0 : 10) + Math.max(0, name.indexOf(q)) + (Number.isFinite(d) ? Math.min(20, d / 1000) : 5)});
     }
     ranked.sort((a,b) => a.score - b.score);
-    return dedupeSearchResults(ranked.map(x => x.item)).slice(0, 5);
+    const exactSaved = ranked.filter(item => item.item.type === 'Saved place' && searchWords(item.item.name).join(' ') === searchWords(query).join(' '));
+    return dedupeSearchResults([...exactSaved.map(item => item.item), ...searchLocalPlaces(query), ...ranked.map(x => x.item)]).slice(0, 5);
+  }
+
+  function searchWords(text) {
+    return normalizeSearchQuery(text).toLowerCase().replace(/'s\b/g, '').replace(/'/g, '')
+      .replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(word => word && !['the', 'of', 'and'].includes(word));
+  }
+
+  function wordMatchScore(query, word) {
+    if (query === word) return 0;
+    if (/\d/.test(query) || /\d/.test(word)) return null;
+    if (query.length >= 2 && word.startsWith(query)) return 1;
+    const singular = value => value.length > 5 && value.endsWith('s') ? value.slice(0, -1) : value;
+    const a = singular(query), b = singular(word);
+    if (a === b) return 1;
+    if (a.length < 5 || b.length < 5 || a[0] !== b[0] || Math.abs(a.length - b.length) > 1) return null;
+    let i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) return null;
+      if (a.length >= b.length) i++;
+      if (b.length >= a.length) j++;
+    }
+    return edits + (i < a.length || j < b.length ? 1 : 0) <= 1 ? 3 : null;
+  }
+
+  function placeWordScore(words, candidates) {
+    let total = 0;
+    for (const word of words) {
+      let best = Infinity;
+      for (const candidate of candidates) {
+        const score = wordMatchScore(word, candidate);
+        if (score !== null) best = Math.min(best, score);
+      }
+      if (!Number.isFinite(best)) return null;
+      total += best;
+    }
+    return total;
+  }
+
+  function parsePlaceIndex(data) {
+    const required = ['format', 'source', 'source_timestamp', 'source_sha256', 'generated_at', 'bounds', 'entries'];
+    const textLimits = {name: 200, house_number: 40, street: 200, postcode: 32, locality: 160, category: 80};
+    const validText = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit &&
+      value === value.trim() && !/[\x00-\x1f\x7f]/.test(value);
+    const timestamp = value => {
+      if (typeof value !== 'string' || value.length > 40) return NaN;
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+      if (!match) return NaN;
+      const [, y, m, d, h, min, sec, , offsetHour, offsetMinute] = match;
+      const year = Number(y), month = Number(m), day = Number(d);
+      const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      return month < 1 || month > 12 || day < 1 || day > days[month - 1] || Number(h) > 23 || Number(min) > 59 || Number(sec) > 59 ||
+        Number(offsetHour || 0) > 23 || Number(offsetMinute || 0) > 59 ? NaN : Date.parse(value);
+    };
+    const sourceTime = timestamp(data?.source_timestamp), generatedTime = timestamp(data?.generated_at);
+    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length !== required.length ||
+        !required.every(key => Object.hasOwn(data, key)) || data.format !== 'mk-redway-places-v1' ||
+        data.source !== 'OpenStreetMap / Geofabrik' || !data.bounds || Object.keys(data.bounds).length !== Object.keys(MK).length ||
+        !Object.keys(MK).every(key => data.bounds[key] === MK[key]) ||
+        typeof data.source_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(data.source_sha256) ||
+        !Number.isFinite(sourceTime) || !Number.isFinite(generatedTime) || sourceTime > generatedTime ||
+        generatedTime > Date.now() + 86400000 || !Array.isArray(data.entries) ||
+        data.entries.length < 1 || data.entries.length > 50000) throw new Error('Unsupported local place data');
+    const seen = new Set();
+    return data.entries.map(entry => {
+      const requiredEntry = ['id', 'kind', 'lat', 'lon', 'location'];
+      const allowedEntry = [...requiredEntry, ...Object.keys(textLimits), 'aliases'];
+      if (!validateSearchResult(entry) || !requiredEntry.every(key => Object.hasOwn(entry, key)) ||
+          !Object.keys(entry).every(key => allowedEntry.includes(key)) || typeof entry.lat !== 'number' || typeof entry.lon !== 'number' ||
+          typeof entry.id !== 'string' || !/^[nw][1-9][0-9]{0,19}$/.test(entry.id) || seen.has(entry.id) ||
+          !['mapped point', 'building centre', 'mapped feature centre'].includes(entry.location) ||
+          (entry.id[0] === 'n') !== (entry.location === 'mapped point') ||
+          !Object.entries(textLimits).every(([key, limit]) => !Object.hasOwn(entry, key) || validText(entry[key], limit)) ||
+          !(entry.kind === 'place' ? entry.name && entry.category : entry.kind === 'address' ? entry.street && (entry.house_number || entry.name) :
+            entry.kind === 'building' ? entry.name && entry.street && !entry.house_number : false) ||
+          Object.hasOwn(entry, 'aliases') && (!Array.isArray(entry.aliases) || entry.aliases.length < 1 || entry.aliases.length > 8 ||
+            !entry.aliases.every(alias => validText(alias, 200)) || new Set(entry.aliases.map(alias => alias.toLowerCase())).size !== entry.aliases.length ||
+            entry.aliases.some(alias => alias.toLowerCase() === (entry.name || '').toLowerCase()))) throw new Error('Invalid local place entry');
+      seen.add(entry.id);
+      const names = [entry.name, ...(entry.aliases || [])].filter(Boolean).map(searchWords);
+      const words = searchWords([entry.name, ...(entry.aliases || []), entry.house_number, entry.street, entry.postcode, entry.locality].filter(Boolean).join(' '));
+      return {...entry, _names: names, _words: words};
+    });
+  }
+
+  async function loadPlaceIndex() {
+    if (state.placeSearchPromise) return state.placeSearchPromise;
+    state.placeSearchStatus = 'loading';
+    state.placeSearchPromise = (async () => {
+      const url = new URL('./data/places.json', location.href).href;
+      const read = async response => {
+        if (!response?.ok) throw new Error('Local place data unavailable');
+        const text = await response.text();
+        if (text.length > 10 * 1024 * 1024) throw new Error('Local place data too large');
+        return parsePlaceIndex(JSON.parse(text));
+      };
+      let parsed;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        parsed = await read(await fetch(url, {signal: controller.signal}));
+      } catch (error) {
+        try { parsed = await read(await caches.match(url)); } catch (_) {}
+        if (!parsed) {
+          // A malformed cached asset must not keep blocking a later download.
+          try {
+            for (const name of await caches.keys()) {
+              if (name === OFFLINE_CACHE || name.startsWith('mk-redway-shell-')) await (await caches.open(name)).delete(url);
+            }
+          } catch (_) {}
+          state.placeSearchStatus = 'unavailable';
+          return false;
+        }
+      } finally { clearTimeout(timer); }
+      state.placeSearchIndex = parsed;
+      state.placeSearchStatus = 'ready';
+      const input = state.localSuggestionInput;
+      if (input && !state.searchSubmissionActive && document.activeElement === input &&
+          (input === el('homeSearch') && ['explore', 'place'].includes(state.stage) ||
+           state.stage === 'planner' && state.plannerSearchOpen)) renderTypeahead(input, state.localSuggestionContext);
+      return true;
+    })();
+    const ready = await state.placeSearchPromise;
+    if (!ready) state.placeSearchPromise = null;
+    return ready;
+  }
+
+  function searchLocalPlaces(query) {
+    const normalized = normalizeSearchQuery(query);
+    if (normalized.length < 2) return [];
+    const words = searchWords(normalized);
+    if (!words.length) return [];
+    const requested = /^(\d+[a-z]?(?:\s*[-–]\s*\d+[a-z]?)?)\s+(.+)$/i.exec(normalized);
+    const house = requested?.[1].replace(/\s+/g, '').toLowerCase();
+    const rest = requested ? searchWords(requested[2]) : words;
+    const ranked = [];
+    for (const entry of state.placeSearchIndex || []) {
+      let score = placeWordScore(words, entry._words);
+      let buildingFallback = false;
+      if (requested) {
+        const exact = searchText(entry.house_number).replace(/\s+/g, '').toLowerCase() === house;
+        if (!exact) {
+          if (entry.kind !== 'building' || !entry.street) continue;
+          score = placeWordScore(rest, searchWords([entry.street, entry.postcode, entry.locality].filter(Boolean).join(' ')));
+          buildingFallback = score !== null;
+          if (buildingFallback) {
+            score += 30;
+            // A numeric building name is only a ranking hint, never verification
+            // of an individual house or flat coordinate.
+            const range = /^\s*(\d+)\s*[-–]\s*(\d+)\s*$/.exec(entry.name || '');
+            if (range && /^\d+$/.test(house) && Number(house) >= Number(range[1]) && Number(house) <= Number(range[2])) score -= 2;
+          }
+        } else if (score !== null) score -= 20;
+      }
+      if (score === null) continue;
+      if (!requested) {
+        const nameScore = entry._names.map(nameWords => placeWordScore(words, nameWords)).filter(value => value !== null);
+        if (nameScore.length) score = Math.min(score, Math.min(...nameScore) - 10);
+      }
+      const name = entry.kind === 'building' && /^\s*\d+\s*[-–]\s*\d+\s*$/.test(entry.name || '') && entry.street
+        ? entry.name + ' ' + entry.street : entry.name || '';
+      const result = {
+        lat: entry.lat, lon: entry.lon, name,
+        address: {house_number: entry.house_number || '', road: entry.street || '', postcode: entry.postcode || '', suburb: entry.locality || ''},
+        display_name: [entry.name, entry.house_number, entry.street, entry.locality, entry.postcode].filter(Boolean).join(', '),
+        type: entry.kind === 'building' ? 'Building match' : entry.kind === 'address' ? 'Address' : entry.category || 'Place',
+        osm_type: entry.id[0] === 'n' ? 'node' : 'way', osm_id: entry.id.slice(1), local: true,
+        matchNote: buildingFallback
+          ? 'Building match · Exact house number ' + requested[1] + ' not found in local data · check entrance on map'
+          : entry.location.charAt(0).toUpperCase() + entry.location.slice(1) + ' · check entrance on map'
+      };
+      ranked.push({result, score, distance: resultDistance(result) ?? Infinity});
+    }
+    ranked.sort((a, b) => a.score - b.score || a.distance - b.distance);
+    return dedupeSearchResults(ranked.map(item => item.result));
   }
 
   function makeSuggestionButton(result, context) {
@@ -713,6 +922,12 @@
     const d = resultDistance(result);
     if (Number.isFinite(d)) bits.push(formatDistance(d));
     button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
+    if (result.matchNote) {
+      const accuracy = document.createElement('small');
+      accuracy.className = 'result-accuracy';
+      accuracy.textContent = result.matchNote;
+      button.querySelector('.result-copy').appendChild(accuracy);
+    }
     button.addEventListener('click', () => {
       el('typeaheadSuggestions').hidden = true;
       selectSearchResult(result, context);
@@ -721,6 +936,9 @@
   }
 
   function renderTypeahead(input, context) {
+    state.localSuggestionInput = input;
+    state.localSuggestionContext = context;
+    state.searchSubmissionActive = false;
     const results = localSuggestions(input.value);
     if (input === el('homeSearch')) {
       const box = el('typeaheadSuggestions');
@@ -729,39 +947,47 @@
       box.hidden = !results.length;
       return;
     }
-    if (input.value.trim().length < 2) return;
     openPlannerSearch(context);
+    if (input.value.trim().length < 2) return;
     const list = el('resultsList');
     list.replaceChildren();
     el('resultsTitle').textContent = results.length ? 'Suggestions' : 'Search when ready';
     if (results.length) {
       for (const result of results) list.appendChild(makeSuggestionButton(result, context));
     } else {
-      list.innerHTML = '<div class="result-message">Press Search for addresses and places. Suggestions are generated locally from the MK routing map.</div>';
+      list.innerHTML = '<div class="result-message">Press Search for addresses and places. Suggestions use local MK map data.</div>';
     }
   }
 
+  function normalizeSearchQuery(query) {
+    return String(query || '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim()
+      .replace(/\b(MK\d{1,2})\s*(\d[a-z]{2})\b/gi, (_, outward, inward) => outward.toUpperCase() + ' ' + inward.toUpperCase());
+  }
+
   let geocodeGate = Promise.resolve();
-  function waitForGeocoder() {
+  function waitForGeocoder(isCurrent = () => true) {
     const next = geocodeGate.then(async () => {
+      if (!isCurrent()) return false;
       const elapsed = Date.now() - state.lastGeocodeAt;
       if (elapsed < 1050) await sleep(1050 - elapsed);
+      if (!isCurrent()) return false;
       state.lastGeocodeAt = Date.now();
+      return true;
     });
     geocodeGate = next.catch(() => {});
     return next;
   }
 
-  async function geocode(query) {
-    const trimmed = query.trim();
-    if (!trimmed) return [];
+  async function geocode(query, isCurrent = () => true) {
+    const trimmed = normalizeSearchQuery(query);
+    if (!trimmed || !isCurrent()) return [];
     const coordinates = /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/.exec(trimmed);
     if (coordinates) {
       const lat = Number(coordinates[1]), lon = Number(coordinates[2]);
       if (lat < MK.south || lat > MK.north || lon < MK.west || lon > MK.east) return [];
       return [{lat, lon, name:'Map coordinates', display_name:trimmed}];
     }
-    await waitForGeocoder();
+    if (!await waitForGeocoder(isCurrent)) return [];
     const params = new URLSearchParams({
       q: trimmed,
       format: 'jsonv2',
@@ -778,27 +1004,39 @@
     try {
       const response = await fetch(`${NOMINATIM}?${params.toString()}`, { headers: { Accept: 'application/json' }, signal: controller.signal });
       if (!response.ok) throw new Error(`Search returned ${response.status}`);
-      return await response.json();
+      const results = await response.json();
+      if (!Array.isArray(results)) throw new Error('Search returned invalid results');
+      return results.filter(validateSearchResult);
     } finally { clearTimeout(timer); }
   }
 
-  function showResults(results, context, query) {
+  function showResults(results, context, query, message = '') {
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
     searchResultLayer.clearLayers();
     const displayResults = dedupeSearchResults(results);
-    el('resultsTitle').textContent = displayResults.length ? `Results for “${query}”` : 'No matching places';
+    el('resultsTitle').textContent = displayResults.length
+      ? `${displayResults.every(result => result.local) ? 'Local matches' : 'Results'} for “${query}”` : 'No matching places';
+
+    if (message) {
+      const status = document.createElement('div');
+      status.id = 'resultsMessage';
+      status.className = 'result-message';
+      status.setAttribute('role', 'status');
+      status.textContent = message;
+      list.appendChild(status);
+    }
 
     if (!displayResults.length) {
       const msg = document.createElement('div');
       msg.className = 'result-message';
-      msg.textContent = 'No Milton Keynes match found. Try a full postcode, street address or place name.';
-      list.appendChild(msg);
+      msg.textContent = 'No matching mapped place was found. Try a full postcode, street address or place name, or choose a point on the map.';
+      if (!message) list.appendChild(msg);
     } else {
       displayResults.forEach((result, index) => {
         const primary = conciseResultName(result);
-        const secondary = resultSecondary(result, primary);
+        const secondary = resultSecondary(result.matchNote ? {...result, matchNote: ''} : result, primary);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'result-item';
@@ -809,6 +1047,12 @@
         const distance = resultDistance(result);
         if (Number.isFinite(distance)) bits.push(formatDistance(distance));
         button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
+        if (result.matchNote) {
+          const accuracy = document.createElement('small');
+          accuracy.className = 'result-accuracy';
+          accuracy.textContent = result.matchNote;
+          button.querySelector('.result-copy').appendChild(accuracy);
+        }
         button.addEventListener('click', () => selectSearchResult(result, context));
         list.appendChild(button);
         const lat = Number(result.lat), lon = Number(result.lon);
@@ -834,6 +1078,8 @@
     if (state.stage !== 'planner') return;
     if (context === 'start') cancelStartLocation();
     searchRevision += 1;
+    state.searchSubmissionActive = false;
+    searchResultLayer.clearLayers();
     setRouteSheetCollapsed(false);
     state.plannerSearchOpen = true;
     state.searchContext = context;
@@ -845,6 +1091,9 @@
 
   function closeSearch() {
     searchRevision += 1;
+    state.searchSubmissionActive = false;
+    state.localSuggestionInput = null;
+    state.localSuggestionContext = null;
     state.plannerSearchOpen = false;
     el('resultsSheet').hidden = true;
     el('typeaheadSuggestions').hidden = true;
@@ -864,28 +1113,39 @@
   });
 
   async function runSearch(context, input) {
-    const query = input.value.trim();
+    const query = normalizeSearchQuery(input.value);
     if (!query) { input.focus(); return; }
     el('typeaheadSuggestions').hidden = true;
     if (context === 'start' || context === 'end') openPlannerSearch(context);
     const revision = ++searchRevision;
+    state.searchSubmissionActive = true;
+    searchResultLayer.clearLayers();
     input.blur();
     el('resultsSheet').hidden = false;
     el('resultsTitle').textContent = 'Searching…';
     el('resultsList').innerHTML = '<div class="result-message">Searching Milton Keynes…</div>';
-    try {
-      const results = await geocode(query);
-      if (revision !== searchRevision) return;
-      showResults(results, context, query);
-    } catch (err) {
-      if (revision !== searchRevision) return;
-      console.error(err);
-      el('resultsTitle').textContent = 'Search unavailable';
-      el('resultsList').innerHTML = '<div class="result-message">The public address-search service is temporarily unavailable. Try again shortly.</div>';
-    }
+    const localReady = loadPlaceIndex().catch(() => false);
+    const offline = navigator.onLine === false;
+    const coordinates = /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/.test(query);
+    const onlineResult = offline && !coordinates ? Promise.resolve({results: []})
+      : geocode(query, () => revision === searchRevision).then(results => ({results}), error => ({error}));
+    const [, online] = await Promise.all([localReady, onlineResult]);
+    if (revision !== searchRevision) return;
+    const local = searchLocalPlaces(query);
+    const localResults = local.length ? local : localSuggestions(query);
+    let message = '';
+    if (offline && !online.results?.length) message = localResults.length
+      ? "You're offline. Showing mapped local matches."
+      : "You're offline. No matching local place was found. Try a saved place or a map pin.";
+    else if (online.error) message = localResults.length
+      ? 'Online search is unavailable. Showing mapped local matches; check the entrance on the map.'
+      : 'Online search is unavailable. No matching local place was found. Try a saved place or a map pin.';
+    else if (!online.results.length && localResults.length) message = 'No online match was found. Showing mapped local matches.';
+    showResults([...(online.results || []), ...localResults], context, query, message);
   }
 
   function selectSearchResult(result, context) {
+    if (!validateSearchResult(result)) return;
     const lat = Number(result.lat);
     const lng = Number(result.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -3044,7 +3304,7 @@
 
   async function cacheOfflineDependencies(cache) {
     const urls = [
-      './data/network.json', './data/data-meta.json', './about.js', './index.html', './styles.css', './app.js', './routing.js', './manifest.webmanifest',
+      './data/network.json', './data/places.json', './data/data-meta.json', './about.js', './index.html', './styles.css', './app.js', './routing.js', './manifest.webmanifest',
       './icons/app-logo.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
       './vendor/leaflet.css',
       './vendor/leaflet.js',
@@ -3059,6 +3319,7 @@
             const parsed = parseBundledNetwork(await response.clone().json());
             if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Offline routing data is incomplete');
           }
+          if (url === './data/places.json') parsePlaceIndex(await response.clone().json());
           await cache.put(url, response.clone());
         }
       } catch (err) { console.warn('Could not cache offline dependency', url, err); }
@@ -3234,7 +3495,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.7';
+  el('app').dataset.appVersion = '0.14.8';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -3298,6 +3559,7 @@
   setStage('explore');
   setTurnIcon('straight');
   loadRedways();
+  loadPlaceIndex();
   const sharedRouteRestored = restoreSharedRoute();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
 

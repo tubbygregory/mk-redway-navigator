@@ -38,7 +38,8 @@ function harness() {
   }
   const state = {stage: 'explore', route: null, routeRevision: 1, pendingSaveKind: null, exploreFilter: 'all'};
   const context = vm.createContext({
-    state, el, gpxLoadRevision: 0, searchRevision: 0,
+    state, el, gpxLoadRevision: 0, searchRevision: 0, navigator: {onLine: true},
+    loadPlaceIndex: async () => false, searchLocalPlaces: () => [], localSuggestions: () => [],
     console: {warn(...args) { errors.push(args); }, error(...args) { errors.push(args); }},
     fetch(url) { const request = deferred(); downloads.push({url, ...request}); return request.promise; },
     parseGpx(text) {
@@ -68,6 +69,7 @@ function harness() {
   });
   vm.runInContext(code('  const CULTURAL_ROUTES_URL =', '  const redwayLayer ='), context);
   const routes = vm.runInContext('CULTURAL_ROUTES', context);
+  vm.runInContext(code('  function normalizeSearchQuery(', '  let geocodeGate'), context);
   for (const [from, to] of [
     ['  function setStage(stage)', '  function toast('],
     ['  function closeSearch()', "  for (const [id, context] of [['startSearch'"],

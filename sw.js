@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'mk-redway-shell-v37';
+const SHELL_CACHE = 'mk-redway-shell-v38';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',
@@ -8,6 +8,7 @@ const SHELL = [
   './routing.js',
   './about.js',
   './data/data-meta.json',
+  './data/places.json',
   './DATA-LICENCE.md',
   './cultural-routes/manifest.json',
   './cultural-routes/gpx-blue-main.gpx',
@@ -30,15 +31,15 @@ const SHELL = [
   './vendor/images/marker-icon-2x.png',
   './vendor/images/marker-shadow.png',
   './manifest.webmanifest',
-  './icons/app-logo.svg?v=0.14.7',
-  './icons/icon-maskable-512.png?v=0.14.7',
-  './icons/favicon.ico?v=0.14.7',
-  './icons/favicon-16.png?v=0.14.7',
-  './icons/favicon-32.png?v=0.14.7',
-  './icons/icon-192.png?v=0.14.7',
-  './icons/icon-512.png?v=0.14.7',
-  './icons/apple-touch-icon.png?v=0.14.7',
-  './icons/iphone16-splash.png?v=0.14.7'
+  './icons/app-logo.svg?v=0.14.8',
+  './icons/icon-maskable-512.png?v=0.14.8',
+  './icons/favicon.ico?v=0.14.8',
+  './icons/favicon-16.png?v=0.14.8',
+  './icons/favicon-32.png?v=0.14.8',
+  './icons/icon-192.png?v=0.14.8',
+  './icons/icon-512.png?v=0.14.8',
+  './icons/apple-touch-icon.png?v=0.14.8',
+  './icons/iphone16-splash.png?v=0.14.8'
 ];
 
 

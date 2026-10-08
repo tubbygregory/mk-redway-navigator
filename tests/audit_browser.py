@@ -6,6 +6,7 @@ from threading import Thread
 import os
 import re
 import xml.etree.ElementTree as ET
+from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +169,178 @@ def review_cultural_failure(page, url):
         assert page.url == url
     assert not popups, popups
 
+def local_place_fixtures(page, url):
+    """Use the deployed runtime index, also available in a clean live-review job."""
+    response = page.request.get(urljoin(url, 'data/places.json'))
+    assert response.ok, ('Local place data', response.status)
+    data = response.json()
+    assert data['format'] == 'mk-redway-places-v1'
+    entries = {entry['id']: entry for entry in data['entries']}
+    fixtures = {
+        'warbler': entries['w1071871187'],
+        'bannatyne': entries['w34961242'],
+        'huntley': entries['w359122007'],
+    }
+    assert fixtures['warbler']['name'] == 'Warbler on the Wharf'
+    assert fixtures['bannatyne']['name'] == 'Bannatyne Health Club'
+    assert fixtures['huntley']['name'] == '8-55' and fixtures['huntley']['street'] == 'Huntley Crescent'
+    assert fixtures['huntley']['kind'] == 'building' and fixtures['huntley'].get('house_number') != '25'
+    return fixtures
+
+def save_selected_destination(page, expected):
+    """Observe coordinates through real Save/persistence, without app-state hooks."""
+    page.locator('#saveFavouriteBtn').click()
+    expect(page.locator('#toast')).to_have_text('Favourite saved')
+    saved = page.evaluate("JSON.parse(localStorage.getItem('mk-redway-saved-v1')).favourites")
+    assert len(saved) == 1, saved
+    destination = saved[0]
+    assert abs(destination['lat'] - expected['lat']) < .0000001, (destination, expected)
+    assert abs(destination['lng'] - expected['lon']) < .0000001, (destination, expected)
+    page.locator('#closePlace').click()
+    page.locator('#savedPlacesBtn').click()
+    expect(page.locator('#favouritesList .saved-remove')).to_have_count(1)
+    page.locator('#favouritesList .saved-remove').click()
+    expect(page.locator('#favouritesList .saved-remove')).to_have_count(0)
+    page.locator('#closeSaved').click()
+    return destination
+
+def review_local_place_search(page, url, offline=False, fixtures=None, screenshots=False, with_location=False):
+    """Real MK POIs/addresses remain findable during empty, failed and offline searches."""
+    fixtures = fixtures or local_place_fixtures(page, url)
+    requests = []
+    page.on('request', lambda request: requests.append(request.url)
+            if 'nominatim.openstreetmap.org/search' in request.url else None)
+    pattern = '**/nominatim.openstreetmap.org/search?*'
+    response = {'status': 200, 'json': []}
+    def public_search(route, request):
+        route.fulfill(headers={'Access-Control-Allow-Origin': '*'}, **response)
+    if not offline:
+        page.route(pattern, public_search)
+    else:
+        assert page.evaluate('navigator.onLine') is False, 'Offline browser emulation was lost'
+    if page.get_by_role('button', name='Not now', exact=True).is_visible():
+        page.get_by_role('button', name='Not now', exact=True).click()
+    if with_location:
+        page.get_by_role('button', name='Show my location', exact=True).click()
+        expect(page.locator('.user-pulse')).to_be_visible()
+    try:
+        cases = [
+            ('warbler', 'Warbler', re.compile('^Warbler on the Wharf'), 200),
+            ('bannatyne', 'Bannatynes', re.compile('^Bannatyne Health Club'), 503),
+            ('huntley', '25 Huntley Crescent', re.compile('^8-55 Huntley Crescent'), 200),
+        ]
+        row_and_pin = []
+        for key, query, canonical, status in cases:
+            response = {'status': status, 'body': 'Unavailable'} if status == 503 else {'status': 200, 'json': []}
+            if key == 'huntley':
+                # The public response contains only invalid/outside points. A
+                # source-backed local building must still be offered truthfully.
+                response = {'status': 200, 'json': [
+                    {'lat': '55.95', 'lon': '-3.19', 'name': 'Outside coverage fixture'},
+                    {'lat': 'not-a-coordinate', 'lon': '-.74', 'name': 'Invalid coordinate fixture'},
+                    {'lat': '', 'lon': '', 'name': 'Empty coordinate fixture'}, None,
+                ]}
+            for selection in (['row', 'pin'] if key == 'warbler' else ['row']):
+                before = len(requests)
+                page.locator('#homeSearch').fill('')
+                page.locator('#homeSearch').press_sequentially(query, delay=15)
+                suggestion = page.locator('.typeahead-item').filter(has=page.locator('strong', has_text=canonical)).first
+                expect(suggestion).to_be_visible()
+                assert suggestion.bounding_box()['height'] >= 44, (key, 'small suggestion target')
+                # Wait beyond the shared geocoder pacing interval: a delayed
+                # public autocomplete request is still a privacy regression.
+                page.wait_for_timeout(1100)
+                assert len(requests) == before, ('Typing sent public search', query, requests)
+                if screenshots:
+                    (ROOT / 'test-results').mkdir(exist_ok=True)
+                    theme = page.locator('html').get_attribute('data-theme')
+                    page.screenshot(path=str(ROOT / 'test-results' / f'address-typeahead-{page.viewport_size["width"]}-{key}-{theme}.png'))
+                page.locator('#homeSearchSubmit').click()
+                expect(page.locator('#resultsTitle')).to_contain_text('Local matches')
+                if page.locator('#resultsSheetHandle').get_attribute('aria-expanded') == 'false':
+                    page.locator('#resultsSheetHandle').click()
+                    expect(page.locator('#resultsSheetHandle')).to_have_attribute('aria-expanded', 'true')
+                expect(page.locator('#resultsMessage')).to_have_attribute('role', 'status')
+                expect(page.locator('#resultsMessage')).to_contain_text('offline' if offline else 'unavailable' if status == 503 else 'No online match')
+                assert len(requests) == before + (0 if offline else 1), ('Explicit search request count', query, requests)
+                rows = page.locator('.result-item')
+                names = rows.locator('.result-copy strong').all_text_contents()
+                index = next(index for index, name in enumerate(names) if canonical.search(name))
+                row = rows.nth(index)
+                expect(row).to_be_visible()
+                assert row.bounding_box()['height'] >= 44, (key, 'small result target')
+                expect(page.locator('.search-result-marker')).to_have_count(len(names))
+                assert not any('fixture' in name for name in names), names
+                if with_location:
+                    expect(row.locator('.result-copy > small').first).to_contain_text(re.compile(r'\d.*(?:mi|km|ft|m)'))
+                if key == 'huntley':
+                    expect(row.locator('.result-accuracy')).to_have_text('Building match · Exact house number 25 not found in local data · check entrance on map')
+                    assert not any(re.match(r'^25\s+Huntley Crescent', name) for name in names), names
+                    colours = row.locator('.result-accuracy').evaluate('(el) => [getComputedStyle(el).color, getComputedStyle(el.closest("#resultsSheet")).backgroundColor]')
+                    assert contrast_ratio(*colours) >= 4.5, ('Address accuracy contrast', colours)
+                    # Long building warnings must leave the last alternative
+                    # reachable through the real scrolling list on narrow phones.
+                    rows.last.scroll_into_view_if_needed()
+                    expect(rows.last).to_be_visible()
+                    assert rows.last.evaluate('(el) => {const r=el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}'), 'Last address result is covered'
+                    list_scroll = page.locator('#resultsList').evaluate('(el) => ({needed:el.scrollHeight>el.clientHeight, top:el.scrollTop})')
+                    assert not list_scroll['needed'] or list_scroll['top'] > 0, 'Address list did not scroll'
+                    if screenshots:
+                        page.screenshot(path=str(ROOT / 'test-results' / f'address-last-result-{page.viewport_size["width"]}-{theme}.png'))
+                    row.scroll_into_view_if_needed()
+                if screenshots:
+                    page.screenshot(path=str(ROOT / 'test-results' / f'address-results-{page.viewport_size["width"]}-{key}-{theme}.png'))
+                primary = row.locator('.result-copy strong').inner_text()
+                if selection == 'pin':
+                    # On a short/narrow phone the expanded results cover the
+                    # centre of the map. Use the normal handle to expose pins.
+                    if page.locator('#resultsSheetHandle').get_attribute('aria-expanded') == 'true':
+                        page.locator('#resultsSheetHandle').click()
+                        expect(page.locator('#resultsSheetHandle')).to_have_attribute('aria-expanded', 'false')
+                    page.locator('.search-result-marker').nth(index).click()
+                else:
+                    row.click()
+                expect(page.locator('#placeName')).to_have_text(primary)
+                if key == 'huntley':
+                    expect(page.locator('#placeAddress')).to_have_text('Building match · Exact house number 25 not found in local data · check entrance on map')
+                destination = save_selected_destination(page, fixtures[key])
+                assert canonical.search(destination['name']), destination
+                if key == 'huntley':
+                    assert 'Exact house number 25 not found in local data' in destination['address'], destination
+                if key == 'warbler':
+                    row_and_pin.append({name: destination[name] for name in ['name', 'address', 'lat', 'lng']})
+        assert row_and_pin[0] == row_and_pin[1], ('Row and map pin selected different destinations', row_and_pin)
+        if not offline:
+            # A submitted, valid provider match takes precedence over its local
+            # representation. Duplicates and invalid coordinates cannot add pins.
+            warbler = fixtures['warbler']
+            submitted = {
+                'osm_type': 'way', 'osm_id': 1071871187,
+                'lat': str(warbler['lat']), 'lon': str(warbler['lon']), 'name': warbler['name'],
+                'address': {'road': warbler['street'], 'city': 'Milton Keynes', 'postcode': warbler['postcode']},
+                'display_name': 'Submitted-provider result fixture: Warbler on the Wharf, Milton Keynes',
+            }
+            response = {'status': 200, 'json': [submitted, submitted, {'lat': '', 'lon': '', 'name': 'Invalid fixture'}]}
+            before = len(requests)
+            page.locator('#homeSearch').fill('Warbler')
+            page.locator('#homeSearchSubmit').click()
+            expect(page.locator('#resultsTitle')).to_contain_text('Results for')
+            if page.locator('#resultsSheetHandle').get_attribute('aria-expanded') == 'false':
+                page.locator('#resultsSheetHandle').click()
+                expect(page.locator('#resultsSheetHandle')).to_have_attribute('aria-expanded', 'true')
+            expect(page.locator('.result-item')).to_have_count(1)
+            expect(page.locator('.search-result-marker')).to_have_count(1)
+            expect(page.locator('.result-item .result-copy span')).to_contain_text('Submitted-provider result fixture')
+            assert len(requests) == before + 1, requests
+            page.locator('.result-item').click()
+            save_selected_destination(page, warbler)
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Address search overflow'
+        print(f'PASS local place search {page.viewport_size["width"]}x{page.viewport_size["height"]}: real Warbler/Bannatyne/Huntley building, row/pin identity, no public typing requests, ' + ('offline' if offline else 'empty/503/outside-invalid provider results'))
+    finally:
+        if not offline:
+            page.unroute(pattern, public_search)
+        page.locator('#homeSearch').fill('')
+
 def contrast_ratio(foreground, background):
     def luminance(colour):
         channels = [int(value) / 255 for value in re.findall(r'\d+', colour)[:3]]
@@ -243,6 +416,7 @@ def review(browser, url):
                     placeholder = page.locator(selector).evaluate('(el) => getComputedStyle(el, "::placeholder").color')
                     assert contrast_ratio(placeholder, expected) >= 4.5, (system, choice, selector, placeholder, expected)
         page.locator('#closeSettings').click()
+        review_local_place_search(page, url, screenshots=True, with_location=True)
         # Local typing never sends a public geocoder request.
         requests=[];page.on('request',lambda r: requests.append(r.url) if 'nominatim.openstreetmap.org/search' in r.url else None)
         page.locator('#homeSearch').fill('Portway')
