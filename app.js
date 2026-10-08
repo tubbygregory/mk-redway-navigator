@@ -924,6 +924,11 @@
     el('routeAlternatives').replaceChildren();
     el('routeInsights').hidden = true;
     el('approachNote').hidden = true;
+    el('routeApproachSummary').hidden = true;
+    el('routeApproachSummary').textContent = '';
+    el('routeTrackStatus').hidden = true;
+    el('routeClassification').hidden = false;
+    el('routeModeLabel').textContent = state.mode === 'walk' ? 'Walking' : 'Cycling';
     el('roadStat').textContent = '—';
     el('retryRouteBtn').hidden = true;
     el('startNavBtn').disabled = true;
@@ -1679,6 +1684,7 @@
 
   // All visible sheet handles share touch, mouse and keyboard behaviour.
   function setSheetCollapsed(sheet, collapsed) {
+    if (sheet.id === 'routeSheet') el('routeDetails').scrollTop = 0;
     const handle = sheet.querySelector('.sheet-handle');
     sheet.classList.toggle('is-collapsed', collapsed);
     handle.setAttribute('aria-expanded', String(!collapsed));
