@@ -42,7 +42,7 @@ class BrandingAssetsTests(unittest.TestCase):
         self.assertNotIn("wordmark.png", html + sw)
         self.assertIn(f"app-logo.svg?v={version}", html)
         self.assertIn("MK Redway</strong>", html)
-        self.assertIn("mk-redway-shell-v33", sw)
+        self.assertIn("mk-redway-shell-v34", sw)
         self.assertNotIn('fill="#fff"/>\\n  <rect x="24"', svg)
         self.assertIn('x="4" y="4" width="504" height="504" rx="108"', svg)
         self.assertIn('id="mark"', svg)\n        self.assertIn('stroke="#f20d24"', svg)
