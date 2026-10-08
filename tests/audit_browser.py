@@ -440,7 +440,9 @@ def saved_map_point(page):
     if viewport['width'] >= 600:
         return {'x': viewport['width'] * .72, 'y': viewport['height'] * .46}
     overlay = page.locator('#exploreUI').bounding_box()
-    y = max(picker['y'] + picker['height'] + 18, overlay['y'] + overlay['height'] + 18, viewport['height'] * .58)
+    credit = page.locator('.leaflet-control-attribution').bounding_box()
+    y = max(picker['y'] + picker['height'] + 18, overlay['y'] + overlay['height'] + 18,
+            credit['y'] + credit['height'] + 10, viewport['height'] * .58)
     if y > viewport['height'] - 110:
         return {'x': viewport['width'] * .72, 'y': viewport['height'] * .46}
     return {'x': viewport['width'] * .42, 'y': y}
@@ -683,7 +685,8 @@ def review_cultural_navigation(browser, url):
     expect(page.locator('.route-line')).to_have_count(1)
     assert page.locator('.route-line').evaluate('(el) => getComputedStyle(el).stroke') == 'rgb(169, 37, 29)'
     assert page.locator('.cultural-route-line').evaluate('(el) => getComputedStyle(el).stroke') == CULTURAL_COLOURS['blue']
-    expect(page.locator('#culturalRouteLegend')).to_contain_text('Red: route to Cultural Route start / join')
+    expect(page.locator('#culturalJoinLabel')).to_have_text('Red: start / join')
+    expect(page.locator('#culturalTrackLabel')).to_contain_text('Blue: official GPX track')
     assert_source_geometry(exported_points(page), 'blue', 'main')
     if page.locator('#routeSheetHandle').get_attribute('aria-expanded') == 'true': page.locator('#routeSheetHandle').click()
     page.screenshot(path=str(ROOT / 'test-results' / 'cultural-red-join-blue-track.png'))

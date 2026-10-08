@@ -222,7 +222,7 @@
     mapCredit.style.maxWidth = `${Math.min(260, Math.max(120, width - 24))}px`;
     const credit = mapCredit.getBoundingClientRect();
     const visibleRect = node => {
-      if (!node || node.hidden || !node.getClientRects().length) return null;
+      if (!node || node.hidden || !node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') return null;
       const rect = node.getBoundingClientRect();
       return {left: rect.left - frame.left, right: rect.right - frame.left,
         top: rect.top - frame.top, bottom: rect.bottom - frame.top};
@@ -230,9 +230,13 @@
     const topPanel = visibleRect(el(state.navigating ? 'navBanner' : state.stage === 'planner' ? 'plannerUI' : 'exploreUI'));
     const preferredTop = Math.ceil((topPanel?.bottom || 4) + 8);
     const portrait = width < 900 && width <= height;
+    const notification = el('toast');
+    const notificationVisible = notification && !notification.hidden;
+    if (notificationVisible) notification.style.maxWidth = `${portrait ? width - 32 : Math.min(420, Math.max(150, width - (topPanel?.right || 0) - 24))}px`;
+    const notificationSpace = portrait && notificationVisible ? notification.getBoundingClientRect().height + 12 : 0;
     // A full-width sheet must leave a strip between the search and the sheet
     // for the credit, including when favourite chips or instructions wrap.
-    app.style.setProperty('--foreground-panel-max-height', `${Math.max(90, height - preferredTop - credit.height - 26)}px`);
+    app.style.setProperty('--foreground-panel-max-height', `${Math.max(90, height - preferredTop - credit.height - notificationSpace - 26)}px`);
     const panels = ['exploreUI', 'plannerUI', 'placeSheet', 'routeSheet', 'savedSheet', 'settingsSheet',
       'exploreSheet', 'resultsSheet', 'installSheet', 'navBanner', 'navBottom', 'homeNav',
       'browseMapControls', 'mapControls', 'mapKeyPopover', 'arrivalSummary', 'locationRecovery'];
@@ -254,13 +258,18 @@
     const position = candidates[0] || {left: Math.min(maxX, preferredX), top: Math.min(maxY, preferredY)};
     mapCredit.style.left = `${Math.round(position.left)}px`;
     mapCredit.style.top = `${Math.round(position.top)}px`;
+    if (notificationVisible) {
+      notification.style.left = `${portrait ? width / 2 : ((topPanel?.right || 0) + width) / 2}px`;
+      notification.style.top = portrait ? `${Math.round(position.top + credit.height + 8)}px` : 'auto';
+      notification.style.bottom = portrait ? 'auto' : '122px';
+    }
   }
 
   // Panels change size and visibility without a window resize. Observe the
   // instruction itself too, since a joining instruction can be multiline.
   const creditObserver = new ResizeObserver(syncBrowseAttribution);
   for (const id of ['exploreUI', 'plannerUI', 'placeSheet', 'routeSheet', 'savedSheet', 'settingsSheet',
-    'exploreSheet', 'resultsSheet', 'navBanner', 'navBottom', 'homeNav', 'arrivalSummary']) {
+    'exploreSheet', 'resultsSheet', 'navBanner', 'navBottom', 'homeNav', 'arrivalSummary', 'toast']) {
     const panel = el(id);
     if (panel) {
       creditObserver.observe(panel);
@@ -328,7 +337,8 @@
     clearTimeout(state.toastTimer);
     t.textContent = message;
     t.hidden = false;
-    state.toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+    syncBrowseAttribution();
+    state.toastTimer = setTimeout(() => { t.hidden = true; syncBrowseAttribution(); }, ms);
   }
 
   function setRouteStatus(msg, kind = '') {
@@ -508,8 +518,8 @@
     return typeof value === 'string' && value.length <= 80 && !/[\x00-\x1f\x7f]/.test(value) ? value.trim() : null;
   }
 
-  function nextSavedPinName() {
-    const used = new Set(state.saved.favourites.map(place => place.name));
+  function nextSavedPinName(saved) {
+    const used = new Set(saved.favourites.map(place => place.name));
     let number = 1;
     while (used.has('Saved pin ' + number)) number++;
     return 'Saved pin ' + number;
@@ -664,28 +674,35 @@
     return true;
   }
 
-  function savePlace(kind, candidate) {
+  function savePlace(kind, candidate, {mapPin = false} = {}) {
+    let customName = '';
     if (kind === 'favourite' && state.pendingSaveKind === 'favourite') {
       const name = favouriteName(el('savedFavouriteNameInput').value);
       if (name === null) { toast('Use a name of up to 80 characters, without line breaks.', 6000); return {ok: false}; }
-      if (name) candidate = {...candidate, name};
+      customName = name;
+      if (customName) candidate = {...candidate, name: customName};
     }
     const place = normalizeSavedPlace(candidate);
     if (!place || !['home', 'work', 'favourite'].includes(kind)) return {ok: false};
-    const duplicate = kind === 'favourite' && state.saved.favourites.some(saved => sameSavedPlace(saved, place));
-    if (duplicate) { syncSaveFavouriteButton(); return {ok: true, duplicate: true}; }
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return {ok: false};
+    const saved = snapshot.saved;
+    if (kind === 'favourite' && mapPin && !customName) place.name = nextSavedPinName(saved);
+    const duplicate = kind === 'favourite' && saved.favourites.some(existing => sameSavedPlace(existing, place));
+    if (duplicate) { state.saved = saved; renderSavedPlaces(); return {ok: true, duplicate: true}; }
     if (!validateSearchResult({lat: place.lat, lon: place.lng})) {
       toast('Choose a point within the Milton Keynes map area.', 6000);
       return {ok: false};
     }
-    if (kind === 'favourite' && state.saved.favourites.length >= 30) {
+    if (kind === 'favourite' && saved.favourites.length >= 30) {
+      state.saved = saved; renderSavedPlaces();
       toast('You can save up to 30 favourites. Remove one before adding another.', 6000);
       return {ok: false};
     }
-    const next = {...state.saved, favourites: [...state.saved.favourites]};
+    const next = {...saved, favourites: [...saved.favourites]};
     if (kind === 'favourite') next.favourites.unshift(place);
     else next[kind] = place;
-    return {ok: persistSavedPlaces(next), duplicate: false};
+    return {ok: persistSavedPlaces(next, snapshot.value), duplicate: false};
   }
 
   function savedPlaceFromResult(result) {
@@ -856,9 +873,9 @@
       return true;
     }
     const kind = state.pendingSaveKind;
-    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : nextSavedPinName();
+    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'Saved pin';
     const candidate = {id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, address: fmtCoord(latlng), lat: latlng.lat, lng: latlng.lng};
-    const result = savePlace(kind, candidate);
+    const result = savePlace(kind, candidate, {mapPin: true});
     if (!result.ok) return true;
     closeSearch();
     finishSavedSearch();
@@ -1304,6 +1321,7 @@
   }
 
   function renderTypeahead(input, context) {
+    state.searchMapPickContext = null;
     state.localSuggestionInput = input;
     state.localSuggestionContext = context;
     state.searchSubmissionActive = false;
@@ -1379,6 +1397,7 @@
   }
 
   function showResults(results, context, query, message = '') {
+    state.searchMapPickContext = null;
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
@@ -1499,6 +1518,7 @@
 
   function openPlannerSearch(context) {
     if (state.stage !== 'planner') return;
+    state.searchMapPickContext = null;
     if (context === 'start') cancelStartLocation();
     searchRevision += 1;
     state.searchSubmissionActive = false;
@@ -1537,6 +1557,7 @@
   });
 
   async function runSearch(context, input) {
+    state.searchMapPickContext = null;
     const query = normalizeSearchQuery(input.value);
     if (!query) { input.focus(); return; }
     el('typeaheadSuggestions').hidden = true;
@@ -2075,23 +2096,31 @@
   }
 
   async function refreshBrowseLocation({ center = true, quiet = false } = {}) {
+    if (state.navigating || state.stage === 'navigation') return false;
+    const request = state.browseLocationRevision = (state.browseLocationRevision || 0) + 1;
+    const screen = searchRevision, stage = state.stage;
+    // A newer lookup, manual search or screen transition owns the map.
+    const isCurrent = () => state.browseLocationRevision === request && searchRevision === screen &&
+      state.stage === stage && !state.navigating && state.stage !== 'navigation';
     const button = el('browseLocateBtn');
     if (button) button.disabled = true;
     el('browseLocationRecovery').hidden = true;
     try {
       const pos = await acquireCurrentLocation();
+      if (!isCurrent()) return false;
       state.userLatLng = pos.latlng;
       setUserMarker(pos.latlng);
       if (center) map.setView(pos.latlng, Math.max(map.getZoom(), 15));
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       if (!quiet && ['explore', 'place'].includes(state.stage)) {
         el('browseLocationMessage').textContent = locationFailureMessage(error);
         el('browseLocationRecovery').hidden = false;
       }
       return false;
     } finally {
-      if (button) button.disabled = false;
+      if (button && state.browseLocationRevision === request) button.disabled = false;
     }
   }
 
@@ -4218,7 +4247,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.9';
+  el('app').dataset.appVersion = '0.14.10';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

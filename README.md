@@ -62,7 +62,7 @@ Official classification: Milton Keynes City Council / Get Around MK. Routing: ©
 
 See [DATA-LICENCE.md](DATA-LICENCE.md) for source links and licensing boundaries. This is not an official Milton Keynes City Council service.
 
-The current rendered UX review and remaining physical-device checks are recorded in [UX-REVIEW-2026-10-08-v0149.md](UX-REVIEW-2026-10-08-v0149.md).
+The implemented design and friendliness review and remaining physical-device checks are recorded in [UX-REVIEW-2026-10-08-v01410.md](UX-REVIEW-2026-10-08-v01410.md). The earlier [v0.14.9 review](UX-REVIEW-2026-10-08-v0149.md) records the Saved and Cultural joining follow-up.
 
 ## Development / local testing
 
@@ -79,6 +79,9 @@ python3 scripts/build_site.py
 python3 -m unittest discover -s tests -p 'test_*.py'
 node --test tests/routing.test.cjs
 python3 tests/browser_smoke.py
+python3 tests/pwa_smoke.py
+python3 tests/audit_browser.py
+python3 tests/design_polish_browser.py
 python3 -m http.server 8000 --directory dist
 ```
 

@@ -54,6 +54,7 @@ function harness() {
   ]) vm.runInContext(code(from, to), context);
   vm.runInContext(code('  function normalizeSearchQuery(', '  let geocodeGate'), context);
   vm.runInContext(code('  function makeSuggestionButton(', '  function normalizeSearchQuery('), context);
+  vm.runInContext(code("  for (const [id, context] of [['startSearch'", "  el('homeSearch').addEventListener('input'"), context);
   vm.runInContext(code("  el('homeSearch').addEventListener('input'", '  async function runSearch('), context);
   vm.runInContext(code("  map.on('click', e => {", '  async function reverseGeocode('), context);
   vm.runInContext(code('  async function dropDestinationPin(', '  let longPressTimer'), context);
@@ -484,4 +485,44 @@ test('long-press recovery obeys MK bounds and explicit Saved picker behavior wit
   assert.deepEqual(savedPoints, [{lat: 52.026, lng: -.784}]);
   assert.equal(h.selected.length, 1, 'Saved map recovery must use the existing saved-pin flow');
   assert.equal(reverseRequests, 0);
+});
+
+test('opening or typing in a different planner endpoint cancels the old map picker before a later map tap', () => {
+  for (const action of ['open', 'type']) {
+    const h = harness();
+    h.context.beginResultMapPick('start');
+    if (action === 'open') h.el('endSearch').listeners.focus();
+    else {
+      h.el('endSearch').value = 'New destination';
+      h.el('endSearch').listeners.input();
+    }
+    h.mapListeners.click({latlng: {lat: 52.026, lng: -.784}});
+    assert.equal(h.selected.length, 0, `${action} must not apply a map point to the old starting-point picker`);
+    assert.equal(h.state.searchMapPickContext, null);
+    h.context.showResults([place('Chosen destination')], 'end', 'New destination');
+    h.el('resultsList').children.find(item => item.className === 'result-item').listeners.click();
+    assert.equal(h.selected[0].which, 'end');
+    assert.equal(h.selected[0].label, 'Chosen destination');
+  }
+});
+
+test('a submitted replacement search cannot leave the previous map picker active during or after its fetch', async () => {
+  for (const [stage, oldContext, newContext, inputId] of [
+    ['planner', 'start', 'end', 'endSearch'], ['explore', 'destination', 'destination', 'homeSearch']
+  ]) {
+    const h = harness(), request = deferred();
+    h.state.stage = stage;
+    h.context.beginResultMapPick(oldContext);
+    h.context.geocode = () => request.promise;
+    const input = h.el(inputId); input.value = 'Replacement search';
+    const pending = h.context.runSearch(newContext, input);
+    h.mapListeners.click({latlng: {lat: 52.026, lng: -.784}});
+    assert.equal(h.selected.length, 0, 'pending search must cancel the old picker');
+    request.resolve([place('Replacement result')]); await pending;
+    h.mapListeners.click({latlng: {lat: 52.027, lng: -.785}});
+    assert.equal(h.selected.length, 0, 'completed search must not restore the old picker');
+    h.el('resultsList').children.find(item => item.className === 'result-item').listeners.click();
+    assert.equal(h.selected[0].which, 'end');
+    assert.equal(h.selected[0].label, 'Replacement result');
+  }
 });

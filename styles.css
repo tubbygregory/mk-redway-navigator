@@ -336,8 +336,9 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
 .leaflet-pane .route-line { stroke: var(--red); stroke-width: 7; opacity: .98; }
 .user-pulse {
   width: 18px; height: 18px; border-radius: 50%;
-  background: #1769e0; border: 3px solid #fff;
-  box-shadow: 0 0 0 6px rgba(23,105,224,.20), 0 2px 5px rgba(0,0,0,.25);
+  background: var(--red); border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(169,37,29,.20), 0 2px 5px rgba(0,0,0,.25);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--red) 20%, transparent), 0 2px 5px rgba(0,0,0,.25);
 }
 
 /* Keep Leaflet attribution clear of the iPhone bottom sheets. */
@@ -1946,6 +1947,8 @@ html[data-theme="high-contrast"].ios-standalone #app::after {
 .result-copy span, .result-copy small { font-size: 13px; line-height: 1.4; }
 .result-copy .result-address { display: block; overflow: visible; -webkit-line-clamp: unset; }
 .result-copy small.result-accuracy { font-size: 13px; line-height: 1.4; }
+.results-sheet > .sheet-heading { flex-shrink: 0; align-items: flex-start; padding-block: 4px; }
+.results-sheet > .sheet-heading strong { line-height: 1.3; overflow-wrap: anywhere; }
 .results-help { padding: 8px 2px 12px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .result-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .result-recovery-actions button { flex: 1 1 120px; min-height: 44px; }
@@ -1957,26 +1960,41 @@ html[data-theme="high-contrast"].ios-standalone #app::after {
 .place-title-row > .small-icon { flex: 0 0 44px; }
 .location-intro span, .saved-place-picker p, .sheet-handle-label { font-size: 13px; line-height: 1.4; }
 .location-intro-actions button { min-height: 44px; }
+.sheet-handle { background: var(--surface-solid); }
+.toast { width: max-content; overflow-wrap: anywhere; }
 
 /* Route details scroll independently of the safety summary and main action. */
 .route-sheet { display: flex; flex-direction: column; overflow: hidden; }
 .route-sheet > .sheet-handle, .route-sheet > .sheet-summary, .route-sheet > .route-actions, .route-sheet > #retryRouteBtn { flex-shrink: 0; }
 .route-sheet .route-summary { align-items: center; gap: 10px; }
+.route-sheet .route-summary .route-meta { flex-direction: column; align-items: flex-end; gap: 3px; }
 .route-details { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 2px 3px; }
 .route-details .mode-row { margin-top: 5px; }
+.route-classification { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.route-classification b { color: var(--text); }
 .route-sheet .route-actions { margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--border); background: var(--surface-solid); }
 .route-sheet .route-actions button { min-height: 48px; }
 #routeModeLabel, #routeTrackStatus { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+#routeModeLabel { margin-top: 0; }
+#routeTrackStatus { margin: 4px 0; }
 .route-approach-summary { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: #fff2d5; color: #674400; font-size: 13px; line-height: 1.4; }
 .route-status { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.route-status.is-ready-preview { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .route-toggle, .mode-chip, .pref-menu button { min-height: 44px; font-size: 13px; }
 .route-mix-legend, .route-insights > span, .road-share-note { font-size: 12px; line-height: 1.4; }
 .route-option strong { font-size: 14px; }
 .route-option span { font-size: 13px; line-height: 1.4; }
 .route-more-menu button, .route-more-menu a { font-size: 13px; }
+.route-more-menu { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.route-sheet:has(#routeMoreMenu:not([hidden])) .route-details { display: none; }
+.route-sheet:has(#routeMoreMenu:not([hidden])) #arrivalStat { display: none; }
+.route-sheet:has(#routeMoreMenu:not([hidden])) .route-summary { padding-block: 4px; }
+.route-sheet:has(#routeMoreMenu:not([hidden])) .route-actions { margin-top: 5px; padding-top: 6px; }
+.route-sheet:has(#routeMoreMenu:not([hidden])) .route-actions button { min-height: 44px; }
 .cultural-route-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0; font-size: 13px; line-height: 1.4; }
 .cultural-route-legend > span { display: inline-flex; align-items: center; gap: 5px; }
 .cultural-legend-swatch { display: inline-block; flex: 0 0 18px; width: 18px; height: 4px; border-radius: 2px; }
+.cultural-join-swatch { background: var(--red); }
 html[data-theme="dark"] .route-approach-summary { background: #3a2c13; color: #ffd58c; }
 html[data-theme="high-contrast"] .route-approach-summary { border: 1px solid var(--border); background: var(--surface-solid); color: var(--text); }
 .arrival-summary { position: absolute; z-index: 1460; left: 50%; bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px)); transform: translateX(-50%); width: min(430px, calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))); max-height: calc(var(--visual-height, 100dvh) - 40px); overflow-y: auto; padding: 20px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); }
@@ -1984,6 +2002,7 @@ html[data-theme="high-contrast"] .route-approach-summary { border: 1px solid var
 #arrivalDestination { display: block; font-size: 23px; line-height: 1.25; overflow-wrap: anywhere; }
 .arrival-summary p { margin: 9px 0 16px; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .arrival-done { width: 100%; }
+#app:has(#arrivalSummary:not([hidden])) #routeSheet { visibility: hidden; }
 
 /* The selected route remains strong; wide previews show a quieter network. */
 #app[data-stage="planner"] .leaflet-pane .superredway-line { opacity: .38; }
@@ -2022,6 +2041,7 @@ html[data-theme="high-contrast"][data-network-zoom="street"] #app[data-stage="pl
 .quick-place-scroll-hint { display: none; position: absolute; top: 8px; bottom: 3px; right: 0; width: 26px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-solid); color: var(--accent-text); font-size: 22px; box-shadow: -5px 0 10px var(--surface-solid); pointer-events: none; }
 .quick-places-shell[data-can-scroll="true"] .quick-place-scroll-hint { display: inline-flex; }
 .saved-row-copy strong { font-size: 16px; overflow-wrap: anywhere; }
+.saved-sheet > .sheet-heading { position: sticky; top: 44px; z-index: 2; background: var(--surface-solid); }
 .saved-row-copy small { font-size: 13px; line-height: 1.4; }
 .saved-favourite-row { grid-template-columns: minmax(0, 1fr) auto; }
 .saved-favourite-open { grid-template-columns: 34px minmax(0, 1fr); gap: 7px; }
@@ -2066,7 +2086,7 @@ html[data-theme="high-contrast"][data-network-zoom="street"] #app[data-stage="pl
 .offline-button { border-radius: 14px; }
 .settings-sheet .compact-action { border-radius: 14px; }
 .leaflet-control-zoom { border: 1px solid var(--border) !important; border-radius: 14px !important; overflow: hidden; box-shadow: var(--shadow); }
-.leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; background: var(--surface-solid); color: var(--text); border-color: var(--border); }
+.leaflet-control-zoom.leaflet-bar a { width: 44px; height: 44px; line-height: 44px; background: var(--surface-solid); color: var(--text); border-color: var(--border); }
 .leaflet-control-zoom a:hover, .leaflet-control-zoom a:focus { background: var(--soft); color: var(--text); }
 .leaflet-control-zoom a.leaflet-disabled { background: var(--surface-solid); color: var(--muted); }
 .leaflet-control-zoom a:focus-visible { outline: 3px solid var(--accent-text); outline-offset: -3px; }
@@ -2074,14 +2094,31 @@ html[data-theme="high-contrast"][data-network-zoom="street"] #app[data-stage="pl
 .map-attribution { position: absolute; z-index: 1100; float: none; margin: 0 !important; pointer-events: auto; }
 .map-attribution a:focus-visible, .cultural-route-actions a:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
 
+@media (max-width: 370px) {
+  .search-pill { grid-template-columns: 28px minmax(0, 1fr) 44px 44px; }
+  .search-pill .visible-settings, .search-pill .search-submit { width: 44px; min-width: 44px; height: 44px; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .nav-banner { grid-template-columns: 46px minmax(0, 1fr) 44px; }
+  .nav-banner .nav-round-button { width: 44px; min-width: 44px; height: 44px; }
+}
+
 @media (orientation: portrait) and (max-width: 899px) {
-  .route-sheet:not(.is-collapsed) { max-height: min(65dvh, calc(var(--visual-height, 100dvh) - 145px)); }
+  .route-sheet:not(.is-collapsed) { max-height: min(65dvh, calc(var(--visual-height, 100dvh) - 145px), var(--foreground-panel-max-height, 100dvh)); }
+  .route-sheet:has(#routeMoreMenu:not([hidden])) { max-height: min(calc(var(--visual-height, 100dvh) - 145px), var(--foreground-panel-max-height, 100dvh)); }
   .saved-sheet { max-height: min(76dvh, 650px, var(--foreground-panel-max-height, calc(var(--visual-height, 100dvh) - 150px))); }
   .settings-sheet { max-height: min(72dvh, 560px, var(--foreground-panel-max-height, calc(var(--visual-height, 100dvh) - 150px))); }
   .results-sheet { max-height: min(58dvh, var(--foreground-panel-max-height, calc(var(--visual-height, 100dvh) - 150px))); }
-  .place-sheet, .explore-sheet { max-height: min(76dvh, var(--foreground-panel-max-height, calc(var(--visual-height, 100dvh) - 150px))); }
+  .place-sheet, .explore-sheet { max-height: min(76dvh, calc(var(--foreground-panel-max-height, calc(var(--visual-height, 100dvh) - 150px)) - max(66px, calc(env(safe-area-inset-bottom, 0px) + 62px)))); }
 }
 
 @media (min-width: 900px) and (min-height: 650px) {
   .settings-sheet, .saved-sheet { max-height: calc(var(--visual-height, 100dvh) - 150px); }
+}
+
+@media (min-width: 900px) {
+  .route-sheet:has(#routeMoreMenu:not([hidden])) { bottom: auto; }
+  #app .leaflet-control-container .leaflet-bottom.leaflet-right { left: auto; right: 20px; top: auto; bottom: 20px; }
+  .browse-map-controls, .map-key-popover, .map-controls { bottom: 185px; }
 }

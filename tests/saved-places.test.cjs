@@ -352,3 +352,77 @@ test('a Saved change between snapshot and write is detected instead of silently 
   assert.equal(JSON.parse(h.store.get('saved')).favourites.length, 1);
   assert.equal(h.state.favouriteUndo, undefined); assert.match(h.calls.messages.at(-1), /another tab/);
 });
+
+test('saving Home or Work preserves favourites renamed and added in another tab', () => {
+  for (const kind of ['home', 'work']) {
+    const h = harness(); h.context.savePlace('favourite', place());
+    const current = JSON.parse(h.store.get('saved'));
+    current.favourites[0].name = 'Renamed elsewhere'; current.favourites.unshift(place('elsewhere', 52.05));
+    const otherKind = kind === 'home' ? 'work' : 'home';
+    current[otherKind] = place(otherKind, 52.06);
+    h.store.set('saved', JSON.stringify(current));
+    assert.equal(h.context.savePlace(kind, place(kind, 52.07)).ok, true);
+    const final = JSON.parse(h.store.get('saved'));
+    assert.equal(final[kind].id, kind); assert.equal(final[otherKind].id, otherKind);
+    assert.deepEqual(final.favourites, current.favourites);
+    assert.equal(h.state.saved.favourites[1].name, 'Renamed elsewhere');
+  }
+});
+
+test('new map-pin names and duplicate detection use the latest durable favourites', () => {
+  const h = harness();
+  const existing = {...place('other-tab', 52.04), name: 'Saved pin 1'};
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites: [existing]}));
+  h.context.beginSavedSearch('favourite'); h.context.savePendingMapPin({lat: 52.05, lng: -.75});
+  assert.equal(h.state.saved.favourites[0].name, 'Saved pin 2');
+  assert.equal(h.state.saved.favourites[1].id, 'other-tab');
+  const changed = JSON.parse(h.store.get('saved')); changed.favourites[1].name = 'Renamed elsewhere';
+  h.store.set('saved', JSON.stringify(changed)); const before = h.store.get('saved'), writes = h.calls.writes;
+  const duplicate = h.context.savePlace('favourite', place('new-id', 52.04));
+  assert.equal(duplicate.ok, true); assert.equal(duplicate.duplicate, true);
+  assert.equal(h.store.get('saved'), before); assert.equal(h.calls.writes, writes);
+  assert.equal(h.state.saved.favourites[1].name, 'Renamed elsewhere');
+  assert.equal(h.calls.reverse, 0);
+});
+
+test('ordinary saving respects capacity added elsewhere and uses space freed elsewhere', () => {
+  const h = harness();
+  const favourites = Array.from({length: 30}, (_, i) => place('other-' + i, 52.02 + i * .0001));
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites})); const before = h.store.get('saved');
+  assert.equal(h.context.savePlace('favourite', place('new', 52.1)).ok, false);
+  assert.equal(h.store.get('saved'), before); assert.equal(h.calls.writes, 0);
+  assert.equal(h.state.saved.favourites.length, 30);
+  favourites.pop(); h.store.set('saved', JSON.stringify({home: null, work: null, favourites}));
+  assert.equal(h.context.savePlace('favourite', place('new', 52.1)).ok, true);
+  assert.equal(JSON.parse(h.store.get('saved')).favourites.length, 30);
+  assert.equal(h.state.saved.favourites[0].id, 'new');
+  assert.ok(!h.state.saved.favourites.some(p => p.id === 'other-29'));
+});
+
+test('ordinary saving cannot erase current favourites when storage is blocked or unreadable', () => {
+  for (const failure of ['blocked', 'readBlocked']) {
+    const h = harness(); h.context.savePlace('favourite', place());
+    const changed = JSON.parse(h.store.get('saved')); changed.favourites[0].name = 'New durable name';
+    changed.favourites.push(place('added-elsewhere', 52.05)); h.store.set('saved', JSON.stringify(changed));
+    const before = h.store.get('saved'); h.calls[failure] = true;
+    assert.equal(h.context.savePlace('home', place('home', 52.06)).ok, false);
+    assert.equal(h.store.get('saved'), before); assert.equal(h.state.saved.home, null);
+    assert.equal(h.state.saved.favourites[0].name, 'Chosen place');
+    assert.equal(h.state.saved.favourites.length, 1);
+    h.calls[failure] = false;
+    assert.equal(h.context.savePlace('home', place('home', 52.06)).ok, true);
+    assert.equal(JSON.parse(h.store.get('saved')).favourites[0].name, 'New durable name');
+    assert.equal(h.state.saved.favourites.length, 2);
+  }
+});
+
+test('ordinary saving detects a change after its snapshot without overwriting it', () => {
+  const h = harness(); h.context.savePlace('favourite', place());
+  const changed = JSON.parse(h.store.get('saved')); changed.favourites[0].name = 'Updated during save';
+  let reads = 0;
+  h.calls.beforeRead = key => { if (++reads === 2) h.store.set(key, JSON.stringify(changed)); };
+  assert.equal(h.context.savePlace('work', place('work', 52.06)).ok, false);
+  assert.equal(JSON.parse(h.store.get('saved')).favourites[0].name, 'Updated during save');
+  assert.equal(JSON.parse(h.store.get('saved')).work, null);
+  assert.equal(h.state.saved.work, null); assert.match(h.calls.messages.at(-1), /another tab/);
+});
