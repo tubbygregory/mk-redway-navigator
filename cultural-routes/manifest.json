@@ -1,0 +1,91 @@
+{
+  "sourcePage": "https://getaroundmk.org.uk/cycling/where-to-ride/cultural-routes",
+  "verifiedOn": "2026-10-08",
+  "routes": [
+    {
+      "id": "blue",
+      "color": "Blue",
+      "title": "Ancient & Modern Milton Keynes",
+      "files": {
+        "full": {
+          "path": "gpx-blue-main.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-main.gpx",
+          "sha256": "4858edc9625b1e9874b26b1f4b453170dad091d3c58632a3e477b8949e5ce40f"
+        },
+        "shortcut": {
+          "path": "gpx-blue-short.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-short.gpx",
+          "sha256": "31f5840eb72de64426e08dbc41242e1dab3421fdb10daaf50818934d6df37150"
+        }
+      }
+    },
+    {
+      "id": "yellow",
+      "color": "Yellow",
+      "title": "Cars, Boats & Trains",
+      "files": {
+        "full": {
+          "path": "gpx-yellow-main.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-main.gpx",
+          "sha256": "58e5e51addc506f85d6817f83a5bd3d242cbc6898e520ba60122ffa871c0828e"
+        },
+        "shortcut": {
+          "path": "gpx-yellow-short.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-short.gpx",
+          "sha256": "d69a351e0039639710a20fdb67853ffb275ca4243fb640ad6ed2ec8c8b23bc0d"
+        }
+      }
+    },
+    {
+      "id": "green",
+      "color": "Green",
+      "title": "Rivers, Lakes & Dinosaurs",
+      "files": {
+        "full": {
+          "path": "gpx-green-main.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-main.gpx",
+          "sha256": "0cee45f032adae82e08fc055502d86dafd17c2785c44d75817cc861ca818e4c1"
+        },
+        "shortcut": {
+          "path": "gpx-green-short.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-short.gpx",
+          "sha256": "4ad58dfb4b7bbfbd28dbc7c4f7a86619e35349a231cb6e40d620a137587960f5"
+        }
+      }
+    },
+    {
+      "id": "iron",
+      "color": "Iron",
+      "title": "Romans, Rivers, Trams & Trains",
+      "files": {
+        "full": {
+          "path": "gpx-iron-main.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-main.gpx",
+          "sha256": "f7684eb3cbbe2fc026b0da37cea2b1b428b5b835f35530a648b255fc45d93e2b"
+        },
+        "shortcut": {
+          "path": "gpx-iron-short.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-short.gpx",
+          "sha256": "1fe13079199792f014b756c13e4e2de49355302e8ff02c5354bfccf8ed754007"
+        }
+      }
+    },
+    {
+      "id": "cornflower",
+      "color": "Cornflower",
+      "title": "Woods, Frogs & a Toot",
+      "files": {
+        "full": {
+          "path": "gpx-cornflower-main.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-main.gpx",
+          "sha256": "41c8d03667495c680a6514ae4ee4a627fd88bf0ee77937c03d5962d106d92778"
+        },
+        "shortcut": {
+          "path": "gpx-cornflower-short.gpx",
+          "sourceUrl": "https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-short.gpx",
+          "sha256": "79112493bd097fb74e65b8dd282fb9835d119dfef8fc05a6bcff2f6230d72584"
+        }
+      }
+    }
+  ]
+}

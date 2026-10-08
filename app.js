@@ -62,32 +62,42 @@
     {
       id: 'blue', color: 'Blue', title: 'Ancient & Modern Milton Keynes', fullMiles: 10, shortMiles: 5,
       tags: ['heritage'], highlights: ['Great Linford', 'Campbell Park', 'Concrete Cows', 'Bradwell Windmill'],
-      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-main.gpx',
-      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-short.gpx'
+      fullGpx: './cultural-routes/gpx-blue-main.gpx',
+      shortGpx: './cultural-routes/gpx-blue-short.gpx',
+      fullGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-main.gpx',
+      shortGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-blue-short.gpx'
     },
     {
       id: 'yellow', color: 'Yellow', title: 'Cars, Boats & Trains', fullMiles: 9.4, shortMiles: 5,
       tags: ['heritage','lakes'], highlights: ['Newport Pagnell', 'Tongwell Lake', 'Willen Lake'],
-      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-main.gpx',
-      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-short.gpx'
+      fullGpx: './cultural-routes/gpx-yellow-main.gpx',
+      shortGpx: './cultural-routes/gpx-yellow-short.gpx',
+      fullGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-main.gpx',
+      shortGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-yellow-short.gpx'
     },
     {
       id: 'green', color: 'Green', title: 'Rivers, Lakes & Dinosaurs', fullMiles: 10.1, shortMiles: 5,
       tags: ['lakes'], highlights: ['Open University', 'Grand Union Canal', 'Peartree Bridge'],
-      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-main.gpx',
-      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-short.gpx'
+      fullGpx: './cultural-routes/gpx-green-main.gpx',
+      shortGpx: './cultural-routes/gpx-green-short.gpx',
+      fullGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-main.gpx',
+      shortGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-green-short.gpx'
     },
     {
       id: 'iron', color: 'Iron', title: 'Romans, Rivers, Trams & Trains', fullMiles: 9.5, shortMiles: 5,
       tags: ['heritage'], highlights: ['Wolverton Mill', 'Iron Trunk Aqueduct', 'Bancroft', 'Stony Stratford'],
-      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-main.gpx',
-      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-short.gpx'
+      fullGpx: './cultural-routes/gpx-iron-main.gpx',
+      shortGpx: './cultural-routes/gpx-iron-short.gpx',
+      fullGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-main.gpx',
+      shortGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-iron-short.gpx'
     },
     {
       id: 'cornflower', color: 'Cornflower', title: 'Woods, Frogs & a Toot', fullMiles: 8.2, shortMiles: 4,
       tags: ['lakes'], highlights: ['Shenley Toot', 'Howe Park Wood', 'Teardrop Lakes', 'Furzton Lake'],
-      fullGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-main.gpx',
-      shortGpx: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-short.gpx'
+      fullGpx: './cultural-routes/gpx-cornflower-main.gpx',
+      shortGpx: './cultural-routes/gpx-cornflower-short.gpx',
+      fullGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-main.gpx',
+      shortGpxSource: 'https://getaroundmk.org.uk/wp-content/uploads/2020/07/gpx-cornflower-short.gpx'
     }
   ];
 
@@ -940,14 +950,17 @@
       header.className = 'cultural-route-heading';
       header.innerHTML = '<span class="cultural-swatch" aria-hidden="true"></span><div><strong></strong><small></small></div>';
       header.querySelector('strong').textContent = route.color + ' · ' + route.title;
-      header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi short';
+      header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi shorter ride in guide';
       const highlights = document.createElement('p');
       highlights.textContent = route.highlights.join(' · ');
       const join = document.createElement('small');
       join.className = 'cultural-join';
       join.textContent = Number.isFinite(route.joinDistance)
         ? 'Nearest join ' + formatDistance(route.joinDistance) + ' away'
-        : 'Choose a version to load the official GPX';
+        : 'Choose the full route or a shortcut track';
+      const shortcutNote = document.createElement('small');
+      shortcutNote.className = 'cultural-join';
+      shortcutNote.textContent = 'Shortcut GPX is a segment, not the complete shorter loop. See the route guide for the shorter ride.';
       const actions = document.createElement('div');
       actions.className = 'cultural-route-actions';
       const full = document.createElement('button');
@@ -956,7 +969,7 @@
       full.addEventListener('click', () => loadOfficialGpx(route, 'full'));
       const short = document.createElement('button');
       short.type = 'button';
-      short.textContent = 'Short route';
+      short.textContent = 'Shortcut track';
       short.addEventListener('click', () => loadOfficialGpx(route, 'short'));
       const source = document.createElement('a');
       source.href = CULTURAL_ROUTES_URL;
@@ -964,7 +977,20 @@
       source.rel = 'noopener noreferrer';
       source.textContent = 'Route guide';
       actions.append(full, short, source);
-      card.append(header, highlights, join, actions);
+      card.append(header, highlights, join, shortcutNote, actions);
+      if (route.loadErrorVariant) {
+        const error = document.createElement('small');
+        error.className = 'cultural-load-error';
+        error.setAttribute('role', 'status');
+        error.textContent = (route.loadErrorVariant === 'short' ? 'Shortcut track' : 'Full route') + ' could not be loaded. Retry or import a GPX file.';
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.dataset.gpxRetry = route.loadErrorVariant;
+        retry.textContent = route.loadErrorVariant === 'short' ? 'Retry shortcut track' : 'Retry full route';
+        retry.addEventListener('click', () => loadOfficialGpx(route, route.loadErrorVariant));
+        actions.appendChild(retry);
+        card.appendChild(error);
+      }
       list.appendChild(card);
     }
   }
@@ -2067,7 +2093,7 @@
     const plannedRoute = state.route;
     const isCurrent = () => revision === gpxLoadRevision && routeRevision === state.routeRevision && plannedRoute === state.route;
     const url = variant === 'short' ? route.shortGpx : route.fullGpx;
-    const title = route.color + ' · ' + route.title + (variant === 'short' ? ' short' : '');
+    const title = route.color + ' · ' + route.title + (variant === 'short' ? ' shortcut track' : '');
     let applying = false;
     try {
       const response = await fetch(url, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
@@ -2077,23 +2103,16 @@
       if (!isCurrent()) return;
       const parsed = parseGpx(textValue);
       route[variant + 'Coords'] = parsed.coords;
+      delete route.loadErrorVariant;
       applying = true;
       closeExploreRoutes();
       installImportedGpx(routeFromNearestPoint(parsed.coords), title);
     } catch (err) {
       if (!applying && !isCurrent()) return;
-      console.warn('Official GPX could not be loaded directly', err);
-      const actions = document.querySelector('.route-' + route.id + ' .cultural-route-actions');
-      if (actions && !actions.querySelector('[data-gpx-download="' + variant + '"]')) {
-        const link = document.createElement('a');
-        link.href = url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.dataset.gpxDownload = variant;
-        link.textContent = 'Download ' + variant + ' GPX';
-        actions.appendChild(link);
-      }
-      toast('Direct loading unavailable. Use the GPX download link, then import the file in Explore.', 7000);
+      console.warn('Cultural route GPX could not be loaded', err);
+      route.loadErrorVariant = variant;
+      renderCulturalRoutes();
+      toast('Could not load this route. Retry, or import a GPX file in Explore.', 6000);
     }
   }
 
@@ -3215,7 +3234,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.6';
+  el('app').dataset.appVersion = '0.14.7';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

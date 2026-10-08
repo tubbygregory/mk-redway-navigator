@@ -14,7 +14,7 @@ Plan a journey around Milton Keynes, compare cycling routes and follow location-
 - Route previews with distance, estimated time, complete route mix, road share, mapped underpasses/crossings/unlit distance and alternative-route labels on the map.
 - Live navigation, spoken guidance, automatic rerouting, H/V grid-road underpass wording and low-glare night mode.
 - Home, Work and favourites saved on this device, with quick shortcuts and local type-ahead suggestions.
-- Explore MK cards for the five Get Around MK Cultural Routes, with official route-guide and GPX links.
+- Explore MK cards for the five Get Around MK Cultural Routes, with source-verified full loops and shortcut GPX tracks available inside the app and offline, plus official route-guide links. Shortcut files are segments, not complete shorter loops.
 - GPX import/export and shareable planned-route links for moving a route from desktop to phone.
 - Downloadable Milton Keynes map and routing data managed from Settings.
 - Map key and current-location controls available while browsing.

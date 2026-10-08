@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147"]
   workflow_dispatch:
 
 permissions:
@@ -175,25 +175,28 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.6 beta release after production verification
+      - name: Publish v0.14.7 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.6" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.7" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Correct the logo artwork to the supplied stylised MK design.
+          Repair Cultural Route loading in Explore, including installed iPhone and offline use.
 
-          - Replace the approximate vector mark with the user's supplied MK route/map artwork, recoloured to the app's primary red.
-          - Regenerate browser, Apple, PWA, maskable and launch assets while retaining their existing sizes and safe-area composition.
-          - Refresh versioned icon references and the app-shell cache so installed copies can receive the corrected logo.
-          - Preserve red selected-route styling, navigation/offline fixes and installed-iPhone dark surfaces.
+          - Load unchanged, source-verified official GPX files from the app’s own site instead of depending on cross-origin source downloads.
+          - Precache all five full loops and five shortcut tracks for offline Explore use.
+          - Keep download failures inside the app with retry/import guidance instead of opening a blank external GPX browser.
+          - Keep the destination panel above the bottom navigation so Explore remains reachable without clearing the destination.
+          - Label shortcut tracks as segments rather than complete shorter rides, preserving the official guide and source attribution.
+          - Validate source hashes and runtime assets, and test all ten tracks through real online/offline UI clicks at root and subpath deployments.
+          - Preserve the supplied MK logo, red selected routes and existing navigation/offline fixes.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.6 >/dev/null 2>&1; then
+          if gh release view v0.14.7 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.6" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.6 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.7" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.7 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.6 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.6" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.7 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.7" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

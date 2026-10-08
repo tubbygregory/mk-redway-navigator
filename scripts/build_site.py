@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from urllib.request import urlopen
 from data_validation import validate_network, validate_council, council_digest
+from cultural_routes import validate_cultural_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
@@ -28,6 +29,7 @@ def clean_source_notices(value):
     return value
 
 def main():
+    cultural_files = validate_cultural_routes(ROOT / "cultural-routes")
     data = ROOT / "data"
     for name in ("network.json", "council_routes.geojson", "council-meta.json"):
         path = data / name
@@ -74,6 +76,9 @@ def main():
     for name in RUNTIME:
         shutil.copy2(ROOT / name, DIST / name)
     shutil.copytree(ROOT / "icons", DIST / "icons")
+    (DIST / "cultural-routes").mkdir()
+    for name in cultural_files:
+        shutil.copy2(ROOT / "cultural-routes" / name, DIST / "cultural-routes" / name)
     for name in ("network.json", "mk-basemap.pmtiles"):
         shutil.copy2(data / name, DIST / "data" / name)
     (DIST / "data" / "data-meta.json").write_text(json.dumps(meta, indent=2) + "\n")
@@ -91,6 +96,7 @@ def main():
     print("DEPENDENCY_LOCK=" + json.dumps(dependencies, separators=(",", ":")))
     allowed = set(RUNTIME) | {"data/network.json", "data/mk-basemap.pmtiles", "data/data-meta.json"}
     allowed.update(item["path"] for item in dependencies)
+    allowed.update("cultural-routes/" + name for name in cultural_files)
     allowed.update(str(path.relative_to(ROOT)) for path in (ROOT / "icons").glob("*") if path.is_file())
     actual = {str(path.relative_to(DIST)) for path in DIST.rglob("*") if path.is_file()}
     if actual != allowed:

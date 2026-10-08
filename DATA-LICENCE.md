@@ -12,7 +12,7 @@ Source attribution:
 
 Council geometry is a build input, matched onto connected OSM ways. Raw extraction and diagnostic files are not part of the website artifact. Only the explicitly selected Get Around MK route-layer files are treated as route-classification sources.
 
-The Explore MK catalogue also links to the five Cultural Routes published by Get Around MK. Their GPX files remain hosted at the original Get Around MK URLs; the application does not bundle or republish those GPX files.
+The Explore MK catalogue uses the five Cultural Routes published by [Get Around MK](https://getaroundmk.org.uk/cycling/where-to-ride/cultural-routes). The website includes unchanged copies of the official full-route and shortcut GPX files, verified against that page on 8 October 2026, so they can load reliably inside the app and offline. Original source URLs and SHA256 hashes are recorded in [the Cultural Routes manifest](./cultural-routes/manifest.json). The shortcut files contain open segments, not complete shorter loops; consult the official guide for the shorter rides. These source files retain their upstream data rights and are not relicensed under the application’s MIT licence.
 
 ## OpenStreetMap and Geofabrik
 

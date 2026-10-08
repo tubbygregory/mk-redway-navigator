@@ -9,6 +9,13 @@ import xml.etree.ElementTree as ET
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+CULTURAL_TRACKS = {
+    'blue': ('Blue', 'Ancient & Modern Milton Keynes'),
+    'yellow': ('Yellow', 'Cars, Boats & Trains'),
+    'green': ('Green', 'Rivers, Lakes & Dinosaurs'),
+    'iron': ('Iron', 'Romans, Rivers, Trams & Trains'),
+    'cornflower': ('Cornflower', 'Woods, Frogs & a Toot'),
+}
 
 def upload(page, xml):
     page.locator('#gpxFileInput').set_input_files({'name':'audit.gpx','mimeType':'application/gpx+xml','buffer':xml.encode()})
@@ -17,6 +24,149 @@ def gpx(points, name='Audit route'):
     return f'<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>{name}</name><trkseg>{points}</trkseg></trk></gpx>'
 
 POINTS = '<trkpt lat="52.025" lon="-.783"/><trkpt lat="52.026" lon="-.7815"/><trkpt lat="52.027" lon="-.780"/>'
+
+def exported_points(page):
+    if page.locator('#routeMoreMenu').is_hidden():
+        page.locator('#routeMoreBtn').click()
+    with page.expect_download() as downloaded:
+        page.locator('#exportGpxBtn').click()
+    document = ET.fromstring(Path(downloaded.value.path()).read_text())
+    return [(float(point.get('lat')), float(point.get('lon'))) for point in document.findall('.//{*}trkpt')]
+
+def source_track_points(route_id, variant):
+    document = ET.fromstring((ROOT / 'cultural-routes' / f'gpx-{route_id}-{variant}.gpx').read_bytes())
+    points = document.findall('.//{*}trkpt') or document.findall('.//{*}rtept')
+    coordinates = [(round(float(point.get('lat')), 6), round(float(point.get('lon')), 6)) for point in points]
+    return [point for index, point in enumerate(coordinates) if not index or point != coordinates[index - 1]]
+
+def assert_source_geometry(actual, route_id, variant):
+    expected = source_track_points(route_id, variant)
+    assert len(actual) == len(expected), (route_id, variant, len(actual), len(expected))
+    if variant == 'short':
+        # The published "short" files are open shortcuts. Never fabricate a
+        # closing edge or relabel them as the complete advertised shorter loop.
+        assert expected[0] != expected[-1], (route_id, 'shortcut source is unexpectedly closed')
+        assert actual == expected, (route_id, 'shortcut geometry changed')
+    else:
+        assert actual[0] == actual[-1] and expected[0] == expected[-1], (route_id, 'full loop is open')
+        # The app may rotate a closed loop to the nearest point, while preserving
+        # every source edge and its direction.
+        loop = expected[:-1]
+        assert any(actual[:-1] == loop[index:] + loop[:index]
+                   for index, point in enumerate(loop) if point == actual[0]), (route_id, 'full loop geometry changed')
+
+def assert_navigation_hit(page):
+    for selector in ['#goTabBtn', '#exploreRoutesBtn', '#savedPlacesBtn']:
+        control = page.locator(selector)
+        expect(control).to_be_visible()
+        expect(control).to_be_enabled()
+        hit = control.evaluate('''(el) => {
+            const rect = el.getBoundingClientRect();
+            const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            return {reachable: el.contains(target), covering: target?.outerHTML};
+        }''')
+        assert hit['reachable'], (selector, hit['covering'])
+
+def back_to_destination(page):
+    # Export expands route details. On a phone in landscape, collapse those
+    # details with their normal handle to expose the planner's Back control.
+    if page.viewport_size['width'] < 900 and page.locator('#routeSheetHandle').get_attribute('aria-expanded') == 'true':
+        page.locator('#routeSheetHandle').click()
+        expect(page.locator('#routeSheetHandle')).to_have_attribute('aria-expanded', 'false')
+    page.locator('#plannerBack').click()
+
+def review_cultural_tracks(page, url, screenshots=False):
+    """Exercise every published track through Explore and export its real geometry."""
+    popups, external_gpx = [], []
+    page.on('popup', lambda popup: popups.append(popup.url))
+    page.on('request', lambda request: external_gpx.append(request.url)
+            if 'getaroundmk.org.uk' in request.url and '.gpx' in request.url else None)
+    for route_id, (colour, title) in CULTURAL_TRACKS.items():
+        for variant, label in [('main', 'Full route'), ('short', 'Shortcut track')]:
+            page.locator('#exploreRoutesBtn').click()
+            card = page.locator('.route-' + route_id)
+            expect(card).to_contain_text('shorter ride in guide')
+            expect(card).to_contain_text('Shortcut GPX is a segment, not the complete shorter loop')
+            if screenshots and route_id == 'blue' and variant == 'main':
+                (ROOT / 'test-results').mkdir(exist_ok=True)
+                page.screenshot(path=str(ROOT / 'test-results' / f'cultural-explore-{page.viewport_size["width"]}.png'))
+            card.get_by_role('button', name=label, exact=True).click()
+            expect(page.locator('#exploreSheet')).to_be_hidden()
+            expect(page.locator('#routeStatus')).to_have_text('Imported GPX · unverified track')
+            name = colour + ' · ' + title + (' shortcut track' if variant == 'short' else '')
+            expect(page.locator('#startSearch')).to_have_value(name + ' start')
+            expect(page.locator('#endSearch')).to_have_value(name + ' finish')
+            expect(page.locator('#routeMix')).to_be_hidden()
+            expect(page.locator('#routeInsights')).to_be_hidden()
+            assert_source_geometry(exported_points(page), route_id, variant)
+            if screenshots and route_id == 'blue' and variant == 'short':
+                page.screenshot(path=str(ROOT / 'test-results' / f'cultural-shortcut-{page.viewport_size["width"]}.png'))
+            page.get_by_role('button', name='Clear route', exact=True).click()
+            assert page.url == url, (route_id, variant, page.url)
+    assert not popups, popups
+    assert not external_gpx, external_gpx
+
+def review_cultural_failure(page, url):
+    """A local missing/corrupt track keeps the current route and offers in-app retry."""
+    popups = []
+    page.on('popup', lambda popup: popups.append(popup.url))
+    for route_id, variant, response in [
+        ('blue', 'full', {'status': 404, 'body': 'Not found'}),
+        ('yellow', 'short', {'status': 200, 'body': '<gpx><trk>', 'content_type': 'application/gpx+xml'}),
+    ]:
+        preserved_name = 'Preserved route · Romans, Rivers, Trams &amp; Trains'
+        preserved_title = 'Preserved route · Romans, Rivers, Trams & Trains'
+        upload(page, gpx(POINTS, preserved_name))
+        expect(page.locator('#startSearch')).to_have_value(preserved_title + ' start')
+        original = exported_points(page)
+        original_distance = page.locator('#distanceStat').inner_text()
+        back_to_destination(page)
+        # Destination details and their collapsed summary must both leave the
+        # persistent section controls reachable by touch, including landscape.
+        assert_navigation_hit(page)
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Destination horizontal overflow'
+        (ROOT / 'test-results').mkdir(exist_ok=True)
+        if route_id == 'blue':
+            page.screenshot(path=str(ROOT / 'test-results' / f'cultural-place-expanded-{page.viewport_size["width"]}.png'))
+        page.locator('#placeSheetHandle').click()
+        expect(page.locator('#placeSheetHandle')).to_have_attribute('aria-expanded', 'false')
+        assert_navigation_hit(page)
+        if route_id == 'blue':
+            page.screenshot(path=str(ROOT / 'test-results' / f'cultural-place-collapsed-{page.viewport_size["width"]}.png'))
+        page.locator('#placeSheetHandle').click()
+        expect(page.locator('#placeSheetHandle')).to_have_attribute('aria-expanded', 'true')
+        pattern = '**/cultural-routes/gpx-' + route_id + ('-main.gpx' if variant == 'full' else '-short.gpx')
+        page.route(pattern, lambda route, request, response=response: route.fulfill(**response))
+        page.locator('#exploreRoutesBtn').click()
+        card = page.locator('.route-' + route_id)
+        label = 'Full route' if variant == 'full' else 'Shortcut track'
+        card.get_by_role('button', name=label, exact=True).click()
+        expect(card.locator('.cultural-load-error')).to_contain_text('could not be loaded')
+        retry = card.get_by_role('button', name='Retry ' + label.lower(), exact=True)
+        expect(retry).to_be_visible()
+        expect(page.locator('#exploreSheet')).to_be_visible()
+        expect(page.locator('#startSearch')).to_have_value(preserved_title + ' start')
+        expect(page.locator('#endSearch')).to_have_value(preserved_title + ' finish')
+        expect(page.locator('#distanceStat')).to_have_text(original_distance)
+        assert not card.locator('a[data-gpx-download]').count()
+        assert page.url == url
+        # A filter-driven card re-render must not discard the error/recovery UI.
+        page.locator('[data-explore-filter="heritage"]').click()
+        page.locator('[data-explore-filter="all"]').click()
+        expect(retry).to_be_visible()
+        page.locator('#closeExplore').click()
+        page.locator('#directionsBtn').click()
+        assert exported_points(page) == original, 'Failed Cultural Route load changed the usable route'
+        back_to_destination(page)
+        page.unroute(pattern)
+        page.locator('#exploreRoutesBtn').click()
+        retry.click()
+        expect(page.locator('#exploreSheet')).to_be_hidden()
+        expect(page.locator('#routeStatus')).to_have_text('Imported GPX · unverified track')
+        assert_source_geometry(exported_points(page), route_id, 'main' if variant == 'full' else 'short')
+        page.get_by_role('button', name='Clear route', exact=True).click()
+        assert page.url == url
+    assert not popups, popups
 
 def contrast_ratio(foreground, background):
     def luminance(colour):
@@ -60,7 +210,7 @@ def review_action_contrast(browser, url):
 
 def review(browser, url):
     for width, height in [(390,844),(844,390),(1280,900)]:
-        ctx = browser.new_context(viewport={'width':width,'height':height}, color_scheme='dark', accept_downloads=True,
+        ctx = browser.new_context(viewport={'width':width,'height':height}, color_scheme='dark', accept_downloads=True, service_workers='block',
                                   permissions=['geolocation'],geolocation={'latitude':52.0467,'longitude':-.7378,'accuracy':5})
         page=ctx.new_page();page.set_default_timeout(30000)
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
@@ -99,13 +249,13 @@ def review(browser, url):
         expect(page.locator('.typeahead-item').first).to_be_visible()
         assert not requests
         page.locator('#homeSearch').fill('')
-        # A CORS/source failure must stay in the app and offer a normal link.
+        # Loading Explore must work even if the external source rejects CORS or
+        # becomes unavailable. It must never hand GPX loading to a blank browser.
         page.route('**/getaroundmk.org.uk/**/*.gpx',lambda route:route.abort())
+        review_cultural_tracks(page, url, screenshots=True)
+        review_cultural_failure(page, url)
         page.locator('#exploreRoutesBtn').click()
         assert page.locator('.explore-filters button.active').evaluate('(el) => getComputedStyle(el).color') == 'rgb(92, 198, 138)'
-        page.locator('.route-blue').get_by_role('button',name='Full route',exact=True).click()
-        expect(page.locator('.route-blue a[data-gpx-download="full"]')).to_be_visible()
-        assert page.url == url
         # The sticky handle must not cover Explore's header or Close control
         # after browsing the lower route cards.
         assert page.locator('#exploreSheet').evaluate('(el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; }') > 0
@@ -168,7 +318,7 @@ def review(browser, url):
         assert not errors,errors
         (ROOT/'test-results').mkdir(exist_ok=True)
         page.screenshot(path=str(ROOT/'test-results'/f'audit-{width}.png'))
-        print(f'PASS audit {width}x{height}: GPX validation/security/export/mode/off-track and local suggestions/shared route')
+        print(f'PASS audit {width}x{height}: ten Cultural Route source geometries/local failure recovery, GPX validation/security/export/mode/off-track and local suggestions/shared route')
         ctx.close()
 
 def main():
