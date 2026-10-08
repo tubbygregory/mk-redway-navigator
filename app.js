@@ -174,9 +174,7 @@
       if (state.pendingSaveKind === 'home') search.placeholder = 'Search for Home';
       else if (state.pendingSaveKind === 'work') search.placeholder = 'Search for Work';
       else if (state.pendingSaveKind === 'favourite') search.placeholder = 'Search for a favourite';
-      else search.placeholder = window.innerWidth <= 370
-        ? 'Search places or postcodes'
-        : 'Search places or postcodes';
+      else search.placeholder = 'Search places';
     }
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
@@ -519,7 +517,7 @@
   function finishSavedSearch() {
     state.pendingSaveKind = null;
     el('homeSearch').value = '';
-    el('homeSearch').placeholder = window.innerWidth <= 370 ? 'Search places or postcodes' : 'Search places or postcodes';
+    el('homeSearch').placeholder = 'Search places';
   }
 
   function setPoint(which, latlng, label = '', address = '') {
@@ -3117,7 +3115,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.3';
+  el('app').dataset.appVersion = '0.14.4';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

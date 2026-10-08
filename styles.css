@@ -1678,7 +1678,12 @@ html.ios-standalone .toast {
   background: var(--surface-solid);
 }
 .explore-sheet .sheet-heading > div {
+  flex: 1;
   min-width: 0;
+}
+#closeExplore {
+  flex: 0 0 44px;
+  align-self: flex-start;
 }
 .explore-sheet .sheet-heading strong,
 .explore-sheet .sheet-heading small { display: block; }
