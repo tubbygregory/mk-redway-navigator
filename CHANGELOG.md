@@ -2,6 +2,7 @@
 
 ## 0.14.3
 
+- Fixed low-contrast About/Data text and selected controls in dark mode, including explicit appearance overrides.
 - Fixed offline opening of previously unseen shared route links at both root and subpath installations.
 - Keep the routing graph across app-shell updates and fall back to it on network or HTTP failures; avoid caching failed assets.
 - Cancel delayed navigation starts after leaving the planner or replacing the route, prevent duplicate pending starts, and ignore inaccurate GPS fixes for guidance/rerouting.
