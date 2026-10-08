@@ -2,6 +2,8 @@
 
 Source: “MK Redway Navigator Review.pdf”, design review dated 6 October 2026 (24 pages). PR #6 was already merged when the final audit began, at 3d33acec53952b162103921406f07a0518b8cdb4. Its build, deploy, live-review and beta-release jobs subsequently passed. This follow-up repairs issues found in the merged code; it does not replace validated functionality.
 
+The v0.14.9 [rendered UX follow-up](UX-REVIEW-2026-10-08-v0149.md) adds calculated Cultural Route joining guidance and polishes Saved feedback, map-pin setup and mobile controls. The recommendations and deferrals below describe the earlier v0.14.0 review.
+
 ## Product recommendations
 
 | Recommendation | Implementation and qualification |

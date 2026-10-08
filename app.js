@@ -58,6 +58,7 @@
   const INSTALL_OFFER_KEY = 'mk-redway-install-offer-v1';
   const LOCATION_HINT_KEY = 'mk-redway-location-hint-v1';
   const CULTURAL_ROUTES_URL = 'https://getaroundmk.org.uk/cycling/where-to-ride/cultural-routes';
+  const CULTURAL_ROUTE_COLOURS = {blue: '#3c78d8', yellow: '#d5a500', green: '#23864a', iron: '#5f6670', cornflower: '#6495ed'};
   const CULTURAL_ROUTES = [
     {
       id: 'blue', color: 'Blue', title: 'Ancient & Modern Milton Keynes', fullMiles: 10, shortMiles: 5,
@@ -167,12 +168,15 @@
     networkSource: 'loading',
     saved: { home: null, work: null, favourites: [] },
     pendingSaveKind: null,
+    savedPickOnMap: false,
+    savedPickRevision: 0,
     offlineMapAvailable: false,
     offlineMapDownloaded: false,
     offlineMapBytes: 0,
     offlineDownloadBusy: false,
     exploreFilter: 'all',
     importedRouteName: '',
+    culturalRoute: null,
     nightThemeActive: false,
     lastThemeCheckAt: 0
   };
@@ -191,8 +195,18 @@
       else if (state.pendingSaveKind === 'favourite') search.placeholder = 'Search for a favourite';
       else search.placeholder = 'Search places';
     }
+    syncBrowseAttribution();
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
+
+  function syncBrowseAttribution() {
+    const overlay = el('exploreUI');
+    if (!overlay.hidden) el('app').style.setProperty('--browse-attribution-top', `${Math.ceil(overlay.getBoundingClientRect().bottom + 8)}px`);
+  }
+
+  // Saved shortcuts and the pin picker change height without a window resize.
+  new ResizeObserver(syncBrowseAttribution).observe(el('exploreUI'));
+
   function refreshMapAfterOrientationChange() {
     setTimeout(() => {
       syncViewport();
@@ -211,6 +225,7 @@
 
   function setStage(stage) {
     gpxLoadRevision += 1;
+    if (state.pendingSaveKind && !['explore', 'place'].includes(stage)) finishSavedSearch();
     if (stage !== 'planner') { cancelStartLocation(); cancelNavigationStart(); }
     state.stage = stage;
     state.plannerSearchOpen = false;
@@ -410,22 +425,66 @@
     refreshDistanceDisplays();
   }
 
+  function normalizeSavedPlace(place) {
+    const text = (value, limit) => typeof value === 'string' && value.trim().length > 0 && value.length <= limit && !/[\x00-\x1f\x7f]/.test(value);
+    if (!place || typeof place !== 'object' || Array.isArray(place) ||
+        typeof place.lat !== 'number' || !Number.isFinite(place.lat) || place.lat < -90 || place.lat > 90 ||
+        typeof place.lng !== 'number' || !Number.isFinite(place.lng) || place.lng < -180 || place.lng > 180 ||
+        !text(place.name, 500) || place.address !== undefined && (typeof place.address !== 'string' || place.address.length > 2000) ||
+        place.id !== undefined && !text(place.id, 200)) return null;
+    return {id: place.id || `legacy-${place.lat}-${place.lng}-${place.name.slice(0, 80)}`, name: place.name.trim(),
+      address: place.address || '', lat: place.lat, lng: place.lng};
+  }
+
+  function sameSavedPlace(first, second) {
+    return !!first && !!second && Math.abs(first.lat - second.lat) < 0.00002 && Math.abs(first.lng - second.lng) < 0.00002;
+  }
+
+  function syncSaveFavouriteButton() {
+    const saved = state.saved.favourites.some(place => sameSavedPlace(place, state.end));
+    el('saveFavouriteLabel').textContent = saved ? 'Saved' : 'Save';
+    el('saveFavouriteBtn').classList.toggle('is-saved', saved);
+    el('saveFavouriteBtn').setAttribute('aria-pressed', String(saved));
+  }
+
   function loadSavedPlaces() {
     try {
       const raw = JSON.parse(localStorage.getItem(SAVED_KEY) || '{}');
       state.saved = {
-        home: raw.home || null,
-        work: raw.work || null,
-        favourites: Array.isArray(raw.favourites) ? raw.favourites.slice(0, 30) : []
+        home: normalizeSavedPlace(raw?.home),
+        work: normalizeSavedPlace(raw?.work),
+        favourites: Array.isArray(raw?.favourites) ? raw.favourites.map(normalizeSavedPlace).filter(Boolean) : []
       };
     } catch (_) {
       state.saved = { home: null, work: null, favourites: [] };
     }
   }
 
-  function persistSavedPlaces() {
-    try { localStorage.setItem(SAVED_KEY, JSON.stringify(state.saved)); } catch (_) {}
+  function persistSavedPlaces(nextSaved = state.saved) {
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(nextSaved)); }
+    catch (_) { toast('Saved places could not be updated. Browser storage is full or unavailable.', 6000); return false; }
+    state.saved = nextSaved;
     renderSavedPlaces();
+    return true;
+  }
+
+  function savePlace(kind, candidate) {
+    const place = normalizeSavedPlace(candidate);
+    if (!place || !['home', 'work', 'favourite'].includes(kind)) return {ok: false};
+    const duplicate = kind === 'favourite' && state.saved.favourites.some(saved => sameSavedPlace(saved, place));
+    if (duplicate) { syncSaveFavouriteButton(); return {ok: true, duplicate: true}; }
+    if (!validateSearchResult({lat: place.lat, lon: place.lng})) {
+      toast('Choose a point within the Milton Keynes map area.', 6000);
+      return {ok: false};
+    }
+    if (kind === 'favourite' && state.saved.favourites.length >= 30) {
+      toast('You can save up to 30 favourites. Remove one before adding another.', 6000);
+      return {ok: false};
+    }
+    const next = {...state.saved, favourites: [...state.saved.favourites]};
+    if (kind === 'favourite') next.favourites.unshift(place);
+    else next[kind] = place;
+    return {ok: persistSavedPlaces(next), duplicate: false};
   }
 
   function savedPlaceFromResult(result) {
@@ -460,7 +519,9 @@
   }
 
   function openSavedPlace(place) {
+    place = normalizeSavedPlace(place);
     if (!place) return;
+    if (state.pendingSaveKind) finishSavedSearch();
     const point = L.latLng(place.lat, place.lng);
     setPoint('end', point, place.name, place.address || '');
     el('homeSearch').value = place.name;
@@ -470,10 +531,13 @@
   }
 
   function renderSavedPlaces() {
+    syncSaveFavouriteButton();
     const home = state.saved.home;
     const work = state.saved.work;
-    el('homeSavedLabel').textContent = home ? home.name : 'Not set';
-    el('workSavedLabel').textContent = work ? work.name : 'Not set';
+    el('homeSavedLabel').textContent = home ? (home.name === 'Home' ? home.address || home.name : home.name) : 'Not set';
+    el('workSavedLabel').textContent = work ? (work.name === 'Work' ? work.address || work.name : work.name) : 'Not set';
+    el('setHomeBtn').textContent = home ? 'Change Home' : 'Set Home';
+    el('setWorkBtn').textContent = work ? 'Change Work' : 'Set Work';
     const quick = el('quickPlaces');
     const quickHome = el('quickHomeBtn');
     const quickWork = el('quickWorkBtn');
@@ -516,8 +580,7 @@
       remove.setAttribute('aria-label', `Remove ${place.name}`);
       remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path></svg>';
       remove.addEventListener('click', () => {
-        state.saved.favourites = state.saved.favourites.filter(x => x.id !== place.id);
-        persistSavedPlaces();
+        persistSavedPlaces({...state.saved, favourites: state.saved.favourites.filter(x => x.id !== place.id)});
       });
       row.append(open, remove);
       list.appendChild(row);
@@ -525,25 +588,70 @@
   }
 
   function beginSavedSearch(kind) {
+    if (!['home', 'work', 'favourite'].includes(kind)) return;
+    closeSearch();
     state.pendingSaveKind = kind;
+    state.savedPickOnMap = false;
+    state.savedPickRevision = (state.savedPickRevision || 0) + 1;
     el('savedSheet').hidden = true;
+    el('settingsSheet').hidden = true;
+    el('locationIntro').hidden = true;
     setStage('explore');
     el('homeSearch').value = '';
     el('homeSearch').placeholder = kind === 'home' ? 'Search for Home' : kind === 'work' ? 'Search for Work' : 'Search for a favourite';
-    el('homeSearch').focus();
+    el('homeSearch').blur();
+    renderSavedPicker();
+  }
+
+  function renderSavedPicker() {
+    const kind = state.pendingSaveKind;
+    el('savedPlacePicker').hidden = !kind;
+    if (!kind) return;
+    const label = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'a favourite';
+    el('savedPlacePickerTitle').textContent = kind === 'favourite' ? 'Add a favourite' : `Set ${label}`;
+    el('savedPlacePickerHint').textContent = state.savedPickOnMap
+      ? `Tap the map to save ${label}. Drag or zoom the map to find the right point.`
+      : 'Search for a place, or choose a point on the map.';
+    el('pickSavedOnMapBtn').hidden = !!state.savedPickOnMap;
+  }
+
+  function savePendingMapPin(latlng) {
+    if (!state.pendingSaveKind) return false;
+    if (!validateSearchResult({lat: latlng?.lat, lon: latlng?.lng})) {
+      toast('Choose a point within the Milton Keynes map area.', 6000);
+      return true;
+    }
+    const kind = state.pendingSaveKind;
+    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'Dropped pin';
+    const candidate = {id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, address: fmtCoord(latlng), lat: latlng.lat, lng: latlng.lng};
+    const result = savePlace(kind, candidate);
+    if (!result.ok) return true;
+    closeSearch();
+    finishSavedSearch();
+    el('savedSheet').hidden = false;
+    toast(result.duplicate ? 'Already saved' : kind === 'home' ? 'Home saved' : kind === 'work' ? 'Work saved' : 'Favourite saved');
+    return true;
   }
 
   function finishSavedSearch() {
     state.pendingSaveKind = null;
+    state.savedPickOnMap = false;
+    state.savedPickRevision = (state.savedPickRevision || 0) + 1;
+    renderSavedPicker();
     el('homeSearch').value = '';
     el('homeSearch').placeholder = 'Search places';
   }
 
   function setPoint(which, latlng, label = '', address = '') {
     if (which === 'start') cancelStartLocation();
-    state.importedRouteName = '';
+    if (which === 'end') state.culturalRoute = null;
+    state.importedRouteName = state.culturalRoute?.title || '';
     state[which] = L.latLng(latlng.lat, latlng.lng);
     state[`${which}Label`] = label || fmtCoord(state[which]);
+    if (which === 'start' && state.culturalRoute) {
+      state.culturalRoute.originLabel = state.startLabel;
+      state.culturalRoute.phase = 'awaiting';
+    }
     if (which === 'end') state.endAddress = address || label || '';
     invalidateRoute();
     updatePlannerFields();
@@ -573,6 +681,7 @@
 
   function invalidateRoute() {
     routeLayer.clearLayers();
+    el('culturalRouteLegend').hidden = true;
     state.routeRevision++;
     state.route = null;
     state.alternatives = [];
@@ -1155,16 +1264,11 @@
 
     if (context === 'save-home' || context === 'save-work' || context === 'save-favourite') {
       const place = savedPlaceFromResult(result);
-      if (context === 'save-home') state.saved.home = place;
-      else if (context === 'save-work') state.saved.work = place;
-      else {
-        const duplicate = state.saved.favourites.some(x => Math.abs(x.lat - place.lat) < 0.00002 && Math.abs(x.lng - place.lng) < 0.00002);
-        if (!duplicate) state.saved.favourites.unshift(place);
-      }
-      persistSavedPlaces();
+      const savedResult = savePlace(context.slice(5), place);
+      if (!savedResult.ok) return;
       finishSavedSearch();
       el('savedSheet').hidden = false;
-      toast(context === 'save-home' ? 'Home saved' : context === 'save-work' ? 'Work saved' : 'Favourite saved');
+      toast(savedResult.duplicate ? 'Already saved' : context === 'save-home' ? 'Home saved' : context === 'save-work' ? 'Work saved' : 'Favourite saved');
       return;
     }
 
@@ -1189,6 +1293,7 @@
   function showPlaceSheet() {
     el('placeName').textContent = state.endLabel || 'Dropped pin';
     el('placeAddress').textContent = state.endAddress || (state.end ? fmtCoord(state.end) : '');
+    syncSaveFavouriteButton();
     setStage('place');
   }
 
@@ -1299,14 +1404,14 @@
     }
   }
 
-  function routeFromNearestPoint(coords) {
-    if (!state.userLatLng || coords.length < 3) return coords;
+  function routeFromNearestPoint(coords, origin = state.userLatLng) {
+    if (!origin || coords.length < 3) return coords;
     const first = coords[0], last = coords.at(-1);
     const closes = first[0] === last[0] && first[1] === last[1];
     if (!closes) return coords;
     let bestIndex = 0, best = Infinity;
     coords.forEach((pair,index) => {
-      const d = hav({lat:state.userLatLng.lat,lon:state.userLatLng.lng},{lat:pair[0],lon:pair[1]});
+      const d = hav({lat:origin.lat,lon:origin.lng},{lat:pair[0],lon:pair[1]});
       if (d < best) { best = d; bestIndex = index; }
     });
     const loop = coords.slice(0, -1);
@@ -1420,6 +1525,7 @@
   });
   function openSettings() {
     closeSearch();
+    if (state.pendingSaveKind) finishSavedSearch();
     closeExploreRoutes();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
@@ -1452,6 +1558,8 @@
   el('exploreRoutesBtn').addEventListener('click', openExploreRoutes);
   el('closeExplore').addEventListener('click', closeExploreRoutes);
   el('goTabBtn').addEventListener('click', () => {
+    closeSearch();
+    if (state.pendingSaveKind) finishSavedSearch();
     closeExploreRoutes();
     el('savedSheet').hidden = true;
     el('savedPlacesBtn').classList.remove('active');
@@ -1462,6 +1570,21 @@
     setStage('explore');
   });
   el('addFavouriteBtn').addEventListener('click', () => beginSavedSearch('favourite'));
+  el('setHomeBtn').addEventListener('click', () => beginSavedSearch('home'));
+  el('setWorkBtn').addEventListener('click', () => beginSavedSearch('work'));
+  el('pickSavedOnMapBtn').addEventListener('click', () => {
+    if (!state.pendingSaveKind) return;
+    closeSearch();
+    el('homeSearch').blur();
+    state.savedPickOnMap = true;
+    renderSavedPicker();
+  });
+  el('cancelSavedPickBtn').addEventListener('click', () => {
+    closeSearch();
+    finishSavedSearch();
+    renderSavedPlaces();
+    el('savedSheet').hidden = false;
+  });
   el('quickHomeBtn').addEventListener('click', () => openSavedPlace(state.saved.home));
   el('quickWorkBtn').addEventListener('click', () => openSavedPlace(state.saved.work));
   el('homeSavedRow').addEventListener('click', () => state.saved.home ? openSavedPlace(state.saved.home) : beginSavedSearch('home'));
@@ -1469,10 +1592,8 @@
   el('saveFavouriteBtn').addEventListener('click', () => {
     const place = savedPlaceFromCurrentEnd();
     if (!place) return;
-    const duplicate = state.saved.favourites.some(x => Math.abs(x.lat - place.lat) < 0.00002 && Math.abs(x.lng - place.lng) < 0.00002);
-    if (!duplicate) state.saved.favourites.unshift(place);
-    persistSavedPlaces();
-    toast(duplicate ? 'Already saved' : 'Favourite saved');
+    const result = savePlace('favourite', place);
+    if (result.ok) toast(result.duplicate ? 'Already saved' : 'Favourite saved');
   });
 
   map.on('click', e => {
@@ -1484,14 +1605,7 @@
       setPoint(which, e.latlng, 'Chosen entrance', fmtCoord(e.latlng));
       setStage('planner'); maybeCalculateRoute(); return;
     }
-    if (state.pendingSaveKind) {
-      const place = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: 'Dropped pin', address: fmtCoord(e.latlng), lat: e.latlng.lat, lng: e.latlng.lng };
-      if (state.pendingSaveKind === 'home') state.saved.home = place;
-      else if (state.pendingSaveKind === 'work') state.saved.work = place;
-      else state.saved.favourites.unshift(place);
-      persistSavedPlaces(); finishSavedSearch(); el('savedSheet').hidden = false;
-      return;
-    }
+    if (savePendingMapPin(e.latlng)) return;
   });
 
   async function reverseGeocode(latlng) {
@@ -1522,6 +1636,7 @@
 
   async function dropDestinationPin(latlng) {
     if (state.navigating || !['explore', 'place'].includes(state.stage)) return;
+    if (state.pendingSaveKind && savePendingMapPin(latlng)) return;
     setPoint('end', latlng, 'Dropped pin', fmtCoord(latlng));
     showPlaceSheet();
     showDestinationInContext(latlng);
@@ -1538,7 +1653,23 @@
   let longPressTimer = null;
   let longPressStart = null;
   let lastLongPressAt = 0;
+  let longPressClickGuard = null;
   const mapContainer = map.getContainer();
+  // Touch release can target a sheet that appeared beneath the original finger.
+  // Consume only that compatibility click; a new gesture or keyboard action wins.
+  document.addEventListener('pointerdown', () => { longPressClickGuard = null; }, {capture: true, passive: true});
+  document.addEventListener('pointerup', () => {
+    if (longPressClickGuard) longPressClickGuard.until = performance.now() + 1000;
+  }, {capture: true, passive: true});
+  document.addEventListener('pointercancel', () => { longPressClickGuard = null; }, {capture: true, passive: true});
+  document.addEventListener('click', event => {
+    const guard = longPressClickGuard;
+    if (!guard || event.detail === 0 || performance.now() > guard.until ||
+        Math.hypot(event.clientX - guard.x, event.clientY - guard.y) > 12) return;
+    longPressClickGuard = null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
   const cancelLongPress = () => {
     if (longPressTimer) clearTimeout(longPressTimer);
     longPressTimer = null;
@@ -1546,11 +1677,15 @@
   };
   mapContainer.addEventListener('pointerdown', event => {
     if (!event.isPrimary || !['touch', 'pen'].includes(event.pointerType) || !['explore', 'place'].includes(state.stage)) return;
+    if (event.target?.closest?.('.leaflet-control, button, a, input, select, textarea, [role="button"]')) return;
+    const savedRevision = state.savedPickRevision;
     const rect = mapContainer.getBoundingClientRect();
     longPressStart = { x: event.clientX, y: event.clientY, rect };
     longPressTimer = setTimeout(() => {
       if (!longPressStart) return;
+      if (state.savedPickRevision !== savedRevision) { cancelLongPress(); return; }
       lastLongPressAt = performance.now();
+      longPressClickGuard = {x: longPressStart.x, y: longPressStart.y, until: Infinity};
       const point = L.point(longPressStart.x - longPressStart.rect.left, longPressStart.y - longPressStart.rect.top);
       dropDestinationPin(map.containerPointToLatLng(point));
       cancelLongPress();
@@ -1642,6 +1777,16 @@
     el('prefBtn').hidden = true;
     el('prefMenu').hidden = true;
     el('routePreferences').hidden = mode !== 'cycle' || Boolean(state.importedRouteName);
+    if (state.culturalRoute) {
+      cancelNavigationStart();
+      const cultural = state.culturalRoute;
+      cultural.joinRevision++;
+      cultural.trackPlan = importedPlan(cultural.trackPlan.coords, cultural.title);
+      if (cultural.phase === 'track') installRoute(cultural.trackPlan);
+      else if (state.start) prepareCulturalJoin(state.start, {chooseJoin: false});
+      else installRoute(cultural.trackPlan);
+      return;
+    }
     if (state.route?.imported) {
       installRoute(importedPlan(state.route.coords, state.importedRouteName));
       return;
@@ -1876,13 +2021,15 @@
 
   function refreshDistanceDisplays() {
     if (!state.route) return;
-    el('distanceStat').textContent = formatDistance(state.route.dist);
+    const track = state.culturalRoute?.phase === 'joining' ? state.culturalRoute.trackPlan : null;
+    el('distanceStat').textContent = formatDistance(state.route.dist + (track?.dist || 0));
     if (!state.navigating) {
-      setRouteStatus(routeReadyStatus(), 'good');
+      if (!state.culturalRoute) setRouteStatus(routeReadyStatus(), 'good');
       renderApproachNote(); renderAlternatives();
     } else {
       const current = state.userLatLng || state.start;
       const journey = remainingJourney(state.route, state.navProgressMeters, current, state.start, state.end, state.mode);
+      if (track) { journey.distance += track.dist; journey.mins += track.mins; }
       const remaining = journey.distance, mins = journey.mins;
       el('navEta').textContent = formatDuration(mins);
       el('navRemain').textContent = `${formatDistance(remaining)} · arrive ${arrivalTime(mins)}`;
@@ -1928,14 +2075,21 @@
 
   function drawRoute(coords, fit = true) {
     routeLayer.clearLayers();
-    L.polyline(coords, { className: 'route-casing', interactive: false }).addTo(routeLayer);
-    L.polyline(coords, { className: 'route-line', interactive: false }).addTo(routeLayer);
-    if (state.route && coords.length) {
+    const cultural = state.culturalRoute;
+    if (cultural) {
+      L.polyline(cultural.trackPlan.coords, {className: 'route-casing', interactive: false}).addTo(routeLayer);
+      L.polyline(cultural.trackPlan.coords, {className: 'cultural-route-line', color: CULTURAL_ROUTE_COLOURS[cultural.id], weight: 7, opacity: .98, interactive: false}).addTo(routeLayer);
+    }
+    if (!cultural || cultural.phase === 'joining') {
+      L.polyline(coords, { className: 'route-casing', interactive: false }).addTo(routeLayer);
+      L.polyline(coords, { className: 'route-line', interactive: false }).addTo(routeLayer);
+    }
+    if (state.route && coords.length && (!cultural || cultural.phase === 'joining')) {
       for (const pair of [[state.start, coords[0]], [state.end, coords.at(-1)]]) {
         if (pair[0]) L.polyline([pair[0], pair[1]], {color:'#a05b00',weight:3,dashArray:'5 7',interactive:false}).addTo(routeLayer);
       }
     }
-    if (fit) setTimeout(() => fitRouteBounds([...coords, state.start, state.end].filter(Boolean)), 30);
+    if (fit) setTimeout(() => fitRouteBounds([...coords, ...(cultural?.trackPlan.coords || []), state.start, state.end].filter(Boolean)), 30);
   }
 
   function routeReadyStatus() {
@@ -2102,23 +2256,32 @@
 
   function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
     state.route = plan;
+    const cultural = state.culturalRoute;
+    const followingTrack = cultural?.phase === 'track';
+    const total = cultural?.phase === 'joining' ? {dist: plan.dist + cultural.trackPlan.dist, mins: plan.mins + cultural.trackPlan.mins} : plan;
+    const unverified = plan.imported || Boolean(cultural);
     drawRoute(plan.coords, fit);
     renderUnlitSegments(plan);
-    el('timeStat').textContent = formatDuration(plan.mins);
-    el('arrivalStat').textContent = `Arrive about ${arrivalTime(plan.mins)}`;
-    el('distanceStat').textContent = formatDistance(plan.dist);
-    el('redwayStat').textContent = plan.imported ? 'Unknown' : `${plan.redwayPercent}%`;
-    el('roadStat').textContent = plan.imported ? 'Unknown' : `${plan.roadPercent}%`;
-    el('routePreferences').hidden = plan.imported || state.mode !== 'cycle';
-    document.querySelector('.road-share-note').textContent = plan.imported
-      ? 'Imported track: path types, access and conditions are unverified. Follows file geometry, not a calculated Redway route.'
+    el('timeStat').textContent = formatDuration(total.mins);
+    el('arrivalStat').textContent = `Arrive about ${arrivalTime(total.mins)}`;
+    el('distanceStat').textContent = formatDistance(total.dist);
+    el('redwayStat').textContent = unverified ? 'Unknown' : `${plan.redwayPercent}%`;
+    el('roadStat').textContent = unverified ? 'Unknown' : `${plan.roadPercent}%`;
+    el('routePreferences').hidden = unverified || state.mode !== 'cycle';
+    document.querySelector('.road-share-note').textContent = cultural
+      ? (cultural.phase === 'joining' ? 'The red joining leg uses mapped paths. ' : '') + 'The official GPX track has unverified access, path types and conditions; combined percentages are unknown.'
+      : plan.imported ? 'Imported track: path types, access and conditions are unverified. Follows file geometry, not a calculated Redway route.'
       : 'Mapped conditions may be incomplete. Crossing estimates include short road links; unknown lighting is not counted as unlit.';
+    const legend = el('culturalRouteLegend');
+    legend.hidden = !cultural;
+    if (cultural) legend.textContent = (followingTrack ? '' : cultural.phase === 'joining' ? 'Red: route to Cultural Route start / join · ' : 'Joining leg not calculated · ') + cultural.color + ': official GPX track';
     el('startNavBtn').disabled = false;
     el('sendToPhoneBtn').disabled = false;
-    renderRouteMix(plan);
-    renderRouteInsights(plan);
+    renderRouteMix(cultural ? null : plan);
+    renderRouteInsights(cultural ? null : plan);
     renderApproachNote();
-    setRouteStatus(plan.imported ? 'Imported GPX · unverified track' : routeReadyStatus(), plan.imported ? 'warn' : state.networkSource === 'bundled' ? 'good' : 'warn');
+    setRouteStatus(cultural ? (followingTrack ? cultural.color + ' Cultural Route · unverified track' : 'Route to Cultural Route start / join · then ' + cultural.color + ' track')
+      : plan.imported ? 'Imported GPX · unverified track' : routeReadyStatus(), unverified ? 'warn' : state.networkSource === 'bundled' ? 'good' : 'warn');
     setRouteSheetCollapsed(collapse);
     offerInstallOnce();
   }
@@ -2177,6 +2340,7 @@
   }
 
   async function calculateRoute({ fit = true, quiet = false } = {}) {
+    if (state.culturalRoute) return prepareCulturalJoin(state.start || state.userLatLng, {fit});
     if (!state.start || !state.end) return;
     if (state.routing) { state.pendingRoute = true; return; }
     state.routing = true;
@@ -2229,6 +2393,11 @@
 
   function maybeCalculateRoute() {
     updatePlannerFields();
+    if (state.culturalRoute) {
+      if (state.start) calculateRoute();
+      else setRouteStatus('Choose a starting point, or Start to use your location for the Cultural Route join.', 'warn');
+      return;
+    }
     if (state.importedRouteName) return;
     if (state.start && state.end) calculateRoute();
     else if (!state.start) setRouteStatus('Use your location or search for a starting point.');
@@ -2240,7 +2409,9 @@
   }
 
   function routeToGpx(plan, name = 'MK Redway route') {
-    const points = (plan?.coords || []).map(pair =>
+    const coords = state.culturalRoute && plan === state.route ? state.culturalRoute.sourceCoords : plan?.coords || [];
+    if (state.culturalRoute && plan === state.route) name = state.culturalRoute.title;
+    const points = coords.map(pair =>
       '      <trkpt lat="' + Number(pair[0]).toFixed(6) + '" lon="' + Number(pair[1]).toFixed(6) + '"></trkpt>'
     ).join('\n');
     return '<?xml version="1.0" encoding="UTF-8"?>\n' +
@@ -2326,11 +2497,93 @@
     };
   }
 
-  function installImportedGpx(coords, title) {
+  async function prepareCulturalJoin(origin, {fit = true, chooseJoin = true, accuracy, isCurrent = () => true} = {}) {
+    const cultural = state.culturalRoute;
+    if (!cultural || !origin) return false;
+    const request = ++cultural.joinRevision;
+    const revision = state.routeRevision, screen = gpxLoadRevision, mode = state.mode;
+    const current = () => state.culturalRoute === cultural && request === cultural.joinRevision &&
+      revision === state.routeRevision && screen === gpxLoadRevision && mode === state.mode && isCurrent();
+    try {
+      if (chooseJoin) cultural.trackPlan = importedPlan(routeFromNearestPoint(cultural.sourceCoords, origin), cultural.title);
+      const first = cultural.trackPlan.coords[0];
+      const target = L.latLng(first[0], first[1]);
+      const gap = hav({lat: origin.lat, lon: origin.lng}, {lat: target.lat, lon: target.lng});
+      cultural.origin = origin;
+      state.start = origin;
+      state.startLabel = cultural.originLabel || 'Your location';
+      state.end = target;
+      state.endLabel = cultural.title + ' start / join';
+      state.endAddress = 'Cultural Route start / join · then follow the official GPX track';
+      if (gap <= 30 && (accuracy === undefined || accuracy <= 35)) {
+        if (!current()) return false;
+        cultural.origin = origin;
+        beginCulturalTrack({fit});
+        return true;
+      }
+      if (gap <= 30 && accuracy > 35) {
+        setRouteStatus('Waiting for an accurate location to join the Cultural Route. Try Start again.', 'warn');
+        toast('Waiting for an accurate location to join the Cultural Route', 5000);
+        return false;
+      }
+      setRouteStatus('Finding a route to Cultural Route start / join…');
+      el('startNavBtn').disabled = true;
+      const parsed = await ensureRoutingNetwork();
+      if (!current()) return false;
+      if (!parsed) throw new Error('The local routing graph is unavailable');
+      const plan = planRoute(parsed, getGraph(parsed, mode, state.pref), origin, target, mode, cultural.color + ' Cultural Route start / join');
+      // Reaching this leg is a handoff to the source track, not the end of the ride.
+      for (const maneuver of plan.maneuvers) {
+        if (maneuver.arrive) maneuver.instruction = plan.snaps.end > 20
+          ? 'Mapped route ends near the ' + cultural.color + ' Cultural Route start / join; check the remaining approach'
+          : 'Join the ' + cultural.color + ' Cultural Route';
+      }
+      if (!current()) return false;
+      cultural.phase = 'joining'; cultural.origin = origin;
+      state.start = origin;
+      state.startLabel = cultural.originLabel || 'Your location';
+      state.end = target;
+      state.endLabel = cultural.title + ' start / join';
+      state.endAddress = 'Cultural Route start / join · then follow the official GPX track';
+      state.alternatives = [];
+      installRoute(plan, {fit});
+      updatePlannerFields(); redrawMarkers(); renderAlternatives();
+      el('retryRouteBtn').hidden = true;
+      return true;
+    } catch (error) {
+      if (!current()) return false;
+      cultural.phase = 'awaiting';
+      installRoute(cultural.trackPlan, {fit: false, collapse: false});
+      setRouteStatus('Could not calculate route to Cultural Route start / join. ' + routeErrorMessage(error), 'warn');
+      el('retryRouteBtn').hidden = false;
+      return false;
+    } finally {
+      if (state.culturalRoute === cultural && request === cultural.joinRevision) el('startNavBtn').disabled = !state.route;
+    }
+  }
+
+  function beginCulturalTrack({fit = false} = {}) {
+    const cultural = state.culturalRoute;
+    if (!cultural) return;
+    cultural.phase = 'track';
+    cultural.startingTrack = true;
+    const coords = cultural.trackPlan.coords;
+    state.start = L.latLng(coords[0][0], coords[0][1]);
+    state.end = L.latLng(coords.at(-1)[0], coords.at(-1)[1]);
+    state.startLabel = cultural.title + ' start / join';
+    state.endLabel = cultural.title + ' finish';
+    state.endAddress = 'Official Cultural Route GPX · track conditions unverified';
+    resetNavigationProgress();
+    installRoute(cultural.trackPlan, {fit});
+    updatePlannerFields(); redrawMarkers();
+  }
+
+  function installImportedGpx(coords, title, {culturalRoute = null, origin = null, originLabel = ''} = {}) {
     cancelStartLocation();
     closeSearch();
     invalidateRoute();
     state.pendingRoute = false;
+    state.culturalRoute = null;
     stopNavigation({keepRoute:false});
     state.importedRouteName = title;
     state.start = L.latLng(coords[0][0], coords[0][1]);
@@ -2339,12 +2592,26 @@
     state.endLabel = title + ' finish';
     state.endAddress = 'Imported GPX';
     state.alternatives = [];
+    if (culturalRoute) {
+      state.culturalRoute = {id: culturalRoute.id, color: culturalRoute.color, title, sourceCoords: coords,
+        trackPlan: importedPlan(routeFromNearestPoint(coords, origin), title), phase: 'awaiting',
+        origin, originLabel, joinRevision: 0};
+      state.start = origin;
+      const first = state.culturalRoute.trackPlan.coords[0];
+      state.end = L.latLng(first[0], first[1]);
+      state.startLabel = originLabel || (origin ? 'Your location' : '');
+      state.endLabel = title + ' start / join';
+      state.endAddress = 'Cultural Route start / join · then follow the official GPX track';
+    }
     setStage('planner');
     updatePlannerFields();
     redrawMarkers();
-    installRoute(importedPlan(coords, title), {fit:true, collapse: window.innerWidth < 900});
+    installRoute(state.culturalRoute?.trackPlan || importedPlan(coords, title), {fit:true, collapse: window.innerWidth < 900});
     renderAlternatives();
-    toast('GPX route ready');
+    if (state.culturalRoute) {
+      if (origin) prepareCulturalJoin(origin);
+      else setRouteStatus('Choose a starting point, or Start to use your location for the Cultural Route join.', 'warn');
+    } else toast('GPX route ready');
   }
 
   async function loadOfficialGpx(route, variant) {
@@ -2366,7 +2633,9 @@
       delete route.loadErrorVariant;
       applying = true;
       closeExploreRoutes();
-      installImportedGpx(routeFromNearestPoint(parsed.coords), title);
+      const origin = state.culturalRoute?.origin || (!state.importedRouteName ? state.start : null) || state.userLatLng;
+      const originLabel = state.culturalRoute?.originLabel || (!state.importedRouteName && state.start ? state.startLabel : 'Your location');
+      installImportedGpx(parsed.coords, title, {culturalRoute: route, origin, originLabel});
     } catch (err) {
       if (!applying && !isCurrent()) return;
       console.warn('Cultural route GPX could not be loaded', err);
@@ -2414,7 +2683,7 @@
 
   async function sendRouteToPhone() {
     if (!state.route) return;
-    if (state.route.imported) {
+    if (state.route.imported || state.culturalRoute) {
       const file = new File([routeToGpx(state.route, state.importedRouteName)], 'mk-redway-route.gpx', {type:'application/gpx+xml'});
       if (navigator.canShare?.({files:[file]})) {
         try { await navigator.share({files:[file], title:'Imported route'}); } catch (err) { if (err.name !== 'AbortError') toast('Could not share the GPX file'); }
@@ -2491,9 +2760,15 @@
   el('retryRouteBtn').addEventListener('click', () => calculateRoute());
   el('routeMoreBtn').addEventListener('click', () => {
     const menu = el('routeMoreMenu');
-    menu.hidden = !menu.hidden;
+    const opening = menu.hidden || el('routeSheet').classList.contains('is-collapsed');
+    menu.hidden = !opening;
     el('routeMoreBtn').setAttribute('aria-expanded', String(!menu.hidden));
-    if (!menu.hidden) setRouteSheetCollapsed(false);
+    if (!menu.hidden) {
+      setRouteSheetCollapsed(false);
+      requestAnimationFrame(() => {
+        if (!menu.hidden) el('routeMoreBtn').scrollIntoView({block: 'end', inline: 'nearest'});
+      });
+    }
   });
   for (const which of ['start','end']) {
     el(which === 'start' ? 'moveStartBtn' : 'moveEndBtn').addEventListener('click', () => {
@@ -2654,6 +2929,14 @@
     let start = Math.max(0, state.lastSegment - 25);
     let end = Math.min(route.coords.length - 2, state.lastSegment + 160);
     if (!Number.isFinite(state.lastSegment)) { start = 0; end = route.coords.length - 2; }
+    const startingTrack = state.culturalRoute?.phase === 'track' && state.culturalRoute.startingTrack;
+    if (startingTrack) {
+      // A closed track's closing segment may be closest just beside its start.
+      // Until forward progress is established, match only the beginning so a
+      // fresh ride cannot acquire almost-complete progress from closing geometry.
+      start = 0; end = 0;
+      while (end < route.coords.length - 2 && route.cumulative[end + 1] < 80) end++;
+    }
 
     const scan = (a, b) => {
       let out = null;
@@ -2674,7 +2957,7 @@
     };
 
     best = scan(start, end);
-    if (!best || best.distance > 120) best = scan(0, route.coords.length - 2);
+    if ((!best || best.distance > 120) && !startingTrack) best = scan(0, route.coords.length - 2);
     return best;
   }
 
@@ -2916,6 +3199,12 @@
       el('nextTurnText').textContent = 'Guidance will resume when the GPS signal improves.';
       return;
     }
+    if (state.culturalRoute?.phase === 'track' && state.culturalRoute.startingTrack && position.coords.accuracy <= 35 &&
+        hav({lat: latlng.lat, lon: latlng.lng}, {lat: state.start.lat, lon: state.start.lng}) >= Math.min(50, state.route.networkDist / 4)) {
+      // Backgrounded apps may miss the first few fixes. Once an accurate fix is
+      // away from the start, allow normal matching and recovery along the track.
+      state.culturalRoute.startingTrack = false;
+    }
     const snap = nearestOnRoute(latlng);
     if (!snap) return;
     const heading = resolveTravelHeading(position, snap, latlng);
@@ -2924,11 +3213,15 @@
     if (closeEnoughForProgress) {
       state.lastSegment = snap.segment;
       state.navProgressMeters = Math.max(state.navProgressMeters - 15, snap.progress);
+      if (state.culturalRoute?.phase === 'track' && state.culturalRoute.startingTrack &&
+          position.coords.accuracy <= 35 && snap.progress >= Math.min(50, state.route.networkDist / 4)) {
+        state.culturalRoute.startingTrack = false;
+      }
     }
     const progress = closeEnoughForProgress ? Math.max(state.navProgressMeters, snap.progress) : state.navProgressMeters;
     state.navProgressMeters = progress;
 
-    if (state.importedRouteName && !closeEnoughForProgress) {
+    if (state.route.imported && !closeEnoughForProgress) {
       el('navEta').textContent = 'Join route';
       el('navRemain').textContent = `${formatDistance(snap.distance)} to nearest point`;
       setTurnIcon('straight');
@@ -2944,6 +3237,10 @@
     const total = state.route.networkDist;
     const remaining = Math.max(0, total - progress);
     const journey = remainingJourney(state.route, progress, latlng, state.start, state.end, state.mode);
+    if (state.culturalRoute?.phase === 'joining') {
+      journey.distance += state.culturalRoute.trackPlan.dist;
+      journey.mins += state.culturalRoute.trackPlan.mins;
+    }
     const mins = journey.mins;
     el('navEta').textContent = formatDuration(mins);
     el('navRemain').textContent = `${formatDistance(journey.distance)} · arrive ${arrivalTime(mins)}`;
@@ -2958,6 +3255,13 @@
       announceManeuver(maneuver, index, d);
     }
 
+    if (state.culturalRoute?.phase === 'joining' && hasArrived(position, state.end, remaining)) {
+      const color = state.culturalRoute.color;
+      beginCulturalTrack();
+      speak('Joined the ' + color + ' Cultural Route. Follow the official track.', {priority: 3});
+      updateNavigation(position);
+      return;
+    }
     if (hasArrived(position, state.end, remaining)) {
       speak(`You have arrived at ${state.endLabel || 'your destination'}.`, { priority: 4, dedupeMs: 10000 });
       toast('You have arrived', 4000);
@@ -2966,9 +3270,13 @@
     }
 
     if (remaining < 22) {
-      el('turnDistance').textContent = formatDistance(journey.distance);
-      el('turnText').textContent = 'Mapped route ends here. Check the approach to your destination.';
-      el('nextTurnText').textContent = 'Arrival is confirmed near your destination with an accurate GPS fix.';
+      const joining = state.culturalRoute?.phase === 'joining';
+      const approach = joining ? hav({lat: latlng.lat, lon: latlng.lng}, {lat: state.end.lat, lon: state.end.lng}) : journey.distance;
+      el('turnDistance').textContent = formatDistance(approach);
+      el('turnText').textContent = joining ? 'Mapped joining leg ends here. Check the approach to Cultural Route start / join.'
+        : 'Mapped route ends here. Check the approach to your destination.';
+      el('nextTurnText').textContent = joining ? 'Track guidance will begin near the start / join with an accurate GPS fix.'
+        : 'Arrival is confirmed near your destination with an accurate GPS fix.';
       if (state.followUser) followNavigationView(latlng, heading, true);
       return;
     }
@@ -2984,7 +3292,7 @@
   async function rerouteFromPosition(latlng) {
     if (!state.route || state.routing) return;
     state.lastRerouteAt = Date.now(); state.offRouteCount = 0;
-    if (state.importedRouteName) {
+    if (state.route.imported) {
       const snap = nearestOnRoute(latlng);
       const gap = snap?.distance;
       const message = Number.isFinite(gap)
@@ -2992,6 +3300,19 @@
         : 'Return to the imported route.';
       toast(message, 4200);
       speak(message, { priority: 3, dedupeMs: 12000 });
+      return;
+    }
+    if (state.culturalRoute?.phase === 'joining') {
+      const cultural = state.culturalRoute, session = navigationStartRevision;
+      const current = () => state.navigating && session === navigationStartRevision && state.culturalRoute === cultural;
+      toast('Rerouting to Cultural Route start / join…');
+      cultural.originLabel = 'Your location';
+      const ready = await prepareCulturalJoin(latlng, {fit: false, chooseJoin: false, isCurrent: current});
+      if (!current()) return;
+      if (ready) {
+        resetNavigationProgress();
+        speak(state.route.initialInstruction, {priority: 3});
+      } else stopNavigation({keepRoute: true});
       return;
     }
     toast('Rerouting…'); speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
@@ -3032,6 +3353,14 @@
         return;
       }
       state.userLatLng = current.latlng;
+      if (state.culturalRoute) {
+        const cultural = state.culturalRoute;
+        const stillCurrent = () => requestRevision === navigationStartRevision && routeRevision === state.routeRevision &&
+          state.stage === 'planner' && state.culturalRoute === cultural;
+        cultural.originLabel = 'Your location';
+        const ready = await prepareCulturalJoin(current.latlng, {fit: false, accuracy: current.accuracy, isCurrent: stillCurrent});
+        if (!ready || !stillCurrent()) return;
+      }
       const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
       if (distanceFromPlannedStart > 60 && !state.importedRouteName) {
         state.start = current.latlng; state.startLabel = 'Your location';
@@ -3057,7 +3386,7 @@
         activatePackagedBasemap().catch(console.warn);
       }
       resetNavigationProgress();
-      if (state.importedRouteName) {
+      if (state.route.imported) {
         const importedSnap = nearestOnRoute(current.latlng);
         if (importedSnap && importedSnap.distance <= (state.mode === 'cycle' ? 80 : 60) && current.accuracy <= 100) {
           state.lastSegment = importedSnap.segment;
@@ -3080,12 +3409,14 @@
       ));
       if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
       setTurnIcon('straight');
-      el('navEta').textContent = formatDuration(state.route.mins);
-      el('navRemain').textContent = `${formatDistance(state.route.dist)} · arrive ${arrivalTime(state.route.mins)}`;
+      const track = state.culturalRoute?.phase === 'joining' ? state.culturalRoute.trackPlan : null;
+      const initialMins = state.route.mins + (track?.mins || 0), initialDist = state.route.dist + (track?.dist || 0);
+      el('navEta').textContent = formatDuration(initialMins);
+      el('navRemain').textContent = `${formatDistance(initialDist)} · arrive ${arrivalTime(initialMins)}`;
       el('turnDistance').textContent = 'Start';
       el('turnText').textContent = state.route.initialInstruction;
       el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
-      if (state.importedRouteName && initialSnap?.distance > (state.mode === 'cycle' ? 80 : 60)) {
+      if (state.route.imported && initialSnap?.distance > (state.mode === 'cycle' ? 80 : 60)) {
         el('navEta').textContent = 'Join route';
         el('turnText').textContent = 'Join the imported route';
         el('turnDistance').textContent = formatDistance(initialSnap.distance);
@@ -3495,7 +3826,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.8';
+  el('app').dataset.appVersion = '0.14.9';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

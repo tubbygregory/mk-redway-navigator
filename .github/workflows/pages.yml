@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149"]
   workflow_dispatch:
 
 permissions:
@@ -188,28 +188,28 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.8 beta release after production verification
+      - name: Publish v0.14.9 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.8" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.9" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Improve place and address search within the existing Milton Keynes map area.
+          Polish Saved places and Cultural Route navigation within the existing Milton Keynes app.
 
-          - Add a compact OpenStreetMap place/address index for local typing and offline search, including mapped businesses missing from routing-only suggestions.
-          - Match punctuation and possessive/plural variants locally without sending autocomplete requests to Nominatim.
-          - Preserve house numbers, distinct addresses, nearby branches and search relevance; validate coordinates against MK coverage before display and selection.
-          - Label building matches honestly when the requested house number is not mapped; never manufacture a front-door location.
-          - Retain local matches when online search is empty or unavailable, clear stale result pins, and cancel abandoned queued searches.
-          - Validate index schema, provenance and the actual Pages archive; test recorded searches and offline root/subpath use.
-          - Preserve the supplied MK logo, red selected routes, Cultural Routes and existing navigation/offline fixes.
+          - Show a red Saved button for favourited destinations and keep it consistent after selection, removal and reload.
+          - Offer explicit map-pin selection for Home, Work and favourites, with clear cancellation and controls to change existing locations.
+          - Confirm saved-place changes only after successful storage, handle malformed records and prevent silent favourite loss at the capacity limit.
+          - Calculate a red walking/cycling joining leg to a Cultural Route, then guide along the unchanged GPX track in its designated colour.
+          - Keep route-to-start and source-track status distinct; preserve safe GPS progression, cancellation and honest routing failure feedback.
+          - Improve small touch targets, keyboard focus, More-menu access and attribution placement; document the full rendered UX review and deliberate limits.
+          - Preserve the supplied MK logo, MK-only search, generic GPX imports, offline cache persistence and source attribution.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.8 >/dev/null 2>&1; then
+          if gh release view v0.14.9 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.8" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.8 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.9" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.9 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.8 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.8" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.9 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.9" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
