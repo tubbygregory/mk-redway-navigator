@@ -39,6 +39,13 @@ def review(browser, url):
                     colours = page.locator(selector).evaluate('(el) => { const s = getComputedStyle(el); return [s.backgroundColor, s.color]; }')
                     assert colours[0] == expected, (system, choice, selector, colours)
                     assert colours[0] != colours[1], (selector, colours)
+                # Selected settings and About text must stay readable in explicit
+                # dark mode even when the operating system is light (and vice versa).
+                accent = 'rgb(169, 37, 29)' if effective == 'light' else 'rgb(255, 138, 128)'
+                for selector in ['.theme-choice button.active', '.unit-choice button.active']:
+                    assert page.locator(selector).evaluate('(el) => getComputedStyle(el).color') == accent
+                about_color = page.locator('#aboutData').evaluate('(el) => getComputedStyle(el).color')
+                assert about_color == {'light':'rgb(32, 32, 32)', 'dark':'rgb(243, 244, 246)', 'high-contrast':'rgb(255, 255, 255)'}[effective]
         page.locator('#closeSettings').click()
         # Local typing never sends a public geocoder request.
         requests=[];page.on('request',lambda r: requests.append(r.url) if 'nominatim.openstreetmap.org/search' in r.url else None)
@@ -49,6 +56,7 @@ def review(browser, url):
         # A CORS/source failure must stay in the app and offer a normal link.
         page.route('**/getaroundmk.org.uk/**/*.gpx',lambda route:route.abort())
         page.locator('#exploreRoutesBtn').click()
+        assert page.locator('.explore-filters button.active').evaluate('(el) => getComputedStyle(el).color') == 'rgb(92, 198, 138)'
         page.locator('.route-blue').get_by_role('button',name='Full route',exact=True).click()
         expect(page.locator('.route-blue a[data-gpx-download="full"]')).to_be_visible()
         assert page.url == url

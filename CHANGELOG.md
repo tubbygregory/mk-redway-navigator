@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.3
+
+- Fixed low-contrast About/Data text and selected controls in dark mode, including explicit appearance overrides.
+- Fixed offline opening of previously unseen shared route links at both root and subpath installations.
+- Keep the routing graph across app-shell updates and fall back to it on network or HTTP failures; avoid caching failed assets.
+- Cancel delayed navigation starts after leaving the planner or replacing the route, prevent duplicate pending starts, and ignore inaccurate GPS fixes for guidance/rerouting.
+- Guard basemap load events/timeouts against replacing a newer layer and discard stale live-routing responses.
+- Validate routing data before reporting offline downloads complete and preserve useful download error messages.
+- Reject malformed network nodes/ways in the browser and serialize concurrent submitted/reverse geocoder request slots.
+- Added focused service-worker, navigation-state and browser regressions. Retained the fitted MKRW logo and existing routing weights/schema.
+
 ## 0.14.2
 
 - Refine the MKRW roundabout mark for small app-icon and search-bar use with more internal breathing room and no white launcher border.

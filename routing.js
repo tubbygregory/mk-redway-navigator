@@ -9,13 +9,23 @@
     }
     const nodes = new Map();
     for (const row of data.nodes) {
-      if (!Array.isArray(row) || row.length < 3) continue;
-      nodes.set(row[0], { id: row[0], lat: Number(row[1]), lon: Number(row[2]) });
+      if (!Array.isArray(row) || row.length !== 3 || !Number.isSafeInteger(row[0]) || nodes.has(row[0]) ||
+          !Number.isFinite(row[1]) || !Number.isFinite(row[2]) || Math.abs(row[1]) > 90 || Math.abs(row[2]) > 180) {
+        throw new Error('Bundled routing network contains an invalid node');
+      }
+      nodes.set(row[0], { id: row[0], lat: row[1], lon: row[2] });
     }
-    const ways = [];
+    const ways = [], wayIds = new Set();
     for (const row of data.ways) {
-      if (!Array.isArray(row) || row.length < 3 || !Array.isArray(row[1])) continue;
-      ways.push({ id: row[0], nodes: row[1], tags: row[2] || {} });
+      if (!Array.isArray(row) || row.length !== 3 || !Number.isSafeInteger(row[0]) || wayIds.has(row[0]) ||
+          !Array.isArray(row[1]) || row[1].length < 2 || !row[1].every(id => nodes.has(id)) ||
+          !row[2] || typeof row[2] !== 'object' || Array.isArray(row[2]) ||
+          !Object.values(row[2]).every(value => typeof value === 'string') ||
+          ![undefined, 'redway', 'super_redway', 'leisure'].includes(row[2]._mk_class)) {
+        throw new Error('Bundled routing network contains an invalid way');
+      }
+      wayIds.add(row[0]);
+      ways.push({ id: row[0], nodes: row[1], tags: row[2] });
     }
     return { nodes, ways, generatedAt: data.generated_at || null };
   }

@@ -22,6 +22,9 @@
   const el = id => document.getElementById(id);
   let searchRevision = 0;
   let startLocationRevision = 0;
+  let navigationStartRevision = 0;
+  let navigationStartPending = false;
+  function cancelNavigationStart() { navigationStartRevision += 1; navigationStartPending = false; }
   function cancelStartLocation() {
     startLocationRevision += 1;
     el('useLocationBtn').disabled = false;
@@ -194,7 +197,7 @@
   window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 
   function setStage(stage) {
-    if (stage !== 'planner') cancelStartLocation();
+    if (stage !== 'planner') { cancelStartLocation(); cancelNavigationStart(); }
     state.stage = stage;
     state.plannerSearchOpen = false;
     searchRevision += 1;
@@ -728,6 +731,17 @@
     }
   }
 
+  let geocodeGate = Promise.resolve();
+  function waitForGeocoder() {
+    const next = geocodeGate.then(async () => {
+      const elapsed = Date.now() - state.lastGeocodeAt;
+      if (elapsed < 1050) await sleep(1050 - elapsed);
+      state.lastGeocodeAt = Date.now();
+    });
+    geocodeGate = next.catch(() => {});
+    return next;
+  }
+
   async function geocode(query) {
     const trimmed = query.trim();
     if (!trimmed) return [];
@@ -737,9 +751,7 @@
       if (lat < MK.south || lat > MK.north || lon < MK.west || lon > MK.east) return [];
       return [{lat, lon, name:'Map coordinates', display_name:trimmed}];
     }
-    const elapsed = Date.now() - state.lastGeocodeAt;
-    if (elapsed < 1050) await sleep(1050 - elapsed);
-    state.lastGeocodeAt = Date.now();
+    await waitForGeocoder();
     const params = new URLSearchParams({
       q: trimmed,
       format: 'jsonv2',
@@ -1192,9 +1204,7 @@
   });
 
   async function reverseGeocode(latlng) {
-    const elapsed = Date.now() - state.lastGeocodeAt;
-    if (elapsed < 1050) await sleep(1050 - elapsed);
-    state.lastGeocodeAt = Date.now();
+    await waitForGeocoder();
     const params = new URLSearchParams({
       lat: String(latlng.lat),
       lon: String(latlng.lng),
@@ -1901,12 +1911,14 @@
       if (!quiet) setRouteStatus('Loading live map data…');
       const firstBox = corridorBBox(state.start, state.end);
       let parsed = await fetchLiveRoutingNetwork(firstBox);
+      if (revision !== state.routeRevision) return;
       try {
         await solveRouteOnNetwork(parsed, { fit });
       } catch (firstErr) {
         console.warn('First live corridor could not connect route; widening it', firstErr);
         if (!quiet) setRouteStatus('Checking a wider Redway area…');
         parsed = await fetchLiveRoutingNetwork(expandedBox(firstBox, 2.0));
+        if (revision !== state.routeRevision) return;
         await solveRouteOnNetwork(parsed, { fit });
       }
     } catch (err) {
@@ -2595,6 +2607,12 @@
       }
     }
 
+    if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy > 100 || position.coords.accuracy < 0) {
+      state.offRouteCount = 0;
+      el('turnText').textContent = 'Waiting for an accurate location';
+      el('nextTurnText').textContent = 'Guidance will resume when the GPS signal improves.';
+      return;
+    }
     const snap = nearestOnRoute(latlng);
     if (!snap) return;
     const heading = resolveTravelHeading(position, snap, latlng);
@@ -2676,7 +2694,9 @@
     toast('Rerouting…'); speak('Rerouting.', { priority: 4, dedupeMs: 5000 });
     state.start = latlng; state.startLabel = 'Your location';
     invalidateRoute();
+    const session = navigationStartRevision;
     await calculateRoute({fit:false,quiet:true});
+    if (!state.navigating || session !== navigationStartRevision) return;
     resetNavigationProgress();
     if (state.route) speak(state.route.initialInstruction, { priority:3 });
     else { stopNavigation({keepRoute:false}); setStage('planner'); }
@@ -2688,7 +2708,7 @@
   }
 
   async function startNavigation() {
-    if (!state.route || state.navigating) return;
+    if (!state.route || state.navigating || navigationStartPending) return;
     if (!navigator.geolocation) { toast('Live navigation needs location access'); return; }
 
     // This must happen synchronously inside the Start-button tap. On iOS,
@@ -2696,76 +2716,87 @@
     // then be silently blocked for the whole navigation session.
     unlockSpeechFromGesture('Voice guidance ready.');
 
-    const current = await acquireCurrentLocation().catch(() => null);
-    if (!current) { toast('Allow location access to start navigation'); return; }
-    state.userLatLng = current.latlng;
-    const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
-    if (distanceFromPlannedStart > 60 && !state.importedRouteName) {
-      state.start = current.latlng; state.startLabel = 'Your location';
-      invalidateRoute();
-      await calculateRoute({ fit: false, quiet: true });
-      if (!state.route) {
-        setStage('planner');
-        return;
+    const requestRevision = ++navigationStartRevision;
+    let routeRevision = state.routeRevision;
+    navigationStartPending = true;
+    try {
+      const current = await acquireCurrentLocation().catch(() => null);
+      if (requestRevision !== navigationStartRevision || routeRevision !== state.routeRevision || state.stage !== 'planner') return;
+      if (!current) { toast('Allow location access to start navigation'); return; }
+      state.userLatLng = current.latlng;
+      const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
+      if (distanceFromPlannedStart > 60 && !state.importedRouteName) {
+        state.start = current.latlng; state.startLabel = 'Your location';
+        invalidateRoute();
+        routeRevision = state.routeRevision;
+        await calculateRoute({ fit: false, quiet: true });
+        if (requestRevision !== navigationStartRevision || routeRevision !== state.routeRevision || state.stage !== 'planner') return;
+        if (!state.route) {
+          setStage('planner');
+          return;
+        }
       }
-    }
 
-    state.navigating = true;
-    state.followUser = true;
-    const themeBeforeNavigation = document.documentElement.dataset.theme;
-    applyTheme();
-    if (themeBeforeNavigation !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
-      map.removeLayer(offlineVectorLayer);
-      offlineVectorLayer = null;
-      if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
-      baseLayer = onlineBaseLayer;
-      activatePackagedBasemap().catch(console.warn);
-    }
-    resetNavigationProgress();
-    if (state.importedRouteName) {
-      const importedSnap = nearestOnRoute(current.latlng);
-      if (importedSnap && importedSnap.distance <= (state.mode === 'cycle' ? 80 : 60) && current.accuracy <= 100) {
-        state.lastSegment = importedSnap.segment;
-        state.navProgressMeters = importedSnap.progress;
-      } else if (importedSnap) {
-        toast(`Imported route is ${formatDistance(importedSnap.distance)} away — head to the nearest point to join it.`, 6000);
+      state.navigating = true;
+      state.followUser = true;
+      const themeBeforeNavigation = document.documentElement.dataset.theme;
+      applyTheme();
+      if (themeBeforeNavigation !== document.documentElement.dataset.theme && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+        map.removeLayer(offlineVectorLayer);
+        offlineVectorLayer = null;
+        if (!map.hasLayer(onlineBaseLayer)) onlineBaseLayer.addTo(map);
+        baseLayer = onlineBaseLayer;
+        activatePackagedBasemap().catch(console.warn);
       }
-    }
-    redrawMarkers();
-    setStage('navigation');
-    redwayLayer.remove(); // declutter sat-nav view; the chosen route remains visible.
-    setUserMarker(current.latlng);
-    const initialSnap = nearestOnRoute(current.latlng);
-    state.heading = routeHeadingAt(initialSnap);
-    state.lastHeadingFix = L.latLng(current.latlng.lat, current.latlng.lng);
-    // Give the navigation overlays and rotated map one layout pass before setting
-    // the initial camera; this prevents the first frame from starting off-centre.
-    requestAnimationFrame(() => requestAnimationFrame(() =>
-      followNavigationView(current.latlng, state.heading, false)
-    ));
-    if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
-    setTurnIcon('straight');
-    el('navEta').textContent = formatDuration(state.route.mins);
-    el('navRemain').textContent = `${formatDistance(state.route.dist)} · arrive ${arrivalTime(state.route.mins)}`;
-    el('turnDistance').textContent = 'Start';
-    el('turnText').textContent = state.route.initialInstruction;
-    el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
-    if (state.importedRouteName && initialSnap?.distance > (state.mode === 'cycle' ? 80 : 60)) {
-      el('navEta').textContent = 'Join route';
-      el('turnText').textContent = 'Join the imported route';
-      el('turnDistance').textContent = formatDistance(initialSnap.distance);
-      el('nextTurnText').textContent = 'Follow the imported track once you reach it.';
-      speak('Join the imported route to begin guidance.', {priority:3});
-    } else speak(`Navigation started. ${state.route.initialInstruction}.`, { priority: 3, dedupeMs: 1000 });
+      resetNavigationProgress();
+      if (state.importedRouteName) {
+        const importedSnap = nearestOnRoute(current.latlng);
+        if (importedSnap && importedSnap.distance <= (state.mode === 'cycle' ? 80 : 60) && current.accuracy <= 100) {
+          state.lastSegment = importedSnap.segment;
+          state.navProgressMeters = importedSnap.progress;
+        } else if (importedSnap) {
+          toast(`Imported route is ${formatDistance(importedSnap.distance)} away — head to the nearest point to join it.`, 6000);
+        }
+      }
+      redrawMarkers();
+      setStage('navigation');
+      redwayLayer.remove(); // declutter sat-nav view; the chosen route remains visible.
+      setUserMarker(current.latlng);
+      const initialSnap = nearestOnRoute(current.latlng);
+      state.heading = routeHeadingAt(initialSnap);
+      state.lastHeadingFix = L.latLng(current.latlng.lat, current.latlng.lng);
+      // Give the navigation overlays and rotated map one layout pass before setting
+      // the initial camera; this prevents the first frame from starting off-centre.
+      requestAnimationFrame(() => requestAnimationFrame(() =>
+        followNavigationView(current.latlng, state.heading, false)
+      ));
+      if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
+      setTurnIcon('straight');
+      el('navEta').textContent = formatDuration(state.route.mins);
+      el('navRemain').textContent = `${formatDistance(state.route.dist)} · arrive ${arrivalTime(state.route.mins)}`;
+      el('turnDistance').textContent = 'Start';
+      el('turnText').textContent = state.route.initialInstruction;
+      el('nextTurnText').textContent = state.route.maneuvers[0] ? `Then ${state.route.maneuvers[0].instruction.charAt(0).toLowerCase()}${state.route.maneuvers[0].instruction.slice(1)}` : '';
+      if (state.importedRouteName && initialSnap?.distance > (state.mode === 'cycle' ? 80 : 60)) {
+        el('navEta').textContent = 'Join route';
+        el('turnText').textContent = 'Join the imported route';
+        el('turnDistance').textContent = formatDistance(initialSnap.distance);
+        el('nextTurnText').textContent = 'Follow the imported track once you reach it.';
+        speak('Join the imported route to begin guidance.', {priority:3});
+      } else speak(`Navigation started. ${state.route.initialInstruction}.`, { priority: 3, dedupeMs: 1000 });
 
-    state.watchId = navigator.geolocation.watchPosition(
-      updateNavigation,
-      err => { console.warn(err); toast('GPS signal unavailable'); },
-      { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
-    );
+      state.watchId = navigator.geolocation.watchPosition(
+        updateNavigation,
+        err => { console.warn(err); toast('GPS signal unavailable'); },
+        { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
+      );
+    } finally {
+      if (requestRevision === navigationStartRevision) navigationStartPending = false;
+    }
   }
 
   function stopNavigation({ keepRoute = true, arrived = false } = {}) {
+    cancelNavigationStart();
     if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null; state.navigating = false; state.followUser = true;
     const themeBeforeExit = document.documentElement.dataset.theme;
@@ -2868,27 +2899,29 @@
     if (!window.protomapsL?.leafletLayer) return false;
     const available = state.offlineMapAvailable || await probeOfflineMap();
     if (!available) return false;
+    if (offlineVectorLayer && map.hasLayer(offlineVectorLayer)) return true;
     try {
-      offlineVectorLayer = window.protomapsL.leafletLayer({
+      const layer = window.protomapsL.leafletLayer({
         url: OFFLINE_MAP_URL,
         flavor: ['dark','high-contrast'].includes(effectiveTheme()) ? 'dark' : 'light',
         lang: 'en',
         attribution: '<a href="https://protomaps.com/">Protomaps</a>'
       });
+      offlineVectorLayer = layer;
       const previousLayer = baseLayer;
       let switched = false;
       const finishSwitch = () => {
-        if (switched) return;
+        if (switched || offlineVectorLayer !== layer) return;
         switched = true;
-        if (previousLayer && previousLayer !== offlineVectorLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
-        baseLayer = offlineVectorLayer;
+        if (previousLayer && previousLayer !== layer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
+        baseLayer = layer;
       };
       // Keep the complete raster fallback visible until the vector layer has
       // finished the current view; switching on the first tile creates a patchwork.
-      offlineVectorLayer.on?.('load', finishSwitch);
-      offlineVectorLayer.addTo(map);
+      layer.on?.('load', finishSwitch);
+      layer.addTo(map);
       setTimeout(() => {
-        if (!switched && offlineVectorLayer && map.hasLayer(offlineVectorLayer)) {
+        if (!switched && offlineVectorLayer === layer && map.hasLayer(layer)) {
           // Leave the proven online layer in place if the PMTiles renderer never produced a tile.
           map.removeLayer(offlineVectorLayer);
           offlineVectorLayer = null;
@@ -2913,9 +2946,19 @@
     for (const url of urls) {
       try {
         const response = await fetch(url, { cache: 'reload', mode: url.startsWith('http') ? 'cors' : 'same-origin' });
-        if (response.ok) await cache.put(url, response.clone());
+        if (response.ok) {
+          if (url === './data/network.json') {
+            const parsed = parseBundledNetwork(await response.clone().json());
+            if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Offline routing data is incomplete');
+          }
+          await cache.put(url, response.clone());
+        }
       } catch (err) { console.warn('Could not cache offline dependency', url, err); }
     }
+    const network = await cache.match(new URL('./data/network.json', location.href).href);
+    if (!network?.ok) throw new Error('Routing data could not be downloaded');
+    const parsed = parseBundledNetwork(await network.json());
+    if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Offline routing data is incomplete');
   }
 
   async function downloadOfflineMap() {
@@ -2937,6 +2980,7 @@
     button.disabled = true;
     button.textContent = 'Downloading…';
     status.textContent = 'Starting offline map download…';
+    let downloadFailed = false;
     try {
       const response = await fetch(OFFLINE_MAP_URL, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Offline map returned ${response.status}`);
@@ -2972,11 +3016,13 @@
       await activatePackagedBasemap();
     } catch (err) {
       console.error(err);
+      downloadFailed = true;
+      state.offlineMapDownloaded = false;
       toast('Offline map download failed');
-      status.textContent = 'Download failed. Check your connection and try again.';
     } finally {
       state.offlineDownloadBusy = false;
       renderOfflineStatus();
+      if (downloadFailed) status.textContent = 'Download failed. Check your connection and try again.';
     }
   }
 
@@ -3071,7 +3117,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.2';
+  el('app').dataset.appVersion = '0.14.3';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
