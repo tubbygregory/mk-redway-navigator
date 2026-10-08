@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146"]
   workflow_dispatch:
 
 permissions:
@@ -175,30 +175,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.5 beta release after production verification
+      - name: Publish v0.14.6 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.5" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.6" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Navigation, offline reliability and accessibility fixes.
+          Correct the logo artwork to the supplied stylised MK design.
 
-          - Discard delayed pin, search and GPX replies after the user changes context.
-          - Preserve planned routes when initial GPS accuracy is poor and cancel superseded navigation starts.
-          - Keep online loading working when browser cache storage fails and validate offline basemap downloads.
-          - Restore turn guidance at one-way forks and tunnel entries; exclude bridges from estimated road crossings.
-          - Align producer and consumer numeric validation without changing the v6 schema or routing weights.
-          - Keep Explore's close control reachable while scrolling and improve explicit-theme text contrast.
-          - Display the selected route in the app's primary red during planning and navigation.
-          - Use the newly supplied MK route-map logo in the app's primary red and refresh all browser/PWA icons.
-          - Preserve installed-iPhone dark surfaces and the existing release gates.
+          - Replace the approximate vector mark with the user's supplied MK route/map artwork, recoloured to the app's primary red.
+          - Regenerate browser, Apple, PWA, maskable and launch assets while retaining their existing sizes and safe-area composition.
+          - Refresh versioned icon references and the app-shell cache so installed copies can receive the corrected logo.
+          - Preserve red selected-route styling, navigation/offline fixes and installed-iPhone dark surfaces.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.5 >/dev/null 2>&1; then
+          if gh release view v0.14.6 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.5" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.5 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.6" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.6 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.5 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.5" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.6 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.6" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
