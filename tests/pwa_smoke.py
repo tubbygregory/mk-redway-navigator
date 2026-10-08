@@ -6,6 +6,7 @@ from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from urllib.parse import urljoin
 import tempfile
 from playwright.sync_api import sync_playwright, expect
 from browser_smoke import plan
@@ -57,6 +58,11 @@ def review(browser, url, live=False):
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on("request", lambda req: external_shell.append(req.url) if "unpkg.com" in req.url else None)
     page.goto(url, wait_until="networkidle")
+    expected_version = (ROOT / "VERSION").read_text().strip()
+    expect(page.locator("#app")).to_have_attribute("data-app-version", expected_version)
+    metadata = context.request.get(urljoin(url, "data/data-meta.json"), headers={"Cache-Control": "no-cache"})
+    assert metadata.ok, f"Runtime metadata returned {metadata.status}"
+    assert metadata.json()["app_version"] == expected_version, "Runtime metadata is from a different release"
     capture(page, "first-run")
     expect(page.locator("#visibleSettingsBtn")).to_be_visible()
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")

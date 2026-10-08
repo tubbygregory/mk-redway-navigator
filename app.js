@@ -21,6 +21,7 @@
 
   const el = id => document.getElementById(id);
   let searchRevision = 0;
+  let gpxLoadRevision = 0;
   let startLocationRevision = 0;
   let navigationStartRevision = 0;
   let navigationStartPending = false;
@@ -195,6 +196,7 @@
   window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 
   function setStage(stage) {
+    gpxLoadRevision += 1;
     if (stage !== 'planner') { cancelStartLocation(); cancelNavigationStart(); }
     state.stage = stage;
     state.plannerSearchOpen = false;
@@ -846,6 +848,7 @@
     input.addEventListener('input', () => renderTypeahead(input, context));
   }
   el('homeSearch').addEventListener('input', () => {
+    closeSearch();
     const context = state.pendingSaveKind ? 'save-' + state.pendingSaveKind : 'destination';
     renderTypeahead(el('homeSearch'), context);
   });
@@ -967,6 +970,7 @@
   }
 
   function openExploreRoutes() {
+    closeSearch();
     if (state.pendingSaveKind) finishSavedSearch();
     el('savedSheet').hidden = true;
     el('settingsSheet').hidden = true;
@@ -1027,6 +1031,7 @@
   }
 
   function closeExploreRoutes() {
+    gpxLoadRevision += 1;
     el('exploreSheet').hidden = true;
     el('app').dataset.exploreOpen = 'false';
     el('exploreRoutesBtn').classList.remove('active');
@@ -1109,6 +1114,7 @@
   });
 
   el('savedPlacesBtn').addEventListener('click', () => {
+    closeSearch();
     if (state.pendingSaveKind) finishSavedSearch();
     closeExploreRoutes();
     renderSavedPlaces();
@@ -1127,6 +1133,7 @@
     el('goTabBtn').setAttribute('aria-current', 'page');
   });
   function openSettings() {
+    closeSearch();
     closeExploreRoutes();
     el('savedSheet').hidden = true;
     el('installSheet').hidden = true;
@@ -1232,9 +1239,9 @@
     setPoint('end', latlng, 'Dropped pin', fmtCoord(latlng));
     showPlaceSheet();
     showDestinationInContext(latlng);
-    const original = state.end && L.latLng(state.end.lat, state.end.lng);
+    const original = state.end;
     const result = await reverseGeocode(latlng);
-    if (!result || !state.end || !original || state.end.distanceTo(original) > 2) return;
+    if (!result || state.navigating || state.stage !== 'place' || state.end !== original) return;
     const primary = conciseResultName(result);
     state.endLabel = primary || 'Dropped pin';
     state.endAddress = resultSecondary(result, state.endLabel) || fmtCoord(latlng);
@@ -2055,16 +2062,26 @@
   }
 
   async function loadOfficialGpx(route, variant) {
+    const revision = ++gpxLoadRevision;
+    const routeRevision = state.routeRevision;
+    const plannedRoute = state.route;
+    const isCurrent = () => revision === gpxLoadRevision && routeRevision === state.routeRevision && plannedRoute === state.route;
     const url = variant === 'short' ? route.shortGpx : route.fullGpx;
     const title = route.color + ' · ' + route.title + (variant === 'short' ? ' short' : '');
+    let applying = false;
     try {
       const response = await fetch(url, {headers:{Accept:'application/gpx+xml, application/xml, text/xml'}});
+      if (!isCurrent()) return;
       if (!response.ok) throw new Error('GPX download returned ' + response.status);
-      const parsed = parseGpx(await response.text());
+      const textValue = await response.text();
+      if (!isCurrent()) return;
+      const parsed = parseGpx(textValue);
       route[variant + 'Coords'] = parsed.coords;
+      applying = true;
       closeExploreRoutes();
       installImportedGpx(routeFromNearestPoint(parsed.coords), title);
     } catch (err) {
+      if (!applying && !isCurrent()) return;
       console.warn('Official GPX could not be loaded directly', err);
       const actions = document.querySelector('.route-' + route.id + ' .cultural-route-actions');
       if (actions && !actions.querySelector('[data-gpx-download="' + variant + '"]')) {
@@ -2082,13 +2099,22 @@
 
   async function importGpxFile(file) {
     if (!file) return;
+    const revision = ++gpxLoadRevision;
+    const routeRevision = state.routeRevision;
+    const plannedRoute = state.route;
+    const isCurrent = () => revision === gpxLoadRevision && routeRevision === state.routeRevision && plannedRoute === state.route;
+    let applying = false;
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error('GPX file is too large');
-      const parsed = parseGpx(await file.text());
+      const textValue = await file.text();
+      if (!isCurrent()) return;
+      const parsed = parseGpx(textValue);
+      applying = true;
       closeExploreRoutes();
       installImportedGpx(parsed.coords, parsed.title || file.name.replace(/\.gpx$/i, ''));
       if (parsed.multipleSegments) toast('Multiple GPX sections: showing the longest continuous section.', 6000);
     } catch (err) {
+      if (!applying && !isCurrent()) return;
       console.error(err);
       toast('That GPX file could not be read');
     }
@@ -2716,11 +2742,16 @@
 
     const requestRevision = ++navigationStartRevision;
     let routeRevision = state.routeRevision;
+    const plannedRoute = state.route;
     navigationStartPending = true;
     try {
       const current = await acquireCurrentLocation().catch(() => null);
-      if (requestRevision !== navigationStartRevision || routeRevision !== state.routeRevision || state.stage !== 'planner') return;
+      if (requestRevision !== navigationStartRevision || routeRevision !== state.routeRevision || plannedRoute !== state.route || state.stage !== 'planner') return;
       if (!current) { toast('Allow location access to start navigation'); return; }
+      if (!Number.isFinite(current.accuracy) || current.accuracy > 100 || current.accuracy < 0) {
+        toast('Waiting for an accurate location — try Start again when the GPS signal improves', 5000);
+        return;
+      }
       state.userLatLng = current.latlng;
       const distanceFromPlannedStart = state.start ? hav({ lat: current.latlng.lat, lon: current.latlng.lng }, { lat: state.start.lat, lon: state.start.lng }) : 0;
       if (distanceFromPlannedStart > 60 && !state.importedRouteName) {
@@ -2850,11 +2881,65 @@
     return `${(bytes / (1024 * 1024)).toFixed(bytes < 20 * 1024 * 1024 ? 1 : 0)} MB`;
   }
 
+  function validPmtilesHeader(header, size) {
+    if (!Number.isSafeInteger(size) || size < 100000 || header.byteLength < 127) return false;
+    if (![80, 77, 84, 105, 108, 101, 115, 3].every((value, index) => header[index] === value)) return false;
+    const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+    const uint64 = offset => view.getUint32(offset, true) + view.getUint32(offset + 4, true) * 4294967296;
+    // The v3 header declares each directory/metadata/tile-data section's extent.
+    // A valid signature alone does not establish that the download is complete.
+    for (const offset of [8, 24, 40, 56]) {
+      const start = uint64(offset), length = uint64(offset + 8);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length) ||
+          (length > 0 && start < 127) || start > size || length > size - start) return false;
+    }
+    return uint64(16) > 0 && uint64(64) > 0;
+  }
+
+  async function validCachedOfflineMap(response) {
+    if (response?.status !== 200) return false;
+    const size = Number(response.headers.get('Content-Length'));
+    if (!Number.isSafeInteger(size) || size < 100000) return false;
+    if (!response.body?.getReader) {
+      const blob = await response.blob();
+      return blob.size === size && validPmtilesHeader(new Uint8Array(await blob.slice(0, 127).arrayBuffer()), blob.size);
+    }
+    // Cached downloads record their actual blob length. Read only the header on
+    // startup rather than loading or hashing the entire basemap again.
+    const reader = response.body.getReader();
+    const header = new Uint8Array(127);
+    let received = 0;
+    try {
+      while (received < header.length) {
+        const {done, value} = await reader.read();
+        if (done) return false;
+        const length = Math.min(value.byteLength, header.length - received);
+        header.set(value.subarray(0, length), received);
+        received += length;
+      }
+      return validPmtilesHeader(header, size);
+    } finally {
+      // Do not wait for a cloned response's other stream branch to finish.
+      reader.cancel().catch(() => {});
+    }
+  }
+
   async function offlineMapCached() {
     if (!('caches' in window)) return false;
     try {
       const cache = await caches.open(OFFLINE_CACHE);
-      return Boolean(await cache.match(new URL(OFFLINE_MAP_URL, location.href).href)) && Boolean(await caches.match(new URL("./data/network.json", location.href).href));
+      const url = new URL(OFFLINE_MAP_URL, location.href).href;
+      const basemap = await cache.match(url);
+      if (!await validCachedOfflineMap(basemap)) {
+        // Pre-validation downloads must not keep poisoning subsequent retries.
+        if (basemap) await cache.delete(url);
+        return false;
+      }
+      state.offlineMapBytes = Number(basemap.headers.get('Content-Length'));
+      const network = await caches.match(new URL('./data/network.json', location.href).href);
+      if (!network?.ok) return false;
+      const parsed = parseBundledNetwork(await network.json());
+      return parsed.nodes.size >= 1000 && parsed.ways.length >= 100;
     } catch (_) { return false; }
   }
 
@@ -2872,9 +2957,13 @@
       button.textContent = 'Download';
       button.disabled = false;
     } else {
-      status.textContent = 'Offline basemap is not available in this deployment yet.';
-      button.textContent = 'Unavailable';
-      button.disabled = true;
+      status.textContent = state.offlineMapMissing
+        ? 'Offline basemap is not available in this deployment yet.'
+        : navigator.onLine === false
+          ? 'Connect to download the offline MK basemap.'
+          : 'Could not check the offline basemap. Try again when connected.';
+      button.textContent = state.offlineMapMissing ? 'Unavailable' : 'Retry';
+      button.disabled = Boolean(state.offlineMapMissing);
     }
   }
 
@@ -2882,10 +2971,12 @@
     state.offlineMapDownloaded = await offlineMapCached();
     try {
       const response = await fetch(OFFLINE_MAP_URL, { method: 'HEAD', cache: 'no-store' });
-      state.offlineMapAvailable = response.ok;
+      state.offlineMapMissing = [404, 410].includes(response.status);
+      state.offlineMapAvailable = response.status === 200 || state.offlineMapDownloaded;
       const len = Number(response.headers.get('Content-Length') || 0);
       if (len > 0) state.offlineMapBytes = len;
     } catch (_) {
+      state.offlineMapMissing = false;
       state.offlineMapAvailable = state.offlineMapDownloaded;
     }
     renderOfflineStatus();
@@ -2971,7 +3062,8 @@
       } catch (_) {}
       return;
     }
-    if (!state.offlineMapAvailable) return;
+    if (!state.offlineMapAvailable && !await probeOfflineMap()) return;
+    if (state.offlineDownloadBusy || state.offlineMapDownloaded) return;
     state.offlineDownloadBusy = true;
     const button = el('offlineDownloadBtn');
     const status = el('offlineStatus');
@@ -2981,7 +3073,7 @@
     let downloadFailed = false;
     try {
       const response = await fetch(OFFLINE_MAP_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Offline map returned ${response.status}`);
+      if (response.status !== 200) throw new Error(`Offline map returned ${response.status}; a complete download is required`);
       const total = Number(response.headers.get('Content-Length') || state.offlineMapBytes || 0);
       const chunks = [];
       let received = 0;
@@ -3000,6 +3092,14 @@
         received = chunks[0].byteLength;
       }
       const blob = new Blob(chunks, { type: response.headers.get('Content-Type') || 'application/octet-stream' });
+      const header = new Uint8Array(await blob.slice(0, 127).arrayBuffer());
+      if (!validPmtilesHeader(header, blob.size)) throw new Error('Offline map is invalid or incomplete');
+      const declaredLength = response.headers.get('Content-Length');
+      const encoding = response.headers.get('Content-Encoding');
+      if (declaredLength !== null && (!encoding || encoding.toLowerCase() === 'identity') &&
+          (!Number.isSafeInteger(Number(declaredLength)) || Number(declaredLength) !== blob.size)) {
+        throw new Error('Offline map download is incomplete');
+      }
       const cache = await caches.open(OFFLINE_CACHE);
       const url = new URL(OFFLINE_MAP_URL, location.href).href;
       await cache.put(url, new Response(blob, {
@@ -3020,7 +3120,7 @@
     } finally {
       state.offlineDownloadBusy = false;
       renderOfflineStatus();
-      if (downloadFailed) status.textContent = 'Download failed. Check your connection and try again.';
+      if (downloadFailed) status.textContent = 'Download failed. Check your connection and available device storage, then retry.';
     }
   }
 
@@ -3115,7 +3215,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.4';
+  el('app').dataset.appVersion = '0.14.5';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

@@ -82,6 +82,23 @@ test('smooth bends are quiet but closely spaced real turns remain',()=>{
  const simple=new Map([[2,[{to:1},{to:3}]],[3,[{to:2},{to:4}]]]);
  assert.equal(R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph:simple}).length,1);
 });
+test('one-way forks retain turn guidance without announcing ordinary directed bends',()=>{
+ const p=network([[1,52,-.78],[2,52.001,-.78],[3,52.001,-.779],[4,52.002,-.78]],[
+  [1,[1,2],{...tags,oneway:'yes'}],[2,[2,3],{...tags,oneway:'yes'}],[3,[2,4],{...tags,oneway:'yes'}]]);
+ const graph=R.buildGraph(p,'cycle','balanced'),coords=[[52,-.78],[52.001,-.78],[52.001,-.779]];
+ const edges=[graph.get(1)[0],graph.get(2).find(e=>e.to===3)],ids=[1,2,3];
+ const turns=R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph});
+ assert.equal(turns[0].icon,'right');assert.match(turns[0].instruction,/^Turn right/);
+ const simple=R.buildGraph({...p,ways:p.ways.slice(0,2)},'cycle','balanced');
+ assert.equal(R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph:simple}).length,1);
+});
+test('smoothing stops at closely spaced one-way decision points',()=>{
+ const coords=[[52,-.78],[52,-.779],[52.00004,-.779],[52.00004,-.778]];
+ const edges=[0,1,2].map(i=>({wayId:i,cls:'redway',name:'Redway'})),ids=[1,2,3,4];
+ const graph=new Map([[2,[{to:3},{to:10}]],[3,[{to:4},{to:11}]]]);
+ const turns=R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph});
+ assert.deepEqual(turns.filter(m=>!m.arrive).map(m=>m.icon),['left','right']);
+});
 test('download errors have actionable text',()=>{
  assert.match(R.routeErrorMessage({name:'AbortError',message:'signal is aborted without reason'}),/timed out.*retry/);
  assert.match(R.routeErrorMessage(new TypeError('Failed to fetch')),/connection.*retry/);
@@ -161,6 +178,18 @@ test('crossings count contiguous sections, distinguish estimates, and ignore bri
  assert.equal(R.routeInsights([{...path,bridge:'yes'},{...path,tunnel:'no'}]).underpasses,0);
  assert.equal(R.routeInsights([{...path,tunnel:'yes'},{...path,tunnel:'yes'},path,{...path,tunnel:'yes'}]).underpasses,2);
 });
+test('mapped road bridges are retained and excluded from estimated at-grade crossings',()=>{
+ for(const bridge of ['yes','viaduct','movable']) {
+  const p=network([[1,52,-.78],[2,52,-.779],[3,52,-.7788],[4,52,-.778]],[
+   [1,[1,2],tags],[2,[2,3],{highway:'residential',bridge}],[3,[3,4],tags]]);
+  const graph=R.buildGraph(p,'cycle','balanced'),result=R.aStar(p,graph,1,4);
+  assert.equal(result.edges[1].bridge,bridge);
+  assert.equal(R.routeInsights(result.edges).estimatedRoadCrossings,0);
+  assert.equal(R.routeInsights(result.edges).roadCrossings,0);
+  result.edges[1].bridge='no';
+  assert.equal(R.routeInsights(result.edges).estimatedRoadCrossings,1);
+ }
+});
 
 test('unlit warning survives underpass maneuver and roundabout exits never invent exit numbers',()=>{
  const coords=[[52,-.78],[52,-.779],[52,-.778]], c=R.buildCumulative(coords);
@@ -169,11 +198,28 @@ test('unlit warning survives underpass maneuver and roundabout exits never inven
  const round=R.buildManeuvers(coords,[{junction:'roundabout'},{cls:'redway'}],c);
  assert.equal(round[0].icon,'roundabout-exit');assert.doesNotMatch(round[0].instruction,/\d|third/);
 });
+test('tunnel entries retain turn direction, mapped context and unlit warning',()=>{
+ for(const [lon,direction] of [[-.779,'right'],[-.781,'left']]) {
+  const coords=[[52,-.78],[52.001,-.78],[52.001,lon]],ids=[1,2,3];
+  const edges=[{cls:'redway',wayId:1},{cls:'redway',wayId:2,tunnel:'yes',underRoad:'H5 Portway',lit:'no'}];
+  const graph=new Map([[2,[{to:1},{to:3},{to:4}]]]);
+  const maneuver=R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph})[0];
+  assert.equal(maneuver.icon,'underpass');
+  assert.equal(maneuver.instruction,`Turn ${direction} under H5 Portway; unlit path ahead`);
+  const bend=R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph:new Map([[2,[{to:1},{to:3}]]])})[0];
+  assert.equal(bend.instruction,'Continue under H5 Portway; unlit path ahead');
+  edges[0].junction='roundabout';
+  const exit=R.buildManeuvers(coords,edges,R.buildCumulative(coords),{ids,graph})[0];
+  assert.equal(exit.instruction,'Exit the roundabout under H5 Portway; unlit path ahead');
+ }
+});
 
 test('network consumer rejects corrupt geometry and metadata before installing a graph',()=>{
  const valid={format:'mk-redway-network-v6',nodes:[[1,52,-.7],[2,52.01,-.71]],ways:[[1,[1,2],{highway:'cycleway',lit:'yes'}]]};
  assert.doesNotThrow(()=>R.parseBundledNetwork(valid));
  for(const mutate of [d=>d.nodes[0][1]=NaN,d=>d.nodes[0][2]=181,d=>d.nodes.push(d.nodes[0]),
+   d=>d.nodes[0][1]=true,d=>d.nodes[0][0]=false,d=>d.nodes[0][0]=2**53,
+   d=>d.ways[0][0]=true,d=>d.ways[0][0]=2**53,d=>d.ways[0][1]=[true,2],
    d=>d.ways[0][1]=[1,999],d=>d.ways[0][2].lit=false,d=>d.ways.push(d.ways[0]),d=>d.ways[0][2]._mk_class='invented']) {
   const data=structuredClone(valid);mutate(data);assert.throws(()=>R.parseBundledNetwork(data),/invalid/);
  }

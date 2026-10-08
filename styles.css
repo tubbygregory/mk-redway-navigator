@@ -302,7 +302,7 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
 .nav-remaining { flex: 1; min-width: 0; }
 .nav-remaining strong { display: block; color: var(--green); font-size: 28px; line-height: 1.05; }
 .nav-remaining span { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; }
-.exit-button { min-width: 78px; min-height: 58px; padding: 0 18px; border-radius: 29px; background: #e53935; color: #fff; font-size: 16px; }
+.exit-button { min-width: 78px; min-height: 58px; padding: 0 18px; border-radius: 29px; background: var(--red); color: #fff; font-size: 16px; }
 
 .toast {
   position: absolute;
@@ -330,7 +330,7 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
 .leaflet-pane .leisure-line { stroke: #23864a; stroke-width: 2.3; stroke-dasharray: 6 4; opacity: .82; }
 .leaflet-pane .shared-line { stroke: #73777c; stroke-width: 1.4; stroke-dasharray: 3 5; opacity: .34; }
 .leaflet-pane .route-casing { stroke: #fff; stroke-width: 11; opacity: .94; }
-.leaflet-pane .route-line { stroke: var(--blue); stroke-width: 7; opacity: .98; }
+.leaflet-pane .route-line { stroke: var(--red); stroke-width: 7; opacity: .98; }
 .user-pulse {
   width: 18px; height: 18px; border-radius: 50%;
   background: #1769e0; border: 3px solid #fff;
@@ -1671,7 +1671,7 @@ html.ios-standalone .toast {
 }
 .explore-sheet .sheet-heading {
   position: sticky;
-  top: 0;
+  top: 44px;
   z-index: 2;
   margin-top: -2px;
   padding-top: 2px;
@@ -1794,6 +1794,10 @@ html[data-theme] .settings-sheet > .sheet-heading {
   color: var(--text);
   border-color: var(--border);
 }
+html[data-theme] .search-pill input::placeholder,
+html[data-theme] .planner-row input::placeholder {
+  color: var(--muted);
+}
 html[data-theme="dark"] .leaflet-control-attribution,
 html[data-theme="high-contrast"] .leaflet-control-attribution {
   background: var(--surface-solid) !important;
@@ -1870,7 +1874,7 @@ html[data-theme="high-contrast"] {
   --soft:#111;
   --border:#fff;
   --shadow:none;
-  --red:#ff453a;
+  --red:#d92f24;
   --red-dark:#b5150c;
   --green:#6cff96;
   --blue:#7db7ff;
