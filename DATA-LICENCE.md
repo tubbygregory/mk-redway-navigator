@@ -16,9 +16,9 @@ The Explore MK catalogue uses the five Cultural Routes published by [Get Around 
 
 ## OpenStreetMap and Geofabrik
 
-Routing topology is derived from © OpenStreetMap contributors via the [Geofabrik Buckinghamshire extract](https://download.geofabrik.de/europe/united-kingdom/england/buckinghamshire.html).
+Routing topology and the local mapped-place/address index are derived from © OpenStreetMap contributors via the [Geofabrik Buckinghamshire extract](https://download.geofabrik.de/europe/united-kingdom/england/buckinghamshire.html). The index uses explicit source names, address tags and mapped node/way geometry within the app’s existing MK bounds; building centres do not identify verified entrances. Its source timestamp and hash are recorded in the runtime metadata. Raw OSM inputs are not deployed.
 
-OpenStreetMap data is licensed under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution and applicable share-alike obligations continue to apply to derived data. See [OpenStreetMap copyright and licence information](https://www.openstreetmap.org/copyright). The generated network is not covered solely by the application's MIT licence.
+OpenStreetMap data is licensed under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution and applicable share-alike obligations continue to apply to derived data. See [OpenStreetMap copyright and licence information](https://www.openstreetmap.org/copyright). The generated network and place/address index retain this data licence and are not covered solely by the application's MIT licence.
 
 The online raster fallback uses OpenStreetMap's tile service, subject to its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). The app does not bulk-download that service for offline use.
 

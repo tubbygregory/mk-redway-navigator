@@ -13,7 +13,7 @@ Plan a journey around Milton Keynes, compare cycling routes and follow location-
 - Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode, plus optional preferences for mapped lighting and named Super Routes.
 - Route previews with distance, estimated time, complete route mix, road share, mapped underpasses/crossings/unlit distance and alternative-route labels on the map.
 - Live navigation, spoken guidance, automatic rerouting, H/V grid-road underpass wording and low-glare night mode.
-- Home, Work and favourites saved on this device, with quick shortcuts and local type-ahead suggestions.
+- Home, Work and favourites saved on this device, with quick shortcuts and local MK street, place and address suggestions.
 - Explore MK cards for the five Get Around MK Cultural Routes, with source-verified full loops and shortcut GPX tracks available inside the app and offline, plus official route-guide links. Shortcut files are segments, not complete shorter loops.
 - GPX import/export and shareable planned-route links for moving a route from desktop to phone.
 - Downloadable Milton Keynes map and routing data managed from Settings.
@@ -34,7 +34,9 @@ Council classifications take priority where matched. OSM tags, route relations a
 
 ## Offline operation
 
-Choose **Settings → Offline Milton Keynes → Download** before leaving signal. Saved destinations, map browsing and local routing work offline after the required files are cached. Address/place searches use Nominatim and require connectivity; use saved places, coordinates or a map pin offline.
+Choose **Settings → Offline Milton Keynes → Download** before leaving signal. Saved destinations, map browsing and local routing work offline after the required files are cached. The app also bundles mapped MK places and addresses for local suggestions and offline search. Submitted online searches add results from Nominatim, within the same MK bounds; typing sends no geocoding requests.
+
+Address coverage follows OpenStreetMap and is incomplete. Exact mapped house numbers are kept distinct. Building/street matches are labelled as approximate when a requested house number is missing; their coordinates do not establish an entrance. Check the map and choose the actual entrance. The supported map area is not the entire council boundary or every postcode beginning with MK.
 
 Browser storage can be evicted or cleared. iOS can suspend GPS and speech when the app is backgrounded or the screen is locked.
 
@@ -46,6 +48,7 @@ Browser storage can be evicted or cleared. iOS can suspend GPS and speech when t
 - `sw.js`: app-shell caching and offline PMTiles range responses.
 - `scripts/`: council extraction, OSM network generation, basemap extraction and validated site packaging.
 - `data/data-meta.json`: generated runtime provenance, format, hashes and freshness.
+- `data/places.json`: generated MK-only OpenStreetMap place/address index with source identity, coordinates and location precision; no raw extract is deployed.
 - `dist/`: generated browser-only deployment artifact.
 
 Leaflet, Leaflet Rotate and Protomaps Leaflet are version-pinned and self-hosted in the deployed artifact. The app shell makes no runtime request to unpkg.
@@ -67,6 +70,7 @@ python3 -m pip install -r requirements.txt
 python3 -m playwright install --with-deps chromium
 python3 scripts/extract_council_routes.py
 python3 scripts/build_network.py
+python3 scripts/build_places.py
 bash scripts/build_offline_map.sh
 python3 scripts/build_site.py
 python3 -m unittest discover -s tests -p 'test_*.py'
@@ -87,7 +91,7 @@ Use GitHub Actions as the Pages source. Runtime paths are relative so a project 
 
 - MK coverage is bounded; this is not a national route planner.
 - Mapping and council classifications can be incomplete or older than current conditions.
-- Online geocoding depends on an external service.
+- Online geocoding depends on an external service; local mapped places and addresses remain available offline.
 - Saved places stay in one browser; there is no account or cloud sync.
 - Browser emulation cannot establish real-world GPS, speech, battery or iOS background behaviour.
 

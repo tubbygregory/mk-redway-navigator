@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.8
+
+- Add a compact, source-attributed MK place/address index for local suggestions and offline searches; typing still makes no Nominatim requests.
+- Match punctuation and possessive/plural variants locally, including the recorded Bannatynes search; retain mapped local matches when submitted online search is empty or unavailable.
+- Preserve house numbers, distinct addresses and nearby branches, and keep search relevance ahead of distance.
+- Reject malformed or out-of-coverage coordinates before displaying or selecting results; clear stale pins and cancel abandoned queued searches.
+- Offer honest building matches for incompletely mapped addresses such as Huntley Crescent, without inventing house-number or entrance coordinates.
+- Validate index provenance/schema, runtime-only packaging and real online/offline search interactions at root and subpath deployments.
+
 ## 0.14.7
 
 - Load verified, unchanged Cultural Route GPX files from the app’s own site and precache them for offline Explore use.

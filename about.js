@@ -15,10 +15,11 @@
       if (!response.ok) throw new Error('Metadata unavailable');
       const data = await response.json();
       text('aboutNetwork', date(data.network.generated_at) + (data.network.stale ? ' · Older saved data' : ''));
+      text('aboutPlaces', date(data.places.source_timestamp) + (data.places.stale ? ' · Older mapped data' : ''));
       text('aboutMap', date(data.basemap.built_on));
       text('aboutCouncil', ({fresh: 'Latest extraction', cached: 'Last successful extraction', fallback: 'OSM classification fallback'})[data.council.status] || 'Status unavailable');
     } catch (_) {
-      ['aboutNetwork', 'aboutMap', 'aboutCouncil'].forEach(id => text(id, 'Information unavailable'));
+      ['aboutNetwork', 'aboutPlaces', 'aboutMap', 'aboutCouncil'].forEach(id => text(id, 'Information unavailable'));
     }
     try {
       const cache = await caches.open('mk-redway-offline-v1');

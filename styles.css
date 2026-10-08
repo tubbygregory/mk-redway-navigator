@@ -1535,6 +1535,14 @@ html.ios-standalone .toast {
 .typeahead-item .result-copy strong,
 .typeahead-item .result-copy small { display: block; }
 .typeahead-item .result-copy small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.result-copy small.result-accuracy {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 
 .location-intro {
   margin-top: 7px;

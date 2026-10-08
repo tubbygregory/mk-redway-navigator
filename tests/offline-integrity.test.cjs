@@ -9,6 +9,10 @@ const mapUrl = new URL('data/mk-basemap.pmtiles',scope).href;
 const graph = {format:'mk-redway-network-v6',
   nodes:Array.from({length:1000},(_,i)=>[i,52,-.75]),
   ways:Array.from({length:100},(_,i)=>[i,[i,i+1],{highway:'cycleway'}])};
+const places = {format:'mk-redway-places-v1',source:'OpenStreetMap / Geofabrik',
+  bounds:{south:51.955,west:-.905,north:52.155,east:-.615},source_sha256:'a'.repeat(64),
+  source_timestamp:new Date(Date.now()-86400000).toISOString(),generated_at:new Date().toISOString(),
+  entries:[{id:'n123',kind:'place',lat:52.04,lon:-.74,location:'mapped point',name:'Local cafe',category:'cafe'}]};
 
 // Header/extent fixture for integrity checks, not a usable geographic basemap.
 function mapBytes(size=100000,declaredSize=size) {
@@ -31,7 +35,7 @@ function app(mapResponse=()=>new Response(mapBytes(),{headers:{'Content-Length':
     async match(url){return stores.get(key(url))?.clone();},
     async delete(url){return stores.delete(key(url));}
   };
-  const context=vm.createContext({URL,Response,Blob,Uint8Array,DataView,parseBundledNetwork,
+  const context=vm.createContext({URL,Response,Blob,Uint8Array,DataView,parseBundledNetwork,MK:places.bounds,
     window:{caches:{}},caches:{open:async()=>cache,match:cache.match},
     location:{href:scope},OFFLINE_MAP_URL:'./data/mk-basemap.pmtiles',OFFLINE_CACHE:'offline',
     navigator:{onLine:true,storage:{persist:async()=>true}},
@@ -40,12 +44,16 @@ function app(mapResponse=()=>new Response(mapBytes(),{headers:{'Content-Length':
     activatePackagedBasemap:async()=>true,
     fetch:async(url,options)=>{
       if(url.endsWith('mk-basemap.pmtiles'))return mapResponse(options);
+      if(url.endsWith('places.json'))return context.placeResponse ? context.placeResponse() : new Response(JSON.stringify(places));
       return new Response(url.endsWith('network.json')?JSON.stringify(graph):'dependency');
     }
   });
   const helpers=source.slice(source.indexOf('  function humanBytes('),source.indexOf('  async function activatePackagedBasemap('));
   const download=source.slice(source.indexOf('  async function cacheOfflineDependencies('),source.indexOf("  el('offlineDownloadBtn').addEventListener"));
-  vm.runInContext(helpers+download,context);
+  const placeHelpers=source.slice(source.indexOf('  function validateSearchResult('),source.indexOf('  function conciseResultName('))+
+    source.slice(source.indexOf('  function searchWords('),source.indexOf('  async function loadPlaceIndex('))+
+    source.slice(source.indexOf('  function normalizeSearchQuery('),source.indexOf('  let geocodeGate'));
+  vm.runInContext(placeHelpers+helpers+download,context);
   return {context,cache,stores,elements,messages};
 }
 
@@ -84,6 +92,18 @@ test('HTTP-encoded download lengths are not mistaken for decoded map lengths',as
   const a=app(()=>new Response(mapBytes(),{headers:{'Content-Length':'12345','Content-Encoding':'gzip'}}));
   await a.context.downloadOfflineMap();
   assert.equal(a.context.state.offlineMapDownloaded,true);
+});
+test('offline dependencies validate local places before storing and preserve a good asset after malformed HTTP200',async()=>{
+  const url=new URL('data/places.json',scope).href;
+  for(const body of ['<html>upstream failure</html>',JSON.stringify({...places,entries:[]}),
+    JSON.stringify({...places,entries:[{...places.entries[0],location:'building centre'}]})]) {
+    const a=app();await a.cache.put(url,new Response(JSON.stringify(places)));
+    a.context.placeResponse=()=>new Response(body);
+    await a.context.cacheOfflineDependencies(a.cache);
+    assert.deepEqual(await (await a.cache.match(url)).json(),places);
+  }
+  const valid=app();await valid.context.cacheOfflineDependencies(valid.cache);
+  assert.deepEqual(await (await valid.cache.match(url)).json(),places);
 });
 test('repeated Retry taps cannot start duplicate downloads after delayed availability probes',async()=>{
   let resolveHead,downloads=0;
