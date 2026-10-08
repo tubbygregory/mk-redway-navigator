@@ -1318,31 +1318,41 @@
       header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi shorter ride in guide';
       const highlights = document.createElement('p');
       highlights.textContent = route.highlights.join(' · ');
-      const join = document.createElement('small');
-      join.className = 'cultural-join';
-      join.textContent = Number.isFinite(route.joinDistance)
-        ? 'Nearest join ' + formatDistance(route.joinDistance) + ' away'
-        : 'Choose the full route or a shortcut track';
+      card.append(header, highlights);
+      if (Number.isFinite(route.joinDistance)) {
+        const join = document.createElement('small');
+        join.className = 'cultural-join';
+        join.textContent = 'Nearest join ' + formatDistance(route.joinDistance) + ' away';
+        card.appendChild(join);
+      }
       const shortcutNote = document.createElement('small');
-      shortcutNote.className = 'cultural-join';
-      shortcutNote.textContent = 'Shortcut GPX is a segment, not the complete shorter loop. See the route guide for the shorter ride.';
+      shortcutNote.className = 'cultural-shortcut-note';
+      shortcutNote.id = 'shortcut-note-' + route.id;
+      shortcutNote.textContent = 'Shortcut GPX is a segment, not the complete shorter loop.';
       const actions = document.createElement('div');
       actions.className = 'cultural-route-actions';
       const full = document.createElement('button');
       full.type = 'button';
+      full.className = 'primary-action cultural-full-action';
       full.textContent = 'Full route';
       full.addEventListener('click', () => loadOfficialGpx(route, 'full'));
       const short = document.createElement('button');
       short.type = 'button';
+      short.className = 'secondary-action cultural-shortcut-action';
       short.textContent = 'Shortcut track';
+      short.setAttribute('aria-describedby', shortcutNote.id);
       short.addEventListener('click', () => loadOfficialGpx(route, 'short'));
       const source = document.createElement('a');
+      source.className = 'secondary-action cultural-guide-action';
       source.href = CULTURAL_ROUTES_URL;
       source.target = '_blank';
       source.rel = 'noopener noreferrer';
       source.textContent = 'Route guide';
-      actions.append(full, short, source);
-      card.append(header, highlights, join, shortcutNote, actions);
+      const shortcut = document.createElement('div');
+      shortcut.className = 'cultural-shortcut-choice';
+      shortcut.append(short, shortcutNote);
+      actions.append(full, source, shortcut);
+      card.appendChild(actions);
       if (route.loadErrorVariant) {
         const error = document.createElement('small');
         error.className = 'cultural-load-error';
@@ -3559,16 +3569,16 @@
     if (!status || !button) return;
     if (state.offlineDownloadBusy) return;
     if (state.offlineMapDownloaded) {
-      status.textContent = `Downloaded${state.offlineMapBytes ? ` · ${humanBytes(state.offlineMapBytes)}` : ''}. Map and routing are available offline.`;
+      status.textContent = `Ready for offline journeys${state.offlineMapBytes ? ` · ${humanBytes(state.offlineMapBytes)}` : ''}. Map and routing are available offline.`;
       button.textContent = 'Remove';
       button.disabled = false;
     } else if (state.offlineMapAvailable) {
-      status.textContent = `Download the MK basemap${state.offlineMapBytes ? ` (${humanBytes(state.offlineMapBytes)})` : ''} for navigation without signal.`;
+      status.textContent = `Download the MK map${state.offlineMapBytes ? ` (${humanBytes(state.offlineMapBytes)})` : ''} before travelling without signal.`;
       button.textContent = 'Download';
       button.disabled = false;
     } else {
       status.textContent = state.offlineMapMissing
-        ? 'Offline basemap is not available in this deployment yet.'
+        ? 'The offline map is not available in this deployment yet.'
         : navigator.onLine === false
           ? 'Connect to download the offline MK basemap.'
           : 'Could not check the offline basemap. Try again when connected.';
@@ -3721,7 +3731,7 @@
       try { await navigator.storage?.persist?.(); } catch (_) {}
       state.offlineMapDownloaded = true;
       state.offlineMapBytes = blob.size || received;
-      toast('Milton Keynes downloaded for offline use');
+      toast('Ready for offline journeys in Milton Keynes');
       await activatePackagedBasemap();
     } catch (err) {
       console.error(err);

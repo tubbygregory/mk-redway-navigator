@@ -301,6 +301,7 @@
         <button type="button" data-explore-filter="heritage">Heritage</button>
         <button type="button" data-explore-filter="lakes">Lakes</button>
       </div>
+      <p class="explore-guidance">Choose a full route to plan how to join it. The guide describes the shorter rides.</p>
       <div id="culturalRoutesList" class="cultural-routes-list"></div>
       <div class="explore-import">
         <button id="exploreImportGpxBtn" class="secondary-action" type="button">Import a GPX route</button>
@@ -317,10 +318,12 @@
         </button>
       </div>
 
+      <section class="settings-group" aria-labelledby="journeySettingsTitle">
+      <h2 id="journeySettingsTitle" class="settings-group-title">Journey</h2>
       <div class="setting-row">
         <div class="setting-copy">
           <strong>Voice guidance</strong>
-          <span>Speak upcoming turns while navigating.</span>
+          <span>Hear upcoming turns.</span>
         </div>
         <button id="voiceSettingBtn" class="setting-switch" type="button" role="switch" aria-checked="true" aria-label="Voice guidance">
           <span class="switch-thumb" aria-hidden="true"></span>
@@ -330,17 +333,20 @@
       <div class="setting-block">
         <div class="setting-copy">
           <strong>Distance units</strong>
-          <span>Used on route summaries and spoken turn prompts.</span>
+          <span>For journey details and voice guidance.</span>
         </div>
         <div id="unitChoice" class="unit-choice" role="group" aria-label="Distance units">
           <button type="button" data-units="metric" class="active">Metric <small>km · m</small></button>
           <button type="button" data-units="imperial">Miles &amp; yards <small>mi · yd</small></button>
         </div>
       </div>
+      </section>
+      <section class="settings-group" aria-labelledby="appearanceSettingsTitle">
+      <h2 id="appearanceSettingsTitle" class="settings-group-title">Appearance</h2>
       <div class="setting-block">
         <div class="setting-copy">
-          <strong>Appearance</strong>
-          <span>System follows your device, and switches to the low-glare night theme after sunset while navigating.</span>
+          <strong>Theme</strong>
+          <span>System follows your device, with a low-glare night theme after sunset during navigation.</span>
         </div>
         <div id="themeChoice" class="theme-choice" role="group" aria-label="Appearance">
           <button type="button" data-theme-choice="system" class="active">System</button>
@@ -349,13 +355,16 @@
           <button type="button" data-theme-choice="high-contrast">High contrast</button>
         </div>
       </div>
+      </section>
+      <section class="settings-group" aria-labelledby="offlineSettingsTitle">
+      <h2 id="offlineSettingsTitle" class="settings-group-title">Offline &amp; app</h2>
       <div class="setting-block offline-setting">
         <div class="setting-copy">
           <strong>Offline Milton Keynes</strong>
           <span id="offlineStatus">Checking map package…</span>
         </div>
         <button id="offlineDownloadBtn" class="compact-action offline-button" type="button">Download</button>
-        <div class="offline-note">Mapped MK places, addresses and saved places can be searched offline. Online search adds results; not every house number is mapped. Check the entrance on the map.</div>
+        <div class="offline-note">Local MK search works offline; not every house number is mapped. Check entrances on the map. Your device may clear browser storage, so check here before travelling.</div>
       </div>
       <div class="setting-row install-setting">
         <div class="setting-copy">
@@ -364,6 +373,7 @@
         </div>
         <button id="installAppBtn" class="compact-action" type="button" aria-label="Install MK Redway as an app">Install</button>
       </div>
+      </section>
       <details id="aboutData" class="about-data">
         <summary>About &amp; Data</summary>
         <div class="about-brand" style="display:flex;align-items:center;gap:12px;margin:16px 0">
