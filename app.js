@@ -107,6 +107,11 @@
   const markerLayer = L.layerGroup().addTo(map);
   const searchResultLayer = L.layerGroup().addTo(map);
   const userLayer = L.layerGroup().addTo(map);
+  // Keep the credit independent of the zoom/scale controls so each can fit
+  // around the current foreground panels without covering their actions.
+  const mapCredit = map.attributionControl.getContainer();
+  mapCredit.classList.add('map-attribution');
+  el('app').appendChild(mapCredit);
 
   const state = {
     mode: 'cycle',
@@ -199,13 +204,70 @@
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
 
+  let creditLayoutFrame = null;
   function syncBrowseAttribution() {
-    const overlay = el('exploreUI');
-    if (!overlay.hidden) el('app').style.setProperty('--browse-attribution-top', `${Math.ceil(overlay.getBoundingClientRect().bottom + 8)}px`);
+    if (creditLayoutFrame !== null) return;
+    creditLayoutFrame = requestAnimationFrame(() => {
+      creditLayoutFrame = null;
+      positionMapAttribution();
+    });
   }
 
-  // Saved shortcuts and the pin picker change height without a window resize.
-  new ResizeObserver(syncBrowseAttribution).observe(el('exploreUI'));
+  function positionMapAttribution() {
+    const app = el('app');
+    const frame = app.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const width = frame.width;
+    const height = Math.min(frame.height, viewport?.height || frame.height);
+    mapCredit.style.maxWidth = `${Math.min(260, Math.max(120, width - 24))}px`;
+    const credit = mapCredit.getBoundingClientRect();
+    const visibleRect = node => {
+      if (!node || node.hidden || !node.getClientRects().length) return null;
+      const rect = node.getBoundingClientRect();
+      return {left: rect.left - frame.left, right: rect.right - frame.left,
+        top: rect.top - frame.top, bottom: rect.bottom - frame.top};
+    };
+    const topPanel = visibleRect(el(state.navigating ? 'navBanner' : state.stage === 'planner' ? 'plannerUI' : 'exploreUI'));
+    const preferredTop = Math.ceil((topPanel?.bottom || 4) + 8);
+    const portrait = width < 900 && width <= height;
+    // A full-width sheet must leave a strip between the search and the sheet
+    // for the credit, including when favourite chips or instructions wrap.
+    app.style.setProperty('--foreground-panel-max-height', `${Math.max(90, height - preferredTop - credit.height - 26)}px`);
+    const panels = ['exploreUI', 'plannerUI', 'placeSheet', 'routeSheet', 'savedSheet', 'settingsSheet',
+      'exploreSheet', 'resultsSheet', 'installSheet', 'navBanner', 'navBottom', 'homeNav',
+      'browseMapControls', 'mapControls', 'mapKeyPopover', 'arrivalSummary', 'locationRecovery'];
+    const obstacles = panels.map(id => visibleRect(el(id))).filter(Boolean);
+    const maxX = Math.max(8, width - credit.width - 8);
+    const maxY = Math.max(8, height - credit.height - 8);
+    const preferredX = portrait ? 10 : Math.min(maxX, Math.max(10, (topPanel?.right || 0) + 12));
+    const preferredY = portrait ? preferredTop : Math.max(8, height - credit.height - 76);
+    const xs = [preferredX, 10, maxX, ...obstacles.flatMap(r => [r.right + 8, r.left - credit.width - 8])];
+    const ys = [preferredY, preferredTop, 8, maxY, ...obstacles.flatMap(r => [r.bottom + 8, r.top - credit.height - 8])];
+    const candidates = [];
+    for (const left of xs) for (const top of ys) {
+      if (left < 8 || left > maxX || top < 8 || top > maxY) continue;
+      if (obstacles.some(r => left < r.right + 4 && left + credit.width > r.left - 4 &&
+          top < r.bottom + 4 && top + credit.height > r.top - 4)) continue;
+      candidates.push({left, top, score: Math.abs(left - preferredX) + Math.abs(top - preferredY)});
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    const position = candidates[0] || {left: Math.min(maxX, preferredX), top: Math.min(maxY, preferredY)};
+    mapCredit.style.left = `${Math.round(position.left)}px`;
+    mapCredit.style.top = `${Math.round(position.top)}px`;
+  }
+
+  // Panels change size and visibility without a window resize. Observe the
+  // instruction itself too, since a joining instruction can be multiline.
+  const creditObserver = new ResizeObserver(syncBrowseAttribution);
+  for (const id of ['exploreUI', 'plannerUI', 'placeSheet', 'routeSheet', 'savedSheet', 'settingsSheet',
+    'exploreSheet', 'resultsSheet', 'navBanner', 'navBottom', 'homeNav', 'arrivalSummary']) {
+    const panel = el(id);
+    if (panel) {
+      creditObserver.observe(panel);
+      new MutationObserver(syncBrowseAttribution).observe(panel, {attributes: true, attributeFilter: ['hidden', 'class']});
+    }
+  }
+  new MutationObserver(syncBrowseAttribution).observe(mapCredit, {childList: true, subtree: true, characterData: true});
 
   function refreshMapAfterOrientationChange() {
     setTimeout(() => {
@@ -224,6 +286,7 @@
   window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 
   function setStage(stage) {
+    clearArrivalSummary();
     gpxLoadRevision += 1;
     if (state.pendingSaveKind && !['explore', 'place'].includes(stage)) finishSavedSearch();
     if (stage !== 'planner') { cancelStartLocation(); cancelNavigationStart(); }
@@ -233,6 +296,7 @@
     state.localSuggestionInput = null;
     state.localSuggestionContext = null;
     state.searchSubmissionActive = false;
+    state.searchMapPickContext = null;
     el('app').dataset.stage = stage;
     el('exploreUI').hidden = !['explore', 'place'].includes(stage);
     el('plannerUI').hidden = stage !== 'planner';
@@ -270,7 +334,7 @@
   function setRouteStatus(msg, kind = '') {
     const n = el('routeStatus');
     n.textContent = msg;
-    n.className = 'route-status' + (kind ? ` ${kind}` : '');
+    n.className = 'route-status sheet-summary' + (kind ? ` ${kind}` : '');
   }
 
   function fmtCoord(p) {
@@ -680,6 +744,7 @@
   }
 
   function invalidateRoute() {
+    clearArrivalSummary();
     routeLayer.clearLayers();
     el('culturalRouteLegend').hidden = true;
     state.routeRevision++;

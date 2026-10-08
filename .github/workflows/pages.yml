@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410"]
   workflow_dispatch:
 
 permissions:
@@ -128,6 +128,7 @@ jobs:
           python3 tests/browser_smoke.py
           python3 tests/pwa_smoke.py
           python3 tests/audit_browser.py
+          python3 tests/design_polish_browser.py
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
@@ -174,6 +175,7 @@ jobs:
         run: |
           python3 tests/pwa_smoke.py
           python3 tests/audit_browser.py
+          python3 tests/design_polish_browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -188,28 +190,28 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.9 beta release after production verification
+      - name: Publish v0.14.10 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.9" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.10" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Polish Saved places and Cultural Route navigation within the existing Milton Keynes app.
+          Make Milton Keynes journeys easier to read and the app more helpful to use.
 
-          - Show a red Saved button for favourited destinations and keep it consistent after selection, removal and reload.
-          - Offer explicit map-pin selection for Home, Work and favourites, with clear cancellation and controls to change existing locations.
-          - Confirm saved-place changes only after successful storage, handle malformed records and prevent silent favourite loss at the capacity limit.
-          - Calculate a red walking/cycling joining leg to a Cultural Route, then guide along the unchanged GPX track in its designated colour.
-          - Keep route-to-start and source-track status distinct; preserve safe GPS progression, cancellation and honest routing failure feedback.
-          - Improve small touch targets, keyboard focus, More-menu access and attribution placement; document the full rendered UX review and deliberate limits.
-          - Preserve the supplied MK logo, MK-only search, generic GPX imports, offline cache persistence and source attribution.
+          - Keep map attribution links clear of foreground panels and long navigation instructions.
+          - Keep route decisions and Start prominent, surface approach warnings, and clarify Cultural joining and unverified track conditions.
+          - Name and rename favourites locally, offer Undo after removal, and make empty Saved states helpful.
+          - Separate place names from addresses, simplify result rows and offer honest MK search and location recovery.
+          - Reduce background map clutter during preview, simplify Explore cards and organise Settings.
+          - Show validated offline readiness in plain language and retain a clear arrival summary until dismissed.
+          - Preserve the approved MK logo, standard red selected route, Cultural Route colours, routing weights, source GPX and device-local privacy.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.9 >/dev/null 2>&1; then
+          if gh release view v0.14.10 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.9" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.9 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.10" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.10 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.9 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.9" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.10 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.10" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
