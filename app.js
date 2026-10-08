@@ -195,8 +195,18 @@
       else if (state.pendingSaveKind === 'favourite') search.placeholder = 'Search for a favourite';
       else search.placeholder = 'Search places';
     }
+    syncBrowseAttribution();
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
+
+  function syncBrowseAttribution() {
+    const overlay = el('exploreUI');
+    if (!overlay.hidden) el('app').style.setProperty('--browse-attribution-top', `${Math.ceil(overlay.getBoundingClientRect().bottom + 8)}px`);
+  }
+
+  // Saved shortcuts and the pin picker change height without a window resize.
+  new ResizeObserver(syncBrowseAttribution).observe(el('exploreUI'));
+
   function refreshMapAfterOrientationChange() {
     setTimeout(() => {
       syncViewport();

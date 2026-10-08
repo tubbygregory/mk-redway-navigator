@@ -10,6 +10,7 @@
 - Increase small Saved/Explore touch targets, restore clear keyboard focus and record the full rendered UX review in UX-REVIEW-2026-10-08-v0149.md.
 - Reveal the route More menu immediately on short screens instead of opening it below the visible panel.
 - Prevent status toasts and long-press release clicks from intercepting or accidentally activating controls.
+- Keep the map attribution clear of Saved shortcuts and the map-pin picker as the browse controls change height.
 
 ## 0.14.8
 

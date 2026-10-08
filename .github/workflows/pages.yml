@@ -201,7 +201,7 @@ jobs:
           - Confirm saved-place changes only after successful storage, handle malformed records and prevent silent favourite loss at the capacity limit.
           - Calculate a red walking/cycling joining leg to a Cultural Route, then guide along the unchanged GPX track in its designated colour.
           - Keep route-to-start and source-track status distinct; preserve safe GPS progression, cancellation and honest routing failure feedback.
-          - Improve small touch targets and keyboard focus, and document the full rendered UX review and deliberate limits.
+          - Improve small touch targets, keyboard focus, More-menu access and attribution placement; document the full rendered UX review and deliberate limits.
           - Preserve the supplied MK logo, MK-only search, generic GPX imports, offline cache persistence and source attribution.
 
           Published after build, artifact, deployment and live-review checks.

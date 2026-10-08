@@ -394,6 +394,28 @@ def assert_control_hit(page, selector, min_height=44):
 def read_saved_places(page):
     return page.evaluate("JSON.parse(localStorage.getItem('mk-redway-saved-v1') || '{\"home\":null,\"work\":null,\"favourites\":[]}')")
 
+def assert_browse_attribution(page):
+    credit = page.locator('.leaflet-control-attribution')
+    expect(credit).to_have_count(1)
+    osm = credit.locator('a[href="https://www.openstreetmap.org/copyright"]')
+    expect(osm).to_have_count(1)
+    expect(osm).to_be_visible()
+    expect(credit.get_by_role('link', name='Protomaps', exact=True)).to_have_count(1)
+    if page.viewport_size['width'] <= page.viewport_size['height'] or page.viewport_size['width'] >= 900:
+        page.wait_for_function('''() => {
+            const credit = document.querySelector('.leaflet-control-attribution').getBoundingClientRect();
+            const overlay = document.querySelector('#exploreUI').getBoundingClientRect();
+            return credit.top >= overlay.bottom + 4;
+        }''')
+    else:
+        box = credit.bounding_box()
+        assert box['y'] > page.viewport_size['height'] / 2, ('Landscape credit moved from its bottom placement', box)
+    for link in [osm, credit.get_by_role('link', name='Protomaps', exact=True)]:
+        box = link.bounding_box()
+        assert 0 <= box['y'] and box['y'] + box['height'] <= page.viewport_size['height'], box
+        assert link.evaluate('''(el) => {const r = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}'''), ('Attribution link is covered', box)
+
 def block_saved_writes(page, name='QuotaExceededError'):
     # Browser storage failures are an environmental condition, not an app hook.
     page.evaluate('''(name) => {
@@ -475,10 +497,12 @@ def review_saved_place_flow(page, context, url, fixtures=None, screenshots=False
         page.locator('#saveFavouriteBtn').click()
         expect(page.locator('#toast')).to_contain_text('Already saved')
         assert read_saved_places(page) == saved, 'Repeated Save duplicated or changed the favourite'
+        assert_browse_attribution(page)
         if screenshots:
             page.screenshot(path=str(ROOT / 'test-results' / f'saved-confirmed-{page.viewport_size["width"]}-{choice or "offline"}.png'))
     assert page.evaluate('window.savedLocationRequests') == 0, 'Saving prompted for location'
     page.reload(wait_until='networkidle')
+    assert_browse_attribution(page)
     quick_favourite = page.locator('.quick-favourite').filter(has_text='Warbler on the Wharf')
     assert quick_favourite.bounding_box()['height'] >= 44, 'Favourite shortcut touch target is too small'
     quick_favourite.click()
@@ -514,6 +538,7 @@ def review_saved_place_flow(page, context, url, fixtures=None, screenshots=False
         page.locator('#pickSavedOnMapBtn').click()
         expect(page.locator('#savedPlacePickerHint')).to_contain_text('Tap the map to save')
         page.wait_for_timeout(300)  # Let the normal destination zoom animation finish.
+        assert_browse_attribution(page)
         if screenshots:
             page.screenshot(path=str(ROOT / 'test-results' / f'saved-map-picker-{page.viewport_size["width"]}-{kind}.png'))
         point = saved_map_point(page)

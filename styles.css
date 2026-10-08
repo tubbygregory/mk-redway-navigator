@@ -1108,7 +1108,7 @@ html.ios-standalone .toast {
 .settings-sheet > .sheet-heading { position: sticky; top: 0; z-index: 2; background: #fff; }
 .leaflet-bottom.leaflet-right {
   left: max(10px, env(safe-area-inset-left, 0px)); right: auto;
-  top: max(76px, calc(env(safe-area-inset-top, 0px) + 72px)); bottom: auto;
+  top: var(--browse-attribution-top, max(76px, calc(env(safe-area-inset-top, 0px) + 72px))); bottom: auto;
 }
 .leaflet-control-attribution {
   font-size: 10px; line-height: 1.35; max-width: calc(100vw - 145px);
