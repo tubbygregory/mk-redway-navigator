@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit"]
   workflow_dispatch:
 
 permissions:
@@ -175,28 +175,24 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.3 beta release after production verification
+      - name: Publish v0.14.4 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.3" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.4" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Offline and navigation reliability audit.
+          Mobile layout refinement.
 
-          - Open shared route requests offline using the installed app shell.
-          - Preserve cached routing data across updates and use it during server failures.
-          - Prevent delayed GPS Start requests from reopening a cancelled screen, and ignore inaccurate GPS fixes for rerouting.
-          - Protect basemap replacements from stale renderer callbacks.
-          - Validate offline routing downloads and keep failure messages visible.
-          - Add service-worker, asynchronous-state and real-browser regression checks.
-          - Preserve the v0.14.2 MKRW branding, routing weights and data format v6.
+          - Align the Explore close button with the top-right corner of its header.
+          - Shorten the default search hint to “Search places” so it fits on narrow phones.
+          - Preserve the 44px close-button touch target, full search functionality and MKRW branding.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.3 >/dev/null 2>&1; then
+          if gh release view v0.14.4 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.3" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.3 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.4" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.4 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.3 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.3" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.4 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.4" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

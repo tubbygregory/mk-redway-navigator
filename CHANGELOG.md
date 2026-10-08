@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.4
+
+- Align the Explore close button to the top-right of its header, with a 44px touch target.
+- Shorten the default search placeholder to “Search places” on initial load, resize and after saving a place.
+
 ## 0.14.3
 
 - Fixed low-contrast About/Data text and selected controls in dark mode, including explicit appearance overrides.
