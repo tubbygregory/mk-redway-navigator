@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 import tempfile
 from playwright.sync_api import sync_playwright, expect
 from browser_smoke import plan
-from audit_browser import local_place_fixtures, review_cultural_tracks, review_local_place_search
+from audit_browser import local_place_fixtures, review_cultural_tracks, review_local_place_search, review_saved_place_flow
 
 ROOT = Path(__file__).resolve().parents[1]
 def capture(page, name):
@@ -396,7 +396,12 @@ def review_offline_cultural_tracks(browser, url):
         context.set_offline(True)
     assert page.evaluate("navigator.onLine") is False
     review_local_place_search(page, url, offline=True, fixtures=places)
-    review_cultural_tracks(page, url)
+    review_saved_place_flow(page, context, url, fixtures=places)
+    if page.evaluate("navigator.onLine"):
+        context.set_offline(False)
+        context.set_offline(True)
+    assert page.evaluate("navigator.onLine") is False
+    review_cultural_tracks(page, url, check_offline_join=True)
     assert not errors, errors
     print("PASS unseen offline places and Cultural Routes: canonical local addresses/POIs, all ten source geometries, installed-iOS Chromium emulation: " + url)
     context.close()

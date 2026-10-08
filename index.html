@@ -13,12 +13,12 @@
   <meta name="description" content="Redway-first walking and cycling navigation for Milton Keynes." />
   <title>MK Redway Navigator</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="icon" href="./icons/favicon.ico?v=0.14.8" sizes="any" />
-  <link rel="icon" href="./icons/favicon-32.png?v=0.14.8" type="image/png" sizes="32x32" />
-  <link rel="icon" href="./icons/favicon-16.png?v=0.14.8" type="image/png" sizes="16x16" />
-  <link rel="icon" href="./icons/app-logo.svg?v=0.14.8" type="image/svg+xml" sizes="any" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=0.14.8" />
-  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png?v=0.14.8" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+  <link rel="icon" href="./icons/favicon.ico?v=0.14.9" sizes="any" />
+  <link rel="icon" href="./icons/favicon-32.png?v=0.14.9" type="image/png" sizes="32x32" />
+  <link rel="icon" href="./icons/favicon-16.png?v=0.14.9" type="image/png" sizes="16x16" />
+  <link rel="icon" href="./icons/app-logo.svg?v=0.14.9" type="image/svg+xml" sizes="any" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=0.14.9" />
+  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png?v=0.14.9" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
   <link rel="stylesheet" href="./vendor/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -30,7 +30,7 @@
     <section id="exploreUI" class="top-overlay" aria-label="Destination search">
       <form id="homeSearchForm" class="search-pill">
         <span class="search-logo-static" aria-hidden="true">
-          <img src="./icons/app-logo.svg?v=0.14.8" class="search-logo" width="32" height="32" alt="" />
+          <img src="./icons/app-logo.svg?v=0.14.9" class="search-logo" width="32" height="32" alt="" />
         </span>
         <label class="sr-only" for="homeSearch">Search for a destination</label>
         <input id="homeSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Search places" />
@@ -41,6 +41,14 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></svg>
         </button>
       </form>
+      <section id="savedPlacePicker" class="saved-place-picker" aria-labelledby="savedPlacePickerTitle" hidden>
+        <strong id="savedPlacePickerTitle">Save a place</strong>
+        <p id="savedPlacePickerHint" role="status">Search for a place or choose on the map.</p>
+        <div class="saved-place-picker-actions">
+          <button id="pickSavedOnMapBtn" class="secondary-action" type="button">Choose on map</button>
+          <button id="cancelSavedPickBtn" class="secondary-action" type="button">Cancel</button>
+        </div>
+      </section>
       <div id="quickPlaces" class="quick-places" aria-label="Saved place shortcuts" hidden>
         <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
         <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
@@ -138,9 +146,9 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 11l8 10 8-10-8-8Z"></path><path d="M9 12h6M13 9l3 3-3 3"></path></svg>
           Directions
         </button>
-        <button id="saveFavouriteBtn" class="secondary-action save-place-action" type="button">
+        <button id="saveFavouriteBtn" class="secondary-action save-place-action" type="button" aria-pressed="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4Z"></path></svg>
-          Save
+          <span id="saveFavouriteLabel">Save</span>
         </button>
       </div>
     </section>
@@ -197,6 +205,7 @@
       <small class="road-share-note">Route mix covers the mapped route; lighting counts use mapped OpenStreetMap tags and may be incomplete.</small>
       <p id="approachNote" class="approach-note" hidden></p>
       <div id="routeStatus" class="route-status" aria-live="polite">Choose a start and destination.</div>
+      <p id="culturalRouteLegend" class="cultural-route-legend" hidden></p>
       <button id="retryRouteBtn" class="secondary-action" type="button" hidden>Retry route</button>
       <div id="routeMoreMenu" class="route-more-menu" hidden>
         <button id="moveStartBtn" type="button">Move start pin</button>
@@ -215,7 +224,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="M10 18h4"></path></svg>
           Send to phone
         </button>
-        <button id="routeMoreBtn" class="secondary-action" type="button" aria-expanded="false">More</button>
+        <button id="routeMoreBtn" class="secondary-action" type="button" aria-expanded="false" aria-controls="routeMoreMenu">More</button>
       </div>
     </section>
 
@@ -267,6 +276,10 @@
           <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Not set</small></span>
           <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
+      </div>
+      <div class="saved-set-actions">
+        <button id="setHomeBtn" class="text-action" type="button">Set Home</button>
+        <button id="setWorkBtn" class="text-action" type="button">Set Work</button>
       </div>
       <div class="saved-section-heading">
         <strong>Favourites</strong>
@@ -354,7 +367,7 @@
       <details id="aboutData" class="about-data">
         <summary>About &amp; Data</summary>
         <div class="about-brand" style="display:flex;align-items:center;gap:12px;margin:16px 0">
-          <img src="./icons/app-logo.svg?v=0.14.8" alt="" width="56" height="56" style="display:block;width:56px;height:56px;flex:0 0 auto" />
+          <img src="./icons/app-logo.svg?v=0.14.9" alt="" width="56" height="56" style="display:block;width:56px;height:56px;flex:0 0 auto" />
           <strong style="font-size:28px;line-height:1;letter-spacing:-.02em">MK Redway</strong>
         </div>
         <h2>MK Redway Navigator</h2>
@@ -388,7 +401,7 @@
     <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
       <button id="installSheetHandle" class="sheet-handle" type="button" data-panel-label="install instructions" aria-expanded="true" aria-label="Collapse install instructions"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
       <div class="install-heading sheet-summary">
-        <img src="./icons/apple-touch-icon.png?v=0.14.8" width="64" height="64" alt="" aria-hidden="true" />
+        <img src="./icons/apple-touch-icon.png?v=0.14.9" width="64" height="64" alt="" aria-hidden="true" />
         <div><strong>Install MK Redway</strong><span>Keep it on your Home Screen like an app.</span></div>
         <button id="closeInstall" class="icon-button small-icon" type="button" aria-label="Close install instructions">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>

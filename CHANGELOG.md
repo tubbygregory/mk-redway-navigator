@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.9
+
+- Turn the favourite action red and label it Saved when the selected destination is already saved; synchronise after removal, reselection and reload.
+- Add explicit map-pin selection and cancellation for Home, Work and favourites, with controls to change existing Home/Work locations.
+- Persist Saved changes transactionally, report storage failures honestly, validate stored records and avoid silently losing favourites at the capacity boundary.
+- Calculate a walking/cycling joining leg to a Cultural Route in the app's standard red, retaining the source GPX track in its designated colour and transferring guidance at the join.
+- Preserve source geometry, generic GPX behaviour and safe GPS/cancellation handling; explain connector failures rather than substituting an invented link.
+- Increase small Saved/Explore touch targets, restore clear keyboard focus and record the full rendered UX review in UX-REVIEW-2026-10-08-v0149.md.
+- Reveal the route More menu immediately on short screens instead of opening it below the visible panel.
+- Prevent status toasts and long-press release clicks from intercepting or accidentally activating controls.
+
 ## 0.14.8
 
 - Add a compact, source-attributed MK place/address index for local suggestions and offline searches; typing still makes no Nominatim requests.
