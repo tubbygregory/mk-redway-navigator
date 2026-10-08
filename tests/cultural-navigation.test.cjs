@@ -32,7 +32,15 @@ function harness() {
     routing: false, navigating: false, networkSource: 'bundled', themeChoice: 'light',
     lastSegment: 0, navProgressMeters: 0, offRouteCount: 0, lastRerouteAt: 0,
     announcedFar: new Set(), announcedNear: new Set(), headingSupported: false};
-  const el = id => elements[id] ??= {hidden: true, classList: {toggle() {}}, querySelectorAll: () => []};
+  const el = id => {
+    if (elements[id]) return elements[id];
+    const node = elements[id] = {hidden: true, style: {}, focus() {}, classList: {toggle() {}}, querySelectorAll: () => []};
+    // Mirror the static legend's child text, as a real DOM parent does.
+    if (id === 'culturalRouteLegend') Object.defineProperty(node, 'textContent', {
+      get() { return [el('culturalJoinLabel').textContent, el('culturalTrackLabel').textContent].filter(Boolean).join(' · '); }
+    });
+    return node;
+  };
   const context = vm.createContext({...R, state, el, console, window: {innerWidth: 390},
     CULTURAL_ROUTE_COLOURS: {blue: '#3c78d8', yellow: '#d5a500', green: '#23864a', iron: '#5f6670', cornflower: '#6495ed'},
     gpxLoadRevision: 0, navigationStartRevision: 0, navigationStartPending: false,

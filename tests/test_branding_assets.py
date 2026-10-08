@@ -18,7 +18,7 @@ def png_header(path):
 class BrandingAssetsTests(unittest.TestCase):
     def test_manifest_and_export_sizes(self):
         version = (ROOT / "VERSION").read_text().strip()
-        self.assertEqual(version, "0.14.9")
+        self.assertEqual(version, "0.14.10")
         manifest = json.loads((ROOT / "manifest.webmanifest").read_text())
         expected = {
             "icons/icon-192.png": (192, 192),
@@ -46,7 +46,7 @@ class BrandingAssetsTests(unittest.TestCase):
         self.assertIn(f"app-logo.svg?v={version}", html)
         self.assertIn(f"app-logo.svg?v={version}", sw)
         self.assertIn("MK Redway</strong>", html)
-        self.assertIn("mk-redway-shell-v39", sw)
+        self.assertIn("mk-redway-shell-v40", sw)
 
         svg = ET.parse(ROOT / "icons/app-logo.svg").getroot()
         ns = {"svg": "http://www.w3.org/2000/svg"}

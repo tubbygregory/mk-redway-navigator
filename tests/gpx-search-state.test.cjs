@@ -71,6 +71,7 @@ function harness() {
   const routes = vm.runInContext('CULTURAL_ROUTES', context);
   vm.runInContext(code('  function normalizeSearchQuery(', '  let geocodeGate'), context);
   for (const [from, to] of [
+    ['  function clearArrivalSummary()', '  async function solveRouteOnNetwork('],
     ['  function setStage(stage)', '  function toast('],
     ['  function closeSearch()', "  for (const [id, context] of [['startSearch'"],
     ["  el('homeSearch').addEventListener('input'", '  function selectSearchResult('],

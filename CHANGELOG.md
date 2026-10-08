@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.10
+
+- Keep map attribution links clear of Saved/Explore panels and long navigation instructions, including changing panel sizes.
+- Keep route summary and Start/More actions visible while details scroll; surface approach warnings and clarify the Cultural Route red join and designated-colour track.
+- Add optional local favourite names, inline renaming, recognisable unnamed pins and safe Undo after removal; improve empty states and shortcut overflow.
+- Separate place names from addresses, simplify result rows without hiding precision/entrance warnings, and offer honest MK search and location recovery.
+- Reduce background network emphasis during route preview, simplify Explore actions and group Settings with consistent themed controls.
+- Show validated offline readiness in plain language and keep a named arrival summary until Done or another journey.
+- Match the current-location dot and halo to the app red while retaining its white outline.
+- Preserve approved branding, Cultural Route source geometry, routing weights, MK scope, device-local privacy and existing offline/async safeguards.
+- Add focused Saved/search/arrival and rendered-design regressions while retaining all deployment and live-review gates.
+
 ## 0.14.9
 
 - Turn the favourite action red and label it Saved when the selected destination is already saved; synchronise after removal, reselection and reload.

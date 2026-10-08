@@ -13,12 +13,12 @@
   <meta name="description" content="Redway-first walking and cycling navigation for Milton Keynes." />
   <title>MK Redway Navigator</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="icon" href="./icons/favicon.ico?v=0.14.9" sizes="any" />
-  <link rel="icon" href="./icons/favicon-32.png?v=0.14.9" type="image/png" sizes="32x32" />
-  <link rel="icon" href="./icons/favicon-16.png?v=0.14.9" type="image/png" sizes="16x16" />
-  <link rel="icon" href="./icons/app-logo.svg?v=0.14.9" type="image/svg+xml" sizes="any" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=0.14.9" />
-  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png?v=0.14.9" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+  <link rel="icon" href="./icons/favicon.ico?v=0.14.10" sizes="any" />
+  <link rel="icon" href="./icons/favicon-32.png?v=0.14.10" type="image/png" sizes="32x32" />
+  <link rel="icon" href="./icons/favicon-16.png?v=0.14.10" type="image/png" sizes="16x16" />
+  <link rel="icon" href="./icons/app-logo.svg?v=0.14.10" type="image/svg+xml" sizes="any" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=0.14.10" />
+  <link rel="apple-touch-startup-image" href="./icons/iphone16-splash.png?v=0.14.10" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
   <link rel="stylesheet" href="./vendor/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -30,7 +30,7 @@
     <section id="exploreUI" class="top-overlay" aria-label="Destination search">
       <form id="homeSearchForm" class="search-pill">
         <span class="search-logo-static" aria-hidden="true">
-          <img src="./icons/app-logo.svg?v=0.14.9" class="search-logo" width="32" height="32" alt="" />
+          <img src="./icons/app-logo.svg?v=0.14.10" class="search-logo" width="32" height="32" alt="" />
         </span>
         <label class="sr-only" for="homeSearch">Search for a destination</label>
         <input id="homeSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="street-address" autocapitalize="words" spellcheck="false" placeholder="Search places" />
@@ -44,23 +44,37 @@
       <section id="savedPlacePicker" class="saved-place-picker" aria-labelledby="savedPlacePickerTitle" hidden>
         <strong id="savedPlacePickerTitle">Save a place</strong>
         <p id="savedPlacePickerHint" role="status">Search for a place or choose on the map.</p>
+        <div id="savedFavouriteNameField" class="saved-favourite-name-field" hidden>
+          <label for="savedFavouriteNameInput">Name this favourite (optional)</label>
+          <input id="savedFavouriteNameInput" type="text" maxlength="80" autocomplete="off" placeholder="e.g. Riverside start" />
+        </div>
         <div class="saved-place-picker-actions">
           <button id="pickSavedOnMapBtn" class="secondary-action" type="button">Choose on map</button>
           <button id="cancelSavedPickBtn" class="secondary-action" type="button">Cancel</button>
         </div>
       </section>
-      <div id="quickPlaces" class="quick-places" aria-label="Saved place shortcuts" hidden>
-        <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
-        <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
+      <div id="quickPlacesShell" class="quick-places-shell" hidden>
+        <div id="quickPlaces" class="quick-places" aria-label="Saved place shortcuts" hidden>
+          <button id="quickHomeBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg><span>Home</span></button>
+          <button id="quickWorkBtn" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18"></path></svg><span>Work</span></button>
+        </div>
+        <span class="quick-place-scroll-hint" aria-hidden="true">›</span>
       </div>
       <div id="typeaheadSuggestions" class="typeahead-suggestions" aria-label="Search suggestions" hidden></div>
       <div id="locationIntro" class="location-intro" hidden>
-        <div><strong>Show where you are?</strong><span>Location is used on this device for nearby results, routing and live navigation.</span></div>
+        <div><strong>Show where you are?</strong><span>Location is used on this device for nearby results, routing and live navigation. You can also search the MK map without it.</span></div>
         <div class="location-intro-actions">
           <button id="locationIntroAllow" class="primary-action" type="button">Use my location</button>
           <button id="locationIntroDismiss" class="secondary-action" type="button">Not now</button>
         </div>
       </div>
+      <section id="browseLocationRecovery" class="location-recovery" aria-label="Location help" hidden>
+        <p id="browseLocationMessage" role="status"></p>
+        <div class="location-intro-actions">
+          <button id="searchWithoutLocationBtn" class="secondary-action" type="button">Search instead</button>
+          <button id="dismissLocationRecoveryBtn" class="secondary-action" type="button">Close</button>
+        </div>
+      </section>
     </section>
 
     <nav id="homeNav" class="home-nav" aria-label="Main sections">
@@ -156,57 +170,63 @@
     <!-- Compact route preview. -->
     <section id="routeSheet" class="bottom-sheet route-sheet" aria-label="Route preview" hidden>
       <button id="routeSheetHandle" class="sheet-handle" type="button" data-panel-label="route details" aria-expanded="true" aria-label="Collapse route details"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
-      <div class="mode-row" role="group" aria-label="Travel mode">
-        <button id="cycleBtn" class="mode-chip active" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"></circle><circle cx="18" cy="17" r="3"></circle><path d="m6 17 4-8h4l4 8M9 11h6M11 6h3"></path></svg>
-          Cycle
-        </button>
-        <button id="walkBtn" class="mode-chip" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4" r="2"></circle><path d="m12 7-2 5 3 2 2 6M10 12l-3 7M12 8l4 4 3 1"></path></svg>
-          Walk
-        </button>
-        <button id="prefBtn" class="mode-chip preference-chip" type="button" aria-expanded="false" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"></path><circle cx="15" cy="7" r="2"></circle><circle cx="9" cy="17" r="2"></circle></svg>
-          <span id="prefLabel">Max Redway</span>
-        </button>
-      </div>
-      <div id="prefMenu" class="pref-menu" hidden>
-        <button type="button" data-pref="maximum" class="active">Maximum Redway</button>
-        <button type="button" data-pref="balanced">Balanced</button>
-        <button type="button" data-pref="fastest">Fastest</button>
-      </div>
-
       <div class="route-summary sheet-summary">
         <div>
           <strong id="timeStat">—</strong>
           <span id="arrivalStat">Route preview</span>
         </div>
         <div class="route-meta">
+          <span id="routeModeLabel">Cycling</span>
           <span id="distanceStat">—</span>
-          <span class="meta-separator">•</span>
-          <span><b id="redwayStat">—</b> Redway</span>
-          <span>· <b id="roadStat">—</b> road</span>
         </div>
       </div>
-      <div id="routeMix" class="route-mix" aria-label="Selected route mix" hidden>
-        <div id="routeMixBar" class="route-mix-bar" aria-hidden="true"></div>
-        <div id="routeMixLegend" class="route-mix-legend"></div>
+      <p id="routeTrackStatus" class="route-track-status sheet-summary" hidden>Track conditions unverified</p>
+      <p id="routeApproachSummary" class="route-approach-summary sheet-summary" hidden></p>
+      <p id="culturalRouteLegend" class="cultural-route-legend sheet-summary" aria-label="Cultural Route legs" hidden>
+        <span id="culturalJoinLegend"><i class="cultural-legend-swatch cultural-join-swatch" aria-hidden="true"></i><span id="culturalJoinLabel"></span></span>
+        <span><i id="culturalTrackSwatch" class="cultural-legend-swatch" aria-hidden="true"></i><span id="culturalTrackLabel"></span></span>
+      </p>
+      <div id="routeDetails" class="route-details">
+        <div class="mode-row" role="group" aria-label="Travel mode">
+          <button id="cycleBtn" class="mode-chip active" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3"></circle><circle cx="18" cy="17" r="3"></circle><path d="m6 17 4-8h4l4 8M9 11h6M11 6h3"></path></svg>
+            Cycle
+          </button>
+          <button id="walkBtn" class="mode-chip" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4" r="2"></circle><path d="m12 7-2 5 3 2 2 6M10 12l-3 7M12 8l4 4 3 1"></path></svg>
+            Walk
+          </button>
+          <button id="prefBtn" class="mode-chip preference-chip" type="button" aria-expanded="false" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"></path><circle cx="15" cy="7" r="2"></circle><circle cx="9" cy="17" r="2"></circle></svg>
+            <span id="prefLabel">Max Redway</span>
+          </button>
+        </div>
+        <div id="prefMenu" class="pref-menu" hidden>
+          <button type="button" data-pref="maximum" class="active">Maximum Redway</button>
+          <button type="button" data-pref="balanced">Balanced</button>
+          <button type="button" data-pref="fastest">Fastest</button>
+        </div>
+        <div id="routePreferences" class="route-preferences" aria-label="Route preferences">
+          <button id="preferLitBtn" class="route-toggle" type="button" role="switch" aria-checked="false">Prefer lit paths</button>
+          <button id="preferSuperBtn" class="route-toggle" type="button" role="switch" aria-checked="false">Prefer Super Routes</button>
+        </div>
+        <div id="routeAlternatives" class="route-alternatives" role="group" aria-label="Compare cycling routes"></div>
+        <div id="routeClassification" class="route-classification">
+          <span><b id="redwayStat">—</b> Redway</span>
+          <span><b id="roadStat">—</b> road</span>
+        </div>
+        <div id="routeMix" class="route-mix" aria-label="Selected route mix" hidden>
+          <div id="routeMixBar" class="route-mix-bar" aria-hidden="true"></div>
+          <div id="routeMixLegend" class="route-mix-legend"></div>
+        </div>
+        <div id="routeInsights" class="route-insights" aria-label="Route conditions" hidden>
+          <span><b id="underpassStat">0</b> underpasses</span>
+          <span><b id="crossingStat">0</b> road crossings (est.)</span>
+          <span><b id="unlitStat">0 m</b> mapped unlit</span>
+        </div>
+        <small class="road-share-note">Route mix covers the mapped route; lighting counts use mapped OpenStreetMap tags and may be incomplete.</small>
+        <p id="approachNote" class="approach-note" hidden></p>
       </div>
-      <div id="routeInsights" class="route-insights" aria-label="Route conditions" hidden>
-        <span><b id="underpassStat">0</b> underpasses</span>
-        <span><b id="crossingStat">0</b> road crossings (est.)</span>
-        <span><b id="unlitStat">0 m</b> mapped unlit</span>
-      </div>
-      <div id="routePreferences" class="route-preferences" aria-label="Route preferences">
-        <button id="preferLitBtn" class="route-toggle" type="button" role="switch" aria-checked="false">Prefer lit paths</button>
-        <button id="preferSuperBtn" class="route-toggle" type="button" role="switch" aria-checked="false">Prefer Super Routes</button>
-      </div>
-      <div id="routeAlternatives" class="route-alternatives" role="group" aria-label="Compare cycling routes"></div>
-      <small class="road-share-note">Route mix covers the mapped route; lighting counts use mapped OpenStreetMap tags and may be incomplete.</small>
-      <p id="approachNote" class="approach-note" hidden></p>
-      <div id="routeStatus" class="route-status" aria-live="polite">Choose a start and destination.</div>
-      <p id="culturalRouteLegend" class="cultural-route-legend" hidden></p>
-      <button id="retryRouteBtn" class="secondary-action" type="button" hidden>Retry route</button>
       <div id="routeMoreMenu" class="route-more-menu" hidden>
         <button id="moveStartBtn" type="button">Move start pin</button>
         <button id="moveEndBtn" type="button">Choose destination entrance</button>
@@ -215,6 +235,8 @@
         <a href="https://www.milton-keynes.gov.uk/pay-report-and-apply/report-it" target="_blank" rel="noopener noreferrer">Report this path</a>
         <button id="clearBtn" type="button">Clear route</button>
       </div>
+      <div id="routeStatus" class="route-status sheet-summary" aria-live="polite">Choose a start and destination.</div>
+      <button id="retryRouteBtn" class="secondary-action sheet-summary" type="button" hidden>Retry route</button>
       <div class="route-actions">
         <button id="startNavBtn" class="primary-action nav-start" type="button" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 18-7-4-7 4 7-18Z"></path></svg>
@@ -256,6 +278,13 @@
       <button id="exitNavBtn" class="exit-button" type="button">Exit</button>
     </section>
 
+    <section id="arrivalSummary" class="arrival-summary" aria-label="Arrival summary" aria-live="polite" hidden>
+      <span class="arrival-kicker">Arrived</span>
+      <strong id="arrivalDestination"></strong>
+      <p id="arrivalDetail"></p>
+      <button id="arrivalDoneBtn" class="primary-action arrival-done" type="button">Done</button>
+    </section>
+
     <section id="savedSheet" class="bottom-sheet saved-sheet" aria-label="Saved places and offline maps" hidden>
       <button id="savedSheetHandle" class="sheet-handle" type="button" data-panel-label="saved places" aria-expanded="true" aria-label="Collapse saved places"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
       <div class="sheet-heading sheet-summary">
@@ -265,15 +294,31 @@
         </button>
       </div>
 
+      <p class="saved-local-note">Your regular places, kept on this device.</p>
+      <div id="savedUndoNotice" class="saved-undo-notice" role="status" hidden>
+        <span id="savedUndoText"></span>
+        <button id="undoFavouriteBtn" class="text-action" type="button">Undo</button>
+      </div>
+      <form id="favouriteNameEditor" class="favourite-name-editor" hidden>
+        <strong id="favouriteNameEditorTitle">Rename favourite</strong>
+        <label for="favouriteNameInput">Favourite name</label>
+        <input id="favouriteNameInput" type="text" maxlength="80" autocomplete="off" required aria-describedby="favouriteNamePrivacy" />
+        <small id="favouriteNamePrivacy">This name stays on your device.</small>
+        <div class="favourite-name-editor-actions">
+          <button id="favouriteNameSaveBtn" class="primary-action" type="submit">Save name</button>
+          <button id="favouriteNameCancelBtn" class="secondary-action" type="button">Cancel</button>
+        </div>
+      </form>
+
       <div class="saved-specials">
         <button id="homeSavedRow" class="saved-row" type="button">
           <span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"></path></svg></span>
-          <span class="saved-row-copy"><strong>Home</strong><small id="homeSavedLabel">Not set</small></span>
+          <span class="saved-row-copy"><strong>Home</strong><small id="homeSavedLabel">Add Home for a quicker start</small></span>
           <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
         <button id="workSavedRow" class="saved-row" type="button">
           <span class="saved-kind-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3V7Zm5 0V3h8v4M3 12h18M10 12v3h4v-3"></path></svg></span>
-          <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Not set</small></span>
+          <span class="saved-row-copy"><strong>Work</strong><small id="workSavedLabel">Add Work when you need it</small></span>
           <span class="saved-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg></span>
         </button>
       </div>
@@ -301,6 +346,7 @@
         <button type="button" data-explore-filter="heritage">Heritage</button>
         <button type="button" data-explore-filter="lakes">Lakes</button>
       </div>
+      <p class="explore-guidance">Choose a full route to plan how to join it. The guide describes the shorter rides.</p>
       <div id="culturalRoutesList" class="cultural-routes-list"></div>
       <div class="explore-import">
         <button id="exploreImportGpxBtn" class="secondary-action" type="button">Import a GPX route</button>
@@ -317,10 +363,12 @@
         </button>
       </div>
 
+      <section class="settings-group" aria-labelledby="journeySettingsTitle">
+      <h2 id="journeySettingsTitle" class="settings-group-title">Journey</h2>
       <div class="setting-row">
         <div class="setting-copy">
           <strong>Voice guidance</strong>
-          <span>Speak upcoming turns while navigating.</span>
+          <span>Hear upcoming turns.</span>
         </div>
         <button id="voiceSettingBtn" class="setting-switch" type="button" role="switch" aria-checked="true" aria-label="Voice guidance">
           <span class="switch-thumb" aria-hidden="true"></span>
@@ -330,17 +378,20 @@
       <div class="setting-block">
         <div class="setting-copy">
           <strong>Distance units</strong>
-          <span>Used on route summaries and spoken turn prompts.</span>
+          <span>For journey details and voice guidance.</span>
         </div>
         <div id="unitChoice" class="unit-choice" role="group" aria-label="Distance units">
           <button type="button" data-units="metric" class="active">Metric <small>km · m</small></button>
           <button type="button" data-units="imperial">Miles &amp; yards <small>mi · yd</small></button>
         </div>
       </div>
+      </section>
+      <section class="settings-group" aria-labelledby="appearanceSettingsTitle">
+      <h2 id="appearanceSettingsTitle" class="settings-group-title">Appearance</h2>
       <div class="setting-block">
         <div class="setting-copy">
-          <strong>Appearance</strong>
-          <span>System follows your device, and switches to the low-glare night theme after sunset while navigating.</span>
+          <strong>Theme</strong>
+          <span>System follows your device, with a low-glare night theme after sunset during navigation.</span>
         </div>
         <div id="themeChoice" class="theme-choice" role="group" aria-label="Appearance">
           <button type="button" data-theme-choice="system" class="active">System</button>
@@ -349,13 +400,16 @@
           <button type="button" data-theme-choice="high-contrast">High contrast</button>
         </div>
       </div>
+      </section>
+      <section class="settings-group" aria-labelledby="offlineSettingsTitle">
+      <h2 id="offlineSettingsTitle" class="settings-group-title">Offline &amp; app</h2>
       <div class="setting-block offline-setting">
         <div class="setting-copy">
           <strong>Offline Milton Keynes</strong>
           <span id="offlineStatus">Checking map package…</span>
         </div>
         <button id="offlineDownloadBtn" class="compact-action offline-button" type="button">Download</button>
-        <div class="offline-note">Mapped MK places, addresses and saved places can be searched offline. Online search adds results; not every house number is mapped. Check the entrance on the map.</div>
+        <div class="offline-note">Local MK search works offline; not every house number is mapped. Check entrances on the map. Your device may clear browser storage, so check here before travelling.</div>
       </div>
       <div class="setting-row install-setting">
         <div class="setting-copy">
@@ -364,10 +418,11 @@
         </div>
         <button id="installAppBtn" class="compact-action" type="button" aria-label="Install MK Redway as an app">Install</button>
       </div>
+      </section>
       <details id="aboutData" class="about-data">
         <summary>About &amp; Data</summary>
         <div class="about-brand" style="display:flex;align-items:center;gap:12px;margin:16px 0">
-          <img src="./icons/app-logo.svg?v=0.14.9" alt="" width="56" height="56" style="display:block;width:56px;height:56px;flex:0 0 auto" />
+          <img src="./icons/app-logo.svg?v=0.14.10" alt="" width="56" height="56" style="display:block;width:56px;height:56px;flex:0 0 auto" />
           <strong style="font-size:28px;line-height:1;letter-spacing:-.02em">MK Redway</strong>
         </div>
         <h2>MK Redway Navigator</h2>
@@ -401,7 +456,7 @@
     <section id="installSheet" class="bottom-sheet install-sheet" aria-label="Install MK Redway" hidden>
       <button id="installSheetHandle" class="sheet-handle" type="button" data-panel-label="install instructions" aria-expanded="true" aria-label="Collapse install instructions"><span class="grabber" aria-hidden="true"></span><span class="sheet-handle-label">Hide details</span></button>
       <div class="install-heading sheet-summary">
-        <img src="./icons/apple-touch-icon.png?v=0.14.9" width="64" height="64" alt="" aria-hidden="true" />
+        <img src="./icons/apple-touch-icon.png?v=0.14.10" width="64" height="64" alt="" aria-hidden="true" />
         <div><strong>Install MK Redway</strong><span>Keep it on your Home Screen like an app.</span></div>
         <button id="closeInstall" class="icon-button small-icon" type="button" aria-label="Close install instructions">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>

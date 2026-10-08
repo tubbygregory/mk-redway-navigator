@@ -79,6 +79,8 @@ test('complete maps become offline-ready only after map and graph storage succee
   assert.equal(a.context.state.offlineMapDownloaded,true);
   assert.equal(a.context.state.offlineMapBytes,100000);
   assert.equal(a.elements.offlineDownloadBtn.textContent,'Remove');
+  assert.match(a.elements.offlineStatus.textContent,/^Ready for offline journeys/);
+  assert.match(a.elements.offlineStatus.textContent,/98 KB/);
   assert.equal(await a.context.offlineMapCached(),true);
   assert.ok(a.stores.has(new URL('data/network.json',scope).href));
   const full=app();full.context.full=true;await full.context.downloadOfflineMap();
@@ -157,6 +159,7 @@ test('existing HTTP200 graph caches must contain a complete valid routing networ
     await a.context.probeOfflineMap();
     assert.equal(a.context.state.offlineMapDownloaded,false);
     assert.doesNotMatch(a.elements.offlineStatus.textContent,/available offline/);
+    assert.doesNotMatch(a.elements.offlineStatus.textContent,/Ready for offline journeys/);
   }
   const valid=app();
   await valid.cache.put(mapUrl,new Response(mapBytes(),{headers:{'Content-Length':'100000'}}));

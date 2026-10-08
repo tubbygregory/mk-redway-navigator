@@ -12,20 +12,24 @@ const place = (id = 'one', lat = 52.04, lng = -.75) => ({id, name: 'Chosen place
 function harness() {
   const state = {saved: {home: null, work: null, favourites: []}, end: null, stage: 'explore', savedPickRevision: 0};
   const store = new Map(), elements = new Map(), handlers = {}, mapHandlers = {}, timers = new Map();
-  const calls = {writes: 0, renders: 0, reverse: 0, messages: [], blocked: false, clock: 100, nextTimer: 0};
+  const calls = {writes: 0, renders: 0, reverse: 0, messages: [], blocked: false, readBlocked: false, clock: 100, nextTimer: 0};
   function el(id) {
     if (!elements.has(id)) elements.set(id, {hidden: false, value: '', placeholder: '', attributes: {}, classes: new Set(),
       setAttribute(key, value) { this.attributes[key] = value; },
       classList: {toggle(name, enabled) { if (enabled) el(id).classes.add(name); else el(id).classes.delete(name); }},
       addEventListener(type, callback) { handlers[id + ':' + type] = callback; },
-      blur() { this.blurred = true; }});
+      blur() { this.blurred = true; }, focus() { this.focused = true; }, select() {}, scrollIntoView() {}});
     return elements.get(id);
   }
   const container = {getBoundingClientRect: () => ({left: 0, top: 0}),
     addEventListener(type, callback) { handlers['map:' + type] = callback; }};
   const context = vm.createContext({
     state, el, MK: {south: 51.955, north: 52.155, west: -.905, east: -.615}, SAVED_KEY: 'saved',
-    localStorage: {getItem: key => store.get(key) || null, setItem(key, value) {
+    localStorage: {getItem(key) {
+      if (calls.readBlocked) throw new Error('SecurityError');
+      calls.beforeRead?.(key);
+      return store.get(key) || null;
+    }, setItem(key, value) {
       calls.writes++; if (calls.blocked) throw new Error('QuotaExceededError'); store.set(key, value);
     }},
     toast: message => calls.messages.push(message),
@@ -188,4 +192,237 @@ test('long-held touch stays guarded until release and the compatibility window t
   assert.equal(expired.releaseClick(), false);
   const cancelled = harness(); cancelled.context.beginSavedSearch('work'); cancelled.longPress();
   cancelled.handlers['document:pointercancel']({}); assert.equal(cancelled.releaseClick(), false);
+});
+
+test('optional local pin names and distinct unnamed pin labels persist without a reverse lookup', () => {
+  const h = harness();
+  for (const [lat, expected] of [[52.04, 'Saved pin 1'], [52.05, 'Saved pin 2']]) {
+    h.context.beginSavedSearch('favourite');
+    h.context.savePendingMapPin({lat, lng: -.75});
+    assert.equal(h.state.saved.favourites[0].name, expected);
+  }
+  h.context.beginSavedSearch('favourite'); h.el('savedFavouriteNameInput').value = '  Riverside start  ';
+  h.context.savePendingMapPin({lat: 52.06, lng: -.75});
+  assert.equal(h.state.saved.favourites[0].name, 'Riverside start');
+  assert.equal(h.el('savedFavouriteNameInput').value, '');
+  h.context.loadSavedPlaces();
+  assert.deepEqual([...h.state.saved.favourites].map(p => p.name), ['Riverside start', 'Saved pin 2', 'Saved pin 1']);
+  assert.equal(h.calls.reverse, 0);
+});
+
+test('an optional name also applies to selected search results, preserving their address and coordinates', () => {
+  const h = harness(); h.context.beginSavedSearch('favourite');
+  h.el('savedFavouriteNameInput').value = 'Lunch stop';
+  h.context.selectSearchResult({name: 'Source venue', address: {road: 'Frobisher Gate'}, lat: 52.04, lon: -.75}, 'save-favourite');
+  const favourite = h.state.saved.favourites[0];
+  assert.equal(favourite.name, 'Lunch stop'); assert.equal(favourite.address, 'Frobisher Gate');
+  assert.equal(favourite.lat, 52.04); assert.equal(favourite.lng, -.75);
+  assert.equal(h.state.pendingSaveKind, null); assert.equal(h.calls.reverse, 0);
+});
+
+test('invalid optional names leave the picker open and durable data unchanged', () => {
+  for (const name of ['x'.repeat(81), 'Name\nwith line break', 'Name\x00']) {
+    const h = harness(); h.context.beginSavedSearch('favourite'); h.el('savedFavouriteNameInput').value = name;
+    assert.equal(h.context.savePendingMapPin({lat: 52.04, lng: -.75}), true);
+    assert.equal(h.calls.writes, 0); assert.equal(h.state.pendingSaveKind, 'favourite');
+    assert.match(h.calls.messages.at(-1), /80 characters/);
+  }
+});
+
+test('renaming changes only the favourite name and retains Saved membership across reload', () => {
+  const h = harness(); h.state.end = place(); h.context.savePlace('favourite', place());
+  const original = h.state.saved.favourites[0]; h.context.openFavouriteNameEditor(original);
+  h.el('favouriteNameInput').value = '  Canal café <near bridge>  ';
+  assert.equal(h.context.saveFavouriteName(), true);
+  const renamed = h.state.saved.favourites[0];
+  assert.equal(renamed.name, 'Canal café <near bridge>');
+  for (const field of ['id', 'address', 'lat', 'lng']) assert.equal(renamed[field], original[field]);
+  assert.equal(h.el('saveFavouriteLabel').textContent, 'Saved');
+  assert.equal(h.el('favouriteNameEditor').hidden, true);
+  h.context.loadSavedPlaces(); assert.equal(h.state.saved.favourites[0].name, 'Canal café <near bridge>');
+  assert.equal(h.calls.reverse, 0);
+});
+
+test('rename validation, cancellation and blocked storage never replace the persisted name', () => {
+  const h = harness(); h.context.savePlace('favourite', place()); const original = h.store.get('saved');
+  h.context.openFavouriteNameEditor(h.state.saved.favourites[0]);
+  for (const name of ['', '   ', 'x'.repeat(81), 'Name\n']) {
+    h.el('favouriteNameInput').value = name;
+    assert.equal(h.context.saveFavouriteName(), false); assert.equal(h.store.get('saved'), original);
+  }
+  h.el('favouriteNameInput').value = 'New name'; h.calls.blocked = true;
+  assert.equal(h.context.saveFavouriteName(), false);
+  assert.equal(h.state.saved.favourites[0].name, 'Chosen place');
+  assert.equal(h.el('favouriteNameEditor').hidden, false); assert.equal(h.store.get('saved'), original);
+  h.handlers['favouriteNameInput:keydown']({key: 'Escape', preventDefault() {}});
+  assert.equal(h.el('favouriteNameEditor').hidden, true); assert.equal(h.state.favouriteNameTarget, null);
+  assert.equal(h.store.get('saved'), original);
+});
+
+test('a rename cannot silently replace a concurrent name edit and preserves other current fields', () => {
+  const h = harness(); h.context.savePlace('favourite', place());
+  h.context.openFavouriteNameEditor(h.state.saved.favourites[0]);
+  const changed = JSON.parse(h.store.get('saved')); changed.favourites[0].name = 'Edited in another tab';
+  changed.home = place('home', 52.06); h.store.set('saved', JSON.stringify(changed));
+  h.el('favouriteNameInput').value = 'My rename';
+  assert.equal(h.context.saveFavouriteName(), false);
+  assert.equal(JSON.parse(h.store.get('saved')).favourites[0].name, 'Edited in another tab');
+  assert.equal(JSON.parse(h.store.get('saved')).home.id, 'home');
+  assert.match(h.calls.messages.at(-1), /changed elsewhere/);
+});
+
+test('Undo restores only the removed favourite into the latest durable Home, Work and favourite edits', () => {
+  const h = harness(); h.context.savePlace('favourite', place('first', 52.04));
+  h.context.savePlace('favourite', place('second', 52.05));
+  const removed = h.state.saved.favourites[1]; assert.equal(h.context.removeFavourite(removed), true);
+  assert.equal(h.el('savedUndoNotice').hidden, false);
+  const changed = JSON.parse(h.store.get('saved'));
+  changed.home = place('home', 52.06); changed.work = place('work', 52.07);
+  changed.favourites[0].name = 'Changed since deletion'; changed.favourites.unshift(place('third', 52.08));
+  h.store.set('saved', JSON.stringify(changed));
+  assert.equal(h.context.undoFavouriteRemoval(), true);
+  const final = JSON.parse(h.store.get('saved'));
+  assert.equal(final.home.id, 'home'); assert.equal(final.work.id, 'work');
+  assert.equal(final.favourites.find(p => p.id === 'second').name, 'Changed since deletion');
+  assert.equal(final.favourites.find(p => p.id === 'first').name, removed.name);
+  assert.ok(final.favourites.some(p => p.id === 'third'));
+  assert.equal(final.favourites.length, 3); assert.equal(h.el('savedUndoNotice').hidden, true);
+});
+
+test('Undo cannot duplicate a favourite re-added with a different id or replace its new name', () => {
+  const h = harness(); h.context.savePlace('favourite', place());
+  assert.equal(h.context.removeFavourite(h.state.saved.favourites[0]), true);
+  const replacement = {...place('replacement'), name: 'New personal name'};
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites: [replacement]}));
+  const before = h.store.get('saved'); assert.equal(h.context.undoFavouriteRemoval(), false);
+  assert.equal(h.store.get('saved'), before); assert.equal(h.state.saved.favourites.length, 1);
+  assert.equal(h.state.saved.favourites[0].name, 'New personal name');
+  assert.equal(h.el('savedUndoNotice').hidden, true);
+});
+
+test('Undo respects a full list after concurrent additions and stays available for retry', () => {
+  const h = harness(); h.context.savePlace('favourite', place());
+  h.context.removeFavourite(h.state.saved.favourites[0]);
+  const favourites = Array.from({length: 30}, (_, i) => place('other-' + i, 52.02 + i * .0001));
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites})); const before = h.store.get('saved');
+  assert.equal(h.context.undoFavouriteRemoval(), false); assert.equal(h.store.get('saved'), before);
+  assert.ok(h.state.favouriteUndo); assert.match(h.calls.messages.at(-1), /Remove another favourite/);
+  favourites.pop(); h.store.set('saved', JSON.stringify({home: null, work: null, favourites}));
+  assert.equal(h.context.undoFavouriteRemoval(), true);
+  assert.equal(JSON.parse(h.store.get('saved')).favourites.length, 30);
+});
+
+test('storage failures roll back deletion and leave a failed Undo retryable', () => {
+  const h = harness(); h.context.savePlace('favourite', place()); const favourite = h.state.saved.favourites[0];
+  const before = h.store.get('saved'); h.calls.blocked = true;
+  assert.equal(h.context.removeFavourite(favourite), false); assert.equal(h.store.get('saved'), before);
+  assert.equal(h.state.saved.favourites.length, 1); assert.equal(h.state.favouriteUndo, undefined);
+  h.calls.blocked = false; assert.equal(h.context.removeFavourite(favourite), true);
+  const deleted = h.store.get('saved'); h.calls.blocked = true;
+  assert.equal(h.context.undoFavouriteRemoval(), false); assert.equal(h.store.get('saved'), deleted);
+  assert.equal(h.state.saved.favourites.length, 0); assert.ok(h.state.favouriteUndo);
+  h.calls.blocked = false; assert.equal(h.context.undoFavouriteRemoval(), true);
+  assert.equal(h.state.saved.favourites.length, 1);
+});
+
+test('Undo preserves a valid legacy list above thirty without enabling new-capacity eviction', () => {
+  const h = harness(), favourites = Array.from({length: 31}, (_, i) => place(String(i), 52.02 + i * .0001));
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites})); h.context.loadSavedPlaces();
+  assert.equal(h.context.removeFavourite(h.state.saved.favourites[10]), true);
+  assert.equal(h.context.undoFavouriteRemoval(), true);
+  assert.deepEqual(JSON.parse(h.store.get('saved')).favourites.map(p => p.id), favourites.map(p => p.id));
+});
+
+test('unreadable or malformed durable data is never overwritten by Undo', () => {
+  const h = harness(); h.context.savePlace('favourite', place()); h.context.removeFavourite(h.state.saved.favourites[0]);
+  const valid = h.store.get('saved'); h.calls.readBlocked = true;
+  assert.equal(h.context.undoFavouriteRemoval(), false); assert.equal(h.store.get('saved'), valid);
+  h.calls.readBlocked = false; h.store.set('saved', '{');
+  assert.equal(h.context.undoFavouriteRemoval(), false); assert.equal(h.store.get('saved'), '{');
+  h.store.set('saved', valid); assert.equal(h.context.undoFavouriteRemoval(), true);
+});
+
+test('a Saved change between snapshot and write is detected instead of silently overwritten', () => {
+  const h = harness(); h.context.savePlace('favourite', place()); const target = h.state.saved.favourites[0];
+  const changed = JSON.parse(h.store.get('saved')); changed.work = place('new-work', 52.07);
+  let reads = 0;
+  h.calls.beforeRead = key => { if (++reads === 2) h.store.set(key, JSON.stringify(changed)); };
+  assert.equal(h.context.removeFavourite(target), false);
+  assert.equal(JSON.parse(h.store.get('saved')).work.id, 'new-work');
+  assert.equal(JSON.parse(h.store.get('saved')).favourites.length, 1);
+  assert.equal(h.state.favouriteUndo, undefined); assert.match(h.calls.messages.at(-1), /another tab/);
+});
+
+test('saving Home or Work preserves favourites renamed and added in another tab', () => {
+  for (const kind of ['home', 'work']) {
+    const h = harness(); h.context.savePlace('favourite', place());
+    const current = JSON.parse(h.store.get('saved'));
+    current.favourites[0].name = 'Renamed elsewhere'; current.favourites.unshift(place('elsewhere', 52.05));
+    const otherKind = kind === 'home' ? 'work' : 'home';
+    current[otherKind] = place(otherKind, 52.06);
+    h.store.set('saved', JSON.stringify(current));
+    assert.equal(h.context.savePlace(kind, place(kind, 52.07)).ok, true);
+    const final = JSON.parse(h.store.get('saved'));
+    assert.equal(final[kind].id, kind); assert.equal(final[otherKind].id, otherKind);
+    assert.deepEqual(final.favourites, current.favourites);
+    assert.equal(h.state.saved.favourites[1].name, 'Renamed elsewhere');
+  }
+});
+
+test('new map-pin names and duplicate detection use the latest durable favourites', () => {
+  const h = harness();
+  const existing = {...place('other-tab', 52.04), name: 'Saved pin 1'};
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites: [existing]}));
+  h.context.beginSavedSearch('favourite'); h.context.savePendingMapPin({lat: 52.05, lng: -.75});
+  assert.equal(h.state.saved.favourites[0].name, 'Saved pin 2');
+  assert.equal(h.state.saved.favourites[1].id, 'other-tab');
+  const changed = JSON.parse(h.store.get('saved')); changed.favourites[1].name = 'Renamed elsewhere';
+  h.store.set('saved', JSON.stringify(changed)); const before = h.store.get('saved'), writes = h.calls.writes;
+  const duplicate = h.context.savePlace('favourite', place('new-id', 52.04));
+  assert.equal(duplicate.ok, true); assert.equal(duplicate.duplicate, true);
+  assert.equal(h.store.get('saved'), before); assert.equal(h.calls.writes, writes);
+  assert.equal(h.state.saved.favourites[1].name, 'Renamed elsewhere');
+  assert.equal(h.calls.reverse, 0);
+});
+
+test('ordinary saving respects capacity added elsewhere and uses space freed elsewhere', () => {
+  const h = harness();
+  const favourites = Array.from({length: 30}, (_, i) => place('other-' + i, 52.02 + i * .0001));
+  h.store.set('saved', JSON.stringify({home: null, work: null, favourites})); const before = h.store.get('saved');
+  assert.equal(h.context.savePlace('favourite', place('new', 52.1)).ok, false);
+  assert.equal(h.store.get('saved'), before); assert.equal(h.calls.writes, 0);
+  assert.equal(h.state.saved.favourites.length, 30);
+  favourites.pop(); h.store.set('saved', JSON.stringify({home: null, work: null, favourites}));
+  assert.equal(h.context.savePlace('favourite', place('new', 52.1)).ok, true);
+  assert.equal(JSON.parse(h.store.get('saved')).favourites.length, 30);
+  assert.equal(h.state.saved.favourites[0].id, 'new');
+  assert.ok(!h.state.saved.favourites.some(p => p.id === 'other-29'));
+});
+
+test('ordinary saving cannot erase current favourites when storage is blocked or unreadable', () => {
+  for (const failure of ['blocked', 'readBlocked']) {
+    const h = harness(); h.context.savePlace('favourite', place());
+    const changed = JSON.parse(h.store.get('saved')); changed.favourites[0].name = 'New durable name';
+    changed.favourites.push(place('added-elsewhere', 52.05)); h.store.set('saved', JSON.stringify(changed));
+    const before = h.store.get('saved'); h.calls[failure] = true;
+    assert.equal(h.context.savePlace('home', place('home', 52.06)).ok, false);
+    assert.equal(h.store.get('saved'), before); assert.equal(h.state.saved.home, null);
+    assert.equal(h.state.saved.favourites[0].name, 'Chosen place');
+    assert.equal(h.state.saved.favourites.length, 1);
+    h.calls[failure] = false;
+    assert.equal(h.context.savePlace('home', place('home', 52.06)).ok, true);
+    assert.equal(JSON.parse(h.store.get('saved')).favourites[0].name, 'New durable name');
+    assert.equal(h.state.saved.favourites.length, 2);
+  }
+});
+
+test('ordinary saving detects a change after its snapshot without overwriting it', () => {
+  const h = harness(); h.context.savePlace('favourite', place());
+  const changed = JSON.parse(h.store.get('saved')); changed.favourites[0].name = 'Updated during save';
+  let reads = 0;
+  h.calls.beforeRead = key => { if (++reads === 2) h.store.set(key, JSON.stringify(changed)); };
+  assert.equal(h.context.savePlace('work', place('work', 52.06)).ok, false);
+  assert.equal(JSON.parse(h.store.get('saved')).favourites[0].name, 'Updated during save');
+  assert.equal(JSON.parse(h.store.get('saved')).work, null);
+  assert.equal(h.state.saved.work, null); assert.match(h.calls.messages.at(-1), /another tab/);
 });

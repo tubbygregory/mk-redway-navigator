@@ -107,6 +107,11 @@
   const markerLayer = L.layerGroup().addTo(map);
   const searchResultLayer = L.layerGroup().addTo(map);
   const userLayer = L.layerGroup().addTo(map);
+  // Keep the credit independent of the zoom/scale controls so each can fit
+  // around the current foreground panels without covering their actions.
+  const mapCredit = map.attributionControl.getContainer();
+  mapCredit.classList.add('map-attribution');
+  el('app').appendChild(mapCredit);
 
   const state = {
     mode: 'cycle',
@@ -199,13 +204,79 @@
     requestAnimationFrame(() => map.invalidateSize({ pan: false }));
   }
 
+  let creditLayoutFrame = null;
   function syncBrowseAttribution() {
-    const overlay = el('exploreUI');
-    if (!overlay.hidden) el('app').style.setProperty('--browse-attribution-top', `${Math.ceil(overlay.getBoundingClientRect().bottom + 8)}px`);
+    if (creditLayoutFrame !== null) return;
+    creditLayoutFrame = requestAnimationFrame(() => {
+      creditLayoutFrame = null;
+      positionMapAttribution();
+    });
   }
 
-  // Saved shortcuts and the pin picker change height without a window resize.
-  new ResizeObserver(syncBrowseAttribution).observe(el('exploreUI'));
+  function positionMapAttribution() {
+    const app = el('app');
+    const frame = app.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const width = frame.width;
+    const height = Math.min(frame.height, viewport?.height || frame.height);
+    mapCredit.style.maxWidth = `${Math.min(260, Math.max(120, width - 24))}px`;
+    const credit = mapCredit.getBoundingClientRect();
+    const visibleRect = node => {
+      if (!node || node.hidden || !node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') return null;
+      const rect = node.getBoundingClientRect();
+      return {left: rect.left - frame.left, right: rect.right - frame.left,
+        top: rect.top - frame.top, bottom: rect.bottom - frame.top};
+    };
+    const topPanel = visibleRect(el(state.navigating ? 'navBanner' : state.stage === 'planner' ? 'plannerUI' : 'exploreUI'));
+    const preferredTop = Math.ceil((topPanel?.bottom || 4) + 8);
+    const portrait = width < 900 && width <= height;
+    const notification = el('toast');
+    const notificationVisible = notification && !notification.hidden;
+    if (notificationVisible) notification.style.maxWidth = `${portrait ? width - 32 : Math.min(420, Math.max(150, width - (topPanel?.right || 0) - 24))}px`;
+    const notificationSpace = portrait && notificationVisible ? notification.getBoundingClientRect().height + 12 : 0;
+    // A full-width sheet must leave a strip between the search and the sheet
+    // for the credit, including when favourite chips or instructions wrap.
+    app.style.setProperty('--foreground-panel-max-height', `${Math.max(90, height - preferredTop - credit.height - notificationSpace - 26)}px`);
+    const panels = ['exploreUI', 'plannerUI', 'placeSheet', 'routeSheet', 'savedSheet', 'settingsSheet',
+      'exploreSheet', 'resultsSheet', 'installSheet', 'navBanner', 'navBottom', 'homeNav',
+      'browseMapControls', 'mapControls', 'mapKeyPopover', 'arrivalSummary', 'locationRecovery'];
+    const obstacles = panels.map(id => visibleRect(el(id))).filter(Boolean);
+    const maxX = Math.max(8, width - credit.width - 8);
+    const maxY = Math.max(8, height - credit.height - 8);
+    const preferredX = portrait ? 10 : Math.min(maxX, Math.max(10, (topPanel?.right || 0) + 12));
+    const preferredY = portrait ? preferredTop : Math.max(8, height - credit.height - 76);
+    const xs = [preferredX, 10, maxX, ...obstacles.flatMap(r => [r.right + 8, r.left - credit.width - 8])];
+    const ys = [preferredY, preferredTop, 8, maxY, ...obstacles.flatMap(r => [r.bottom + 8, r.top - credit.height - 8])];
+    const candidates = [];
+    for (const left of xs) for (const top of ys) {
+      if (left < 8 || left > maxX || top < 8 || top > maxY) continue;
+      if (obstacles.some(r => left < r.right + 4 && left + credit.width > r.left - 4 &&
+          top < r.bottom + 4 && top + credit.height > r.top - 4)) continue;
+      candidates.push({left, top, score: Math.abs(left - preferredX) + Math.abs(top - preferredY)});
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    const position = candidates[0] || {left: Math.min(maxX, preferredX), top: Math.min(maxY, preferredY)};
+    mapCredit.style.left = `${Math.round(position.left)}px`;
+    mapCredit.style.top = `${Math.round(position.top)}px`;
+    if (notificationVisible) {
+      notification.style.left = `${portrait ? width / 2 : ((topPanel?.right || 0) + width) / 2}px`;
+      notification.style.top = portrait ? `${Math.round(position.top + credit.height + 8)}px` : 'auto';
+      notification.style.bottom = portrait ? 'auto' : '122px';
+    }
+  }
+
+  // Panels change size and visibility without a window resize. Observe the
+  // instruction itself too, since a joining instruction can be multiline.
+  const creditObserver = new ResizeObserver(syncBrowseAttribution);
+  for (const id of ['exploreUI', 'plannerUI', 'placeSheet', 'routeSheet', 'savedSheet', 'settingsSheet',
+    'exploreSheet', 'resultsSheet', 'navBanner', 'navBottom', 'homeNav', 'arrivalSummary', 'toast']) {
+    const panel = el(id);
+    if (panel) {
+      creditObserver.observe(panel);
+      new MutationObserver(syncBrowseAttribution).observe(panel, {attributes: true, attributeFilter: ['hidden', 'class']});
+    }
+  }
+  new MutationObserver(syncBrowseAttribution).observe(mapCredit, {childList: true, subtree: true, characterData: true});
 
   function refreshMapAfterOrientationChange() {
     setTimeout(() => {
@@ -224,6 +295,7 @@
   window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 
   function setStage(stage) {
+    clearArrivalSummary();
     gpxLoadRevision += 1;
     if (state.pendingSaveKind && !['explore', 'place'].includes(stage)) finishSavedSearch();
     if (stage !== 'planner') { cancelStartLocation(); cancelNavigationStart(); }
@@ -233,6 +305,7 @@
     state.localSuggestionInput = null;
     state.localSuggestionContext = null;
     state.searchSubmissionActive = false;
+    state.searchMapPickContext = null;
     el('app').dataset.stage = stage;
     el('exploreUI').hidden = !['explore', 'place'].includes(stage);
     el('plannerUI').hidden = stage !== 'planner';
@@ -264,13 +337,14 @@
     clearTimeout(state.toastTimer);
     t.textContent = message;
     t.hidden = false;
-    state.toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+    syncBrowseAttribution();
+    state.toastTimer = setTimeout(() => { t.hidden = true; syncBrowseAttribution(); }, ms);
   }
 
   function setRouteStatus(msg, kind = '') {
     const n = el('routeStatus');
     n.textContent = msg;
-    n.className = 'route-status' + (kind ? ` ${kind}` : '');
+    n.className = 'route-status sheet-summary' + (kind ? ` ${kind}` : '');
   }
 
   function fmtCoord(p) {
@@ -440,6 +514,132 @@
     return !!first && !!second && Math.abs(first.lat - second.lat) < 0.00002 && Math.abs(first.lng - second.lng) < 0.00002;
   }
 
+  function favouriteName(value) {
+    return typeof value === 'string' && value.length <= 80 && !/[\x00-\x1f\x7f]/.test(value) ? value.trim() : null;
+  }
+
+  function nextSavedPinName(saved) {
+    const used = new Set(saved.favourites.map(place => place.name));
+    let number = 1;
+    while (used.has('Saved pin ' + number)) number++;
+    return 'Saved pin ' + number;
+  }
+
+  function savedSnapshotForChange() {
+    try {
+      const value = localStorage.getItem(SAVED_KEY);
+      const raw = JSON.parse(value || '{}');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid saved places');
+      return {value, saved: {
+        home: normalizeSavedPlace(raw.home), work: normalizeSavedPlace(raw.work),
+        favourites: Array.isArray(raw.favourites) ? raw.favourites.map(normalizeSavedPlace).filter(Boolean) : []
+      }};
+    } catch (_) {
+      toast('Saved places could not be read. Try again before making changes.', 6000);
+      return null;
+    }
+  }
+
+  function renderSavedUndo() {
+    const undo = state.favouriteUndo;
+    el('savedUndoNotice').hidden = !undo;
+    if (undo) el('savedUndoText').textContent = undo.place.name + ' removed.';
+  }
+
+  function removeFavourite(place) {
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return false;
+    const index = snapshot.saved.favourites.findIndex(saved => saved.id === place.id && sameSavedPlace(saved, place));
+    if (index < 0) {
+      state.saved = snapshot.saved; renderSavedPlaces();
+      toast('This favourite has already been removed.'); return false;
+    }
+    const favourites = [...snapshot.saved.favourites];
+    const removed = favourites.splice(index, 1)[0];
+    if (!persistSavedPlaces({...snapshot.saved, favourites}, snapshot.value)) return false;
+    state.favouriteUndo = {place: removed, index, count: snapshot.saved.favourites.length,
+      remainingIds: new Set(favourites.map(saved => saved.id))};
+    if (state.favouriteNameTarget?.id === removed.id) closeFavouriteNameEditor();
+    renderSavedUndo();
+    el('undoFavouriteBtn').focus();
+    return true;
+  }
+
+  function undoFavouriteRemoval() {
+    const undo = state.favouriteUndo;
+    if (!undo) return false;
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return false;
+    const favourites = [...snapshot.saved.favourites];
+    if (favourites.some(saved => saved.id === undo.place.id || sameSavedPlace(saved, undo.place))) {
+      state.saved = snapshot.saved;
+      state.favouriteUndo = null;
+      renderSavedPlaces(); renderSavedUndo();
+      toast('That favourite is already saved.');
+      return false;
+    }
+    // Preserve a legitimate pre-existing list above the current limit, but do
+    // not let Undo bypass capacity after other favourites have been added.
+    const capacity = undo.count > 30 && favourites.every(saved => undo.remainingIds.has(saved.id)) ? undo.count : 30;
+    if (favourites.length >= capacity) {
+      state.saved = snapshot.saved; renderSavedPlaces();
+      toast('Remove another favourite before restoring this one. Your saved places have been kept.', 6000);
+      return false;
+    }
+    favourites.splice(Math.min(undo.index, favourites.length), 0, undo.place);
+    if (!persistSavedPlaces({...snapshot.saved, favourites}, snapshot.value)) return false;
+    state.favouriteUndo = null;
+    renderSavedUndo();
+    toast('Favourite restored.');
+    return true;
+  }
+
+  function openFavouriteNameEditor(place) {
+    state.favouriteNameTarget = {...place};
+    el('favouriteNameInput').value = place.name;
+    el('favouriteNameEditor').hidden = false;
+    el('favouriteNameInput').focus();
+    el('favouriteNameInput').select();
+    el('favouriteNameEditor').scrollIntoView({block: 'nearest'});
+  }
+
+  function closeFavouriteNameEditor() {
+    const id = state.favouriteNameTarget?.id;
+    state.favouriteNameTarget = null;
+    el('favouriteNameEditor').hidden = true;
+    el('favouriteNameInput').value = '';
+    const buttons = el('favouritesList').querySelectorAll?.('.saved-rename') || [];
+    Array.from(buttons).find(button => button.dataset.favouriteId === id)?.focus();
+  }
+
+  function saveFavouriteName() {
+    const target = state.favouriteNameTarget;
+    if (!target) return false;
+    const name = favouriteName(el('favouriteNameInput').value);
+    if (!name) { toast('Enter a name of up to 80 characters, without line breaks.', 6000); return false; }
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return false;
+    const index = snapshot.saved.favourites.findIndex(saved => saved.id === target.id && sameSavedPlace(saved, target));
+    if (index < 0 || snapshot.saved.favourites[index].name !== target.name) {
+      state.saved = snapshot.saved; renderSavedPlaces();
+      toast('This favourite changed elsewhere. Close this editor and choose it again.', 6000);
+      return false;
+    }
+    const favourites = [...snapshot.saved.favourites];
+    favourites[index] = {...favourites[index], name};
+    if (!persistSavedPlaces({...snapshot.saved, favourites}, snapshot.value)) return false;
+    closeFavouriteNameEditor();
+    toast('Favourite name updated.');
+    return true;
+  }
+
+  el('undoFavouriteBtn').addEventListener('click', undoFavouriteRemoval);
+  el('favouriteNameEditor').addEventListener('submit', event => { event.preventDefault(); saveFavouriteName(); });
+  el('favouriteNameCancelBtn').addEventListener('click', closeFavouriteNameEditor);
+  el('favouriteNameInput').addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); closeFavouriteNameEditor(); }
+  });
+
   function syncSaveFavouriteButton() {
     const saved = state.saved.favourites.some(place => sameSavedPlace(place, state.end));
     el('saveFavouriteLabel').textContent = saved ? 'Saved' : 'Save';
@@ -460,31 +660,49 @@
     }
   }
 
-  function persistSavedPlaces(nextSaved = state.saved) {
-    try { localStorage.setItem(SAVED_KEY, JSON.stringify(nextSaved)); }
+  function persistSavedPlaces(nextSaved = state.saved, expectedValue) {
+    try {
+      if (arguments.length > 1 && localStorage.getItem(SAVED_KEY) !== expectedValue) {
+        toast('Saved places changed in another tab. Open Saved and try again.', 6000);
+        return false;
+      }
+      localStorage.setItem(SAVED_KEY, JSON.stringify(nextSaved));
+    }
     catch (_) { toast('Saved places could not be updated. Browser storage is full or unavailable.', 6000); return false; }
     state.saved = nextSaved;
     renderSavedPlaces();
     return true;
   }
 
-  function savePlace(kind, candidate) {
+  function savePlace(kind, candidate, {mapPin = false} = {}) {
+    let customName = '';
+    if (kind === 'favourite' && state.pendingSaveKind === 'favourite') {
+      const name = favouriteName(el('savedFavouriteNameInput').value);
+      if (name === null) { toast('Use a name of up to 80 characters, without line breaks.', 6000); return {ok: false}; }
+      customName = name;
+      if (customName) candidate = {...candidate, name: customName};
+    }
     const place = normalizeSavedPlace(candidate);
     if (!place || !['home', 'work', 'favourite'].includes(kind)) return {ok: false};
-    const duplicate = kind === 'favourite' && state.saved.favourites.some(saved => sameSavedPlace(saved, place));
-    if (duplicate) { syncSaveFavouriteButton(); return {ok: true, duplicate: true}; }
+    const snapshot = savedSnapshotForChange();
+    if (!snapshot) return {ok: false};
+    const saved = snapshot.saved;
+    if (kind === 'favourite' && mapPin && !customName) place.name = nextSavedPinName(saved);
+    const duplicate = kind === 'favourite' && saved.favourites.some(existing => sameSavedPlace(existing, place));
+    if (duplicate) { state.saved = saved; renderSavedPlaces(); return {ok: true, duplicate: true}; }
     if (!validateSearchResult({lat: place.lat, lon: place.lng})) {
       toast('Choose a point within the Milton Keynes map area.', 6000);
       return {ok: false};
     }
-    if (kind === 'favourite' && state.saved.favourites.length >= 30) {
+    if (kind === 'favourite' && saved.favourites.length >= 30) {
+      state.saved = saved; renderSavedPlaces();
       toast('You can save up to 30 favourites. Remove one before adding another.', 6000);
       return {ok: false};
     }
-    const next = {...state.saved, favourites: [...state.saved.favourites]};
+    const next = {...saved, favourites: [...saved.favourites]};
     if (kind === 'favourite') next.favourites.unshift(place);
     else next[kind] = place;
-    return {ok: persistSavedPlaces(next), duplicate: false};
+    return {ok: persistSavedPlaces(next, snapshot.value), duplicate: false};
   }
 
   function savedPlaceFromResult(result) {
@@ -521,6 +739,7 @@
   function openSavedPlace(place) {
     place = normalizeSavedPlace(place);
     if (!place) return;
+    closeFavouriteNameEditor();
     if (state.pendingSaveKind) finishSavedSearch();
     const point = L.latLng(place.lat, place.lng);
     setPoint('end', point, place.name, place.address || '');
@@ -532,10 +751,11 @@
 
   function renderSavedPlaces() {
     syncSaveFavouriteButton();
+    renderSavedUndo();
     const home = state.saved.home;
     const work = state.saved.work;
-    el('homeSavedLabel').textContent = home ? (home.name === 'Home' ? home.address || home.name : home.name) : 'Not set';
-    el('workSavedLabel').textContent = work ? (work.name === 'Work' ? work.address || work.name : work.name) : 'Not set';
+    el('homeSavedLabel').textContent = home ? (home.name === 'Home' ? home.address || home.name : home.name) : 'Add Home for a quicker start';
+    el('workSavedLabel').textContent = work ? (work.name === 'Work' ? work.address || work.name : work.name) : 'Add Work when you need it';
     el('setHomeBtn').textContent = home ? 'Change Home' : 'Set Home';
     el('setWorkBtn').textContent = work ? 'Change Work' : 'Set Work';
     const quick = el('quickPlaces');
@@ -548,20 +768,32 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'quick-favourite';
+      button.setAttribute('aria-label', place.name);
+      button.title = place.name;
       button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"></path></svg><span></span>';
       button.querySelector('span').textContent = place.name;
       button.addEventListener('click', () => openSavedPlace(place));
       quick.appendChild(button);
     }
     quick.hidden = !home && !work && !state.saved.favourites.length;
+    el('quickPlacesShell').hidden = quick.hidden;
+    if (!quick.dataset.scrollCueReady) {
+      quick.addEventListener('scroll', updateQuickPlacesOverflow, {passive: true});
+      window.addEventListener('resize', updateQuickPlacesOverflow, {passive: true});
+      quick.dataset.scrollCueReady = 'true';
+    }
+    requestAnimationFrame(updateQuickPlacesOverflow);
     const list = el('favouritesList');
     if (!list) return;
     list.innerHTML = '';
     if (!state.saved.favourites.length) {
       const empty = document.createElement('div');
       empty.className = 'saved-empty';
-      empty.textContent = 'No favourites yet.';
-      list.appendChild(empty);
+      empty.textContent = 'Keep your regular stops handy.';
+      const hint = document.createElement('p');
+      hint.className = 'saved-empty-hint';
+      hint.textContent = 'Add a place or a map pin. Your favourites stay on this device.';
+      list.append(empty, hint);
       return;
     }
     for (const place of state.saved.favourites) {
@@ -574,22 +806,39 @@
       open.querySelector('strong').textContent = place.name;
       open.querySelector('small').textContent = place.address || '';
       open.addEventListener('click', () => openSavedPlace(place));
+      const actions = document.createElement('div');
+      actions.className = 'saved-favourite-actions';
+      const rename = document.createElement('button');
+      rename.type = 'button';
+      rename.className = 'saved-rename';
+      rename.dataset.favouriteId = place.id;
+      rename.setAttribute('aria-label', `Rename ${place.name}`);
+      rename.title = 'Rename favourite';
+      rename.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4L4 16Zm10-10 4 4"></path></svg>';
+      rename.addEventListener('click', () => openFavouriteNameEditor(place));
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'saved-remove';
       remove.setAttribute('aria-label', `Remove ${place.name}`);
       remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path></svg>';
-      remove.addEventListener('click', () => {
-        persistSavedPlaces({...state.saved, favourites: state.saved.favourites.filter(x => x.id !== place.id)});
-      });
-      row.append(open, remove);
+      remove.addEventListener('click', () => removeFavourite(place));
+      actions.append(rename, remove);
+      row.append(open, actions);
       list.appendChild(row);
     }
+  }
+
+  function updateQuickPlacesOverflow() {
+    const quick = el('quickPlaces');
+    const maxScroll = quick.scrollWidth - quick.clientWidth;
+    el('quickPlacesShell').dataset.canScroll = String(!quick.hidden && maxScroll > 2 && quick.scrollLeft < maxScroll - 2);
   }
 
   function beginSavedSearch(kind) {
     if (!['home', 'work', 'favourite'].includes(kind)) return;
     closeSearch();
+    closeFavouriteNameEditor();
+    el('savedFavouriteNameInput').value = '';
     state.pendingSaveKind = kind;
     state.savedPickOnMap = false;
     state.savedPickRevision = (state.savedPickRevision || 0) + 1;
@@ -606,6 +855,8 @@
   function renderSavedPicker() {
     const kind = state.pendingSaveKind;
     el('savedPlacePicker').hidden = !kind;
+    el('savedFavouriteNameField').hidden = kind !== 'favourite';
+    if (state.savedPickOnMap) el('savedFavouriteNameInput').blur();
     if (!kind) return;
     const label = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'a favourite';
     el('savedPlacePickerTitle').textContent = kind === 'favourite' ? 'Add a favourite' : `Set ${label}`;
@@ -622,9 +873,9 @@
       return true;
     }
     const kind = state.pendingSaveKind;
-    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'Dropped pin';
+    const name = kind === 'home' ? 'Home' : kind === 'work' ? 'Work' : 'Saved pin';
     const candidate = {id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, address: fmtCoord(latlng), lat: latlng.lat, lng: latlng.lng};
-    const result = savePlace(kind, candidate);
+    const result = savePlace(kind, candidate, {mapPin: true});
     if (!result.ok) return true;
     closeSearch();
     finishSavedSearch();
@@ -637,6 +888,7 @@
     state.pendingSaveKind = null;
     state.savedPickOnMap = false;
     state.savedPickRevision = (state.savedPickRevision || 0) + 1;
+    el('savedFavouriteNameInput').value = '';
     renderSavedPicker();
     el('homeSearch').value = '';
     el('homeSearch').placeholder = 'Search places';
@@ -680,6 +932,7 @@
   }
 
   function invalidateRoute() {
+    clearArrivalSummary();
     routeLayer.clearLayers();
     el('culturalRouteLegend').hidden = true;
     state.routeRevision++;
@@ -688,6 +941,11 @@
     el('routeAlternatives').replaceChildren();
     el('routeInsights').hidden = true;
     el('approachNote').hidden = true;
+    el('routeApproachSummary').hidden = true;
+    el('routeApproachSummary').textContent = '';
+    el('routeTrackStatus').hidden = true;
+    el('routeClassification').hidden = false;
+    el('routeModeLabel').textContent = state.mode === 'walk' ? 'Walking' : 'Cycling';
     el('roadStat').textContent = '—';
     el('retryRouteBtn').hidden = true;
     el('startNavBtn').disabled = true;
@@ -712,26 +970,41 @@
 
   function conciseResultName(result) {
     const a = result?.address || {};
-    const parts = [];
     const namedPlace = [a.shop, a.amenity, a.tourism, a.leisure, a.office, a.building].map(searchText).find(Boolean);
     const name = namedPlace || searchText(result?.name);
     const house = searchText(a.house_number), road = searchText(a.road);
     const address = [house, road].filter(Boolean).join(' ');
-    // Nominatim may name a house result after its street. Preserve the number,
-    // while retaining a named business or building alongside its street address.
-    if (name && !(house && road && [house, road, address].some(value => value.toLowerCase() === name.toLowerCase()))) parts.push(name);
-    if (address && (house && road || !parts.length || road && !name.toLowerCase().endsWith(road.toLowerCase()))) parts.push(address);
-    const locality = [a.suburb, a.neighbourhood, a.village, a.town, a.city_district, a.city].map(searchText).find(Boolean);
-    if (locality && !parts.some(part => part.toLowerCase() === locality.toLowerCase())) parts.push(locality);
-    if (searchText(a.postcode)) parts.push(searchText(a.postcode));
-    return parts.join(', ') || searchText(result?.display_name) || 'Map location';
+    // Keep a useful title separate from address context. A provider may name a
+    // numbered address after its street or number; neither may lose the number.
+    if (house && road && (!name || [house, road, address].some(value => value.toLowerCase() === name.toLowerCase()))) return address;
+    return name || address || searchText(result?.display_name).split(',')[0].trim() || 'Map location';
+  }
+
+  function resultAddress(result, primary) {
+    const a = result?.address || {};
+    const street = [searchText(a.house_number), searchText(a.road)].filter(Boolean).join(' ');
+    const localities = [a.suburb, a.neighbourhood, a.village, a.town, a.city_district, a.city].map(searchText).filter(Boolean);
+    const parts = [street, ...localities, searchText(a.postcode)].filter(Boolean);
+    const context = parts.length ? parts : searchText(result?.display_name).split(',').map(part => part.trim()).filter(Boolean);
+    const distinct = context.filter((part, index) => part.toLowerCase() !== primary.toLowerCase() &&
+      context.findIndex(other => other.toLowerCase() === part.toLowerCase()) === index);
+    return distinct.join(', ') || 'Milton Keynes';
   }
 
   function resultSecondary(result, primary) {
-    if (result.matchNote) return result.matchNote;
-    const text = searchText(result.display_name);
-    if (!text || text === primary) return 'Milton Keynes';
-    return text.length > 130 ? `${text.slice(0, 127)}…` : text;
+    return [resultAddress(result, primary), searchText(result?.matchNote) || resultAccuracyNote(result)].filter(Boolean).join(' · ');
+  }
+
+  function resultAccuracyNote(result) {
+    if (result.requestedHouseNumber) return `Number ${result.requestedHouseNumber} not found locally · check entrance on map`;
+    if (result.matchNote) return searchText(result.matchNote);
+    const type = searchText(result.type || result.addresstype).toLowerCase();
+    if (result.class === 'highway' || ['street or path', 'road', 'street', 'footway', 'path', 'cycleway'].includes(type)) {
+      return 'Street or path match · choose the entrance on the map';
+    }
+    if (result.address?.house_number && result.address?.road) return 'Mapped address · check entrance on map';
+    if (['house', 'building'].includes(type)) return 'Building match · check entrance on map';
+    return '';
   }
 
   function resultTypeLabel(result) {
@@ -1011,6 +1284,7 @@
         display_name: [entry.name, entry.house_number, entry.street, entry.locality, entry.postcode].filter(Boolean).join(', '),
         type: entry.kind === 'building' ? 'Building match' : entry.kind === 'address' ? 'Address' : entry.category || 'Place',
         osm_type: entry.id[0] === 'n' ? 'node' : 'way', osm_id: entry.id.slice(1), local: true,
+        requestedHouseNumber: buildingFallback ? requested[1] : '',
         matchNote: buildingFallback
           ? 'Building match · Exact house number ' + requested[1] + ' not found in local data · check entrance on map'
           : entry.location.charAt(0).toUpperCase() + entry.location.slice(1) + ' · check entrance on map'
@@ -1025,16 +1299,18 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'typeahead-item';
-    button.innerHTML = '<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><small></small></span>';
-    button.querySelector('strong').textContent = conciseResultName(result);
+    button.innerHTML = '<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span class="result-address"></span><small></small></span>';
+    const primary = conciseResultName(result);
+    button.querySelector('strong').textContent = primary;
+    button.querySelector('.result-address').textContent = resultAddress(result, primary);
     const bits = [resultTypeLabel(result) || result.type];
     const d = resultDistance(result);
     if (Number.isFinite(d)) bits.push(formatDistance(d));
     button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
-    if (result.matchNote) {
+    if (resultAccuracyNote(result)) {
       const accuracy = document.createElement('small');
       accuracy.className = 'result-accuracy';
-      accuracy.textContent = result.matchNote;
+      accuracy.textContent = resultAccuracyNote(result);
       button.querySelector('.result-copy').appendChild(accuracy);
     }
     button.addEventListener('click', () => {
@@ -1045,6 +1321,7 @@
   }
 
   function renderTypeahead(input, context) {
+    state.searchMapPickContext = null;
     state.localSuggestionInput = input;
     state.localSuggestionContext = context;
     state.searchSubmissionActive = false;
@@ -1120,6 +1397,7 @@
   }
 
   function showResults(results, context, query, message = '') {
+    state.searchMapPickContext = null;
     state.searchContext = context;
     const list = el('resultsList');
     list.innerHTML = '';
@@ -1140,26 +1418,27 @@
     if (!displayResults.length) {
       const msg = document.createElement('div');
       msg.className = 'result-message';
-      msg.textContent = 'No matching mapped place was found. Try a full postcode, street address or place name, or choose a point on the map.';
+      msg.textContent = 'We couldn’t find that in the MK map area. Try a postcode, street address or place name, or choose a point on the map.';
       if (!message) list.appendChild(msg);
+      appendSearchRecovery(list, context);
     } else {
       displayResults.forEach((result, index) => {
         const primary = conciseResultName(result);
-        const secondary = resultSecondary(result.matchNote ? {...result, matchNote: ''} : result, primary);
+        const secondary = resultAddress(result, primary);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'result-item';
-        button.innerHTML = `<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span></span><small></small></span>`;
+        button.innerHTML = `<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span class="result-address"></span><small></small></span>`;
         button.querySelector('strong').textContent = primary;
         button.querySelector('.result-copy span').textContent = secondary;
         const bits = [resultTypeLabel(result)];
         const distance = resultDistance(result);
         if (Number.isFinite(distance)) bits.push(formatDistance(distance));
         button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
-        if (result.matchNote) {
+        if (resultAccuracyNote(result)) {
           const accuracy = document.createElement('small');
           accuracy.className = 'result-accuracy';
-          accuracy.textContent = result.matchNote;
+          accuracy.textContent = resultAccuracyNote(result);
           button.querySelector('.result-copy').appendChild(accuracy);
         }
         button.addEventListener('click', () => selectSearchResult(result, context));
@@ -1180,11 +1459,66 @@
         .filter(pair => pair.every(Number.isFinite));
       if (coords.length > 1) map.fitBounds(coords, {padding:[50,70], maxZoom:15});
     }
+    const help = document.createElement('p');
+    help.id = 'resultsPrecisionHelp';
+    help.className = 'results-help';
+    help.textContent = 'Search covers the MK map area, not every MK postcode. Not every house number is mapped; building and street matches are approximate locations, not verified front doors.';
+    list.appendChild(help);
     el('resultsSheet').hidden = false;
+  }
+
+  function appendSearchRecovery(list, context) {
+    const actions = document.createElement('div');
+    actions.className = 'result-recovery-actions';
+    const postcode = document.createElement('button');
+    postcode.type = 'button';
+    postcode.className = 'secondary-action';
+    postcode.textContent = 'Try a postcode';
+    postcode.addEventListener('click', () => {
+      closeSearch();
+      const input = el(context === 'start' ? 'startSearch' : context === 'end' ? 'endSearch' : 'homeSearch');
+      input.focus();
+      input.select?.();
+    });
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'secondary-action';
+    pin.textContent = 'Choose on map';
+    pin.addEventListener('click', () => beginResultMapPick(context));
+    actions.appendChild(postcode);
+    actions.appendChild(pin);
+    list.appendChild(actions);
+  }
+
+  function beginResultMapPick(context) {
+    closeSearch();
+    if (context === 'start') cancelStartLocation();
+    state.searchMapPickContext = {context, stage: state.stage};
+    el('resultsTitle').textContent = context === 'start' ? 'Choose a starting point' : 'Choose a point on the map';
+    const hint = document.createElement('div');
+    hint.className = 'result-message';
+    hint.textContent = 'Tap the entrance or accessible point you want to use. Close this panel to cancel.';
+    el('resultsList').replaceChildren(hint);
+    el('resultsSheet').hidden = false;
+    el('routeSheet').hidden = true;
+    el('closeResults').focus();
+  }
+
+  function selectSearchMapPoint(latlng) {
+    const picking = state.searchMapPickContext;
+    if (!picking || picking.stage !== state.stage || el('resultsSheet').hidden) return false;
+    if (!validateSearchResult({lat: latlng.lat, lon: latlng.lng})) {
+      toast('Choose a point within the Milton Keynes map area.', 6000);
+      return true;
+    }
+    if (picking.context.startsWith('save-') && savePendingMapPin(latlng)) return true;
+    selectSearchResult({lat: latlng.lat, lon: latlng.lng, name: 'Dropped pin', display_name: fmtCoord(latlng)}, picking.context);
+    return true;
   }
 
   function openPlannerSearch(context) {
     if (state.stage !== 'planner') return;
+    state.searchMapPickContext = null;
     if (context === 'start') cancelStartLocation();
     searchRevision += 1;
     state.searchSubmissionActive = false;
@@ -1204,6 +1538,7 @@
     state.localSuggestionInput = null;
     state.localSuggestionContext = null;
     state.plannerSearchOpen = false;
+    state.searchMapPickContext = null;
     el('resultsSheet').hidden = true;
     el('typeaheadSuggestions').hidden = true;
     searchResultLayer.clearLayers();
@@ -1222,6 +1557,7 @@
   });
 
   async function runSearch(context, input) {
+    state.searchMapPickContext = null;
     const query = normalizeSearchQuery(input.value);
     if (!query) { input.focus(); return; }
     el('typeaheadSuggestions').hidden = true;
@@ -1245,10 +1581,10 @@
     let message = '';
     if (offline && !online.results?.length) message = localResults.length
       ? "You're offline. Showing mapped local matches."
-      : "You're offline. No matching local place was found. Try a saved place or a map pin.";
+      : "You're offline. We couldn’t find that in the local MK map data. Try a saved place or choose on the map.";
     else if (online.error) message = localResults.length
       ? 'Online search is unavailable. Showing mapped local matches; check the entrance on the map.'
-      : 'Online search is unavailable. No matching local place was found. Try a saved place or a map pin.';
+      : 'Online search is unavailable. We couldn’t find that in the local MK map data. Try a saved place or choose on the map.';
     else if (!online.results.length && localResults.length) message = 'No online match was found. Showing mapped local matches.';
     showResults([...(online.results || []), ...localResults], context, query, message);
   }
@@ -1318,31 +1654,41 @@
       header.querySelector('small').textContent = route.fullMiles + ' mi full · ' + route.shortMiles + ' mi shorter ride in guide';
       const highlights = document.createElement('p');
       highlights.textContent = route.highlights.join(' · ');
-      const join = document.createElement('small');
-      join.className = 'cultural-join';
-      join.textContent = Number.isFinite(route.joinDistance)
-        ? 'Nearest join ' + formatDistance(route.joinDistance) + ' away'
-        : 'Choose the full route or a shortcut track';
+      card.append(header, highlights);
+      if (Number.isFinite(route.joinDistance)) {
+        const join = document.createElement('small');
+        join.className = 'cultural-join';
+        join.textContent = 'Nearest join ' + formatDistance(route.joinDistance) + ' away';
+        card.appendChild(join);
+      }
       const shortcutNote = document.createElement('small');
-      shortcutNote.className = 'cultural-join';
-      shortcutNote.textContent = 'Shortcut GPX is a segment, not the complete shorter loop. See the route guide for the shorter ride.';
+      shortcutNote.className = 'cultural-shortcut-note';
+      shortcutNote.id = 'shortcut-note-' + route.id;
+      shortcutNote.textContent = 'Shortcut GPX is a segment, not the complete shorter loop.';
       const actions = document.createElement('div');
       actions.className = 'cultural-route-actions';
       const full = document.createElement('button');
       full.type = 'button';
+      full.className = 'primary-action cultural-full-action';
       full.textContent = 'Full route';
       full.addEventListener('click', () => loadOfficialGpx(route, 'full'));
       const short = document.createElement('button');
       short.type = 'button';
+      short.className = 'secondary-action cultural-shortcut-action';
       short.textContent = 'Shortcut track';
+      short.setAttribute('aria-describedby', shortcutNote.id);
       short.addEventListener('click', () => loadOfficialGpx(route, 'short'));
       const source = document.createElement('a');
+      source.className = 'secondary-action cultural-guide-action';
       source.href = CULTURAL_ROUTES_URL;
       source.target = '_blank';
       source.rel = 'noopener noreferrer';
       source.textContent = 'Route guide';
-      actions.append(full, short, source);
-      card.append(header, highlights, join, shortcutNote, actions);
+      const shortcut = document.createElement('div');
+      shortcut.className = 'cultural-shortcut-choice';
+      shortcut.append(short, shortcutNote);
+      actions.append(full, source, shortcut);
+      card.appendChild(actions);
       if (route.loadErrorVariant) {
         const error = document.createElement('small');
         error.className = 'cultural-load-error';
@@ -1433,6 +1779,7 @@
 
   // All visible sheet handles share touch, mouse and keyboard behaviour.
   function setSheetCollapsed(sheet, collapsed) {
+    if (sheet.id === 'routeSheet') el('routeDetails').scrollTop = 0;
     const handle = sheet.querySelector('.sheet-handle');
     sheet.classList.toggle('is-collapsed', collapsed);
     handle.setAttribute('aria-expanded', String(!collapsed));
@@ -1600,6 +1947,7 @@
     // Mobile map libraries may synthesise a delayed click after sheet resizing.
     if (performance.now() < sheetGestureUntil || e.originalEvent?.target?.closest?.('.bottom-sheet')) return;
     if (state.navigating) return;
+    if (state.searchMapPickContext && selectSearchMapPoint(e.latlng)) return;
     if (state.editEndpoint) {
       const which = state.editEndpoint; state.editEndpoint = null;
       setPoint(which, e.latlng, 'Chosen entrance', fmtCoord(e.latlng));
@@ -1636,6 +1984,7 @@
 
   async function dropDestinationPin(latlng) {
     if (state.navigating || !['explore', 'place'].includes(state.stage)) return;
+    if (state.searchMapPickContext && selectSearchMapPoint(latlng)) return;
     if (state.pendingSaveKind && savePendingMapPin(latlng)) return;
     setPoint('end', latlng, 'Dropped pin', fmtCoord(latlng));
     showPlaceSheet();
@@ -1711,6 +2060,15 @@
     });
   }
 
+  function locationFailureMessage(error, planner = false) {
+    const reason = error?.code === 1 ? 'Location access is off.'
+      : error?.code === 3 ? 'Your location is taking a while.'
+      : 'We couldn’t get your location.';
+    return reason + (planner
+      ? ' Search for a starting address or postcode instead.'
+      : ' You can still search or choose a point on the map.');
+  }
+
   async function useCurrentLocation({ calculate = true } = {}) {
     if (state.plannerSearchOpen) closeSearch();
     const revision = ++startLocationRevision;
@@ -1729,8 +2087,8 @@
     } catch (err) {
       if (revision !== startLocationRevision || state.stage !== 'planner') return false;
       console.error(err);
-      setRouteStatus('Location unavailable. Search for the starting address or postcode instead.', 'warn');
-      toast('Location unavailable — enter a starting point');
+      setRouteStatus(locationFailureMessage(err, true), 'warn');
+      toast(locationFailureMessage(err, true), 6000);
       return true;
     } finally {
       if (revision === startLocationRevision) el('useLocationBtn').disabled = false;
@@ -1738,24 +2096,41 @@
   }
 
   async function refreshBrowseLocation({ center = true, quiet = false } = {}) {
+    if (state.navigating || state.stage === 'navigation') return false;
+    const request = state.browseLocationRevision = (state.browseLocationRevision || 0) + 1;
+    const screen = searchRevision, stage = state.stage;
+    // A newer lookup, manual search or screen transition owns the map.
+    const isCurrent = () => state.browseLocationRevision === request && searchRevision === screen &&
+      state.stage === stage && !state.navigating && state.stage !== 'navigation';
     const button = el('browseLocateBtn');
     if (button) button.disabled = true;
+    el('browseLocationRecovery').hidden = true;
     try {
       const pos = await acquireCurrentLocation();
+      if (!isCurrent()) return false;
       state.userLatLng = pos.latlng;
       setUserMarker(pos.latlng);
       if (center) map.setView(pos.latlng, Math.max(map.getZoom(), 15));
       return true;
-    } catch (_) {
-      if (!quiet) toast('Location unavailable — check browser permission');
+    } catch (error) {
+      if (!isCurrent()) return false;
+      if (!quiet && ['explore', 'place'].includes(state.stage)) {
+        el('browseLocationMessage').textContent = locationFailureMessage(error);
+        el('browseLocationRecovery').hidden = false;
+      }
       return false;
     } finally {
-      if (button) button.disabled = false;
+      if (button && state.browseLocationRevision === request) button.disabled = false;
     }
   }
 
   el('useLocationBtn').addEventListener('click', () => useCurrentLocation());
   el('browseLocateBtn').addEventListener('click', () => refreshBrowseLocation({ center: true }));
+  el('searchWithoutLocationBtn').addEventListener('click', () => {
+    el('browseLocationRecovery').hidden = true;
+    el('homeSearch').focus();
+  });
+  el('dismissLocationRecoveryBtn').addEventListener('click', () => { el('browseLocationRecovery').hidden = true; });
 
   el('directionsBtn').addEventListener('click', async () => {
     setStage('planner');
@@ -2232,16 +2607,22 @@
   }
 
   function renderApproachNote() {
-    const route = state.route, note = el('approachNote');
+    const route = state.route, note = el('approachNote'), summary = el('routeApproachSummary');
     const startGap = route?.snaps?.start || 0;
     const endGap = route?.snaps?.end || 0;
     const significant = Math.max(startGap, endGap) > 50;
     note.hidden = !route || !significant;
+    summary.hidden = note.hidden;
+    summary.textContent = '';
     if (!route || !significant) return;
     const messages = [];
     if (startGap > 50) messages.push(`The first ${formatDistance(startGap)} isn't a mapped path`);
     if (endGap > 50) messages.push(`The last ${formatDistance(endGap)} isn't a mapped path`);
     note.textContent = `${messages.join('. ')}. Check that you can get through.`;
+    const checks = [];
+    if (startGap > 50) checks.push(`first ${formatDistance(startGap)}`);
+    if (endGap > 50) checks.push(`final ${formatDistance(endGap)}`);
+    summary.textContent = `Check ${checks.join(' and ')} · unmapped approach`;
   }
 
   function installOfferSeen() {
@@ -2255,6 +2636,7 @@
   }
 
   function installRoute(plan, { fit = true, collapse = window.innerWidth < 900 } = {}) {
+    clearArrivalSummary();
     state.route = plan;
     const cultural = state.culturalRoute;
     const followingTrack = cultural?.phase === 'track';
@@ -2265,6 +2647,9 @@
     el('timeStat').textContent = formatDuration(total.mins);
     el('arrivalStat').textContent = `Arrive about ${arrivalTime(total.mins)}`;
     el('distanceStat').textContent = formatDistance(total.dist);
+    el('routeModeLabel').textContent = state.mode === 'walk' ? 'Walking' : 'Cycling';
+    el('routeClassification').hidden = unverified;
+    el('routeTrackStatus').hidden = !unverified;
     el('redwayStat').textContent = unverified ? 'Unknown' : `${plan.redwayPercent}%`;
     el('roadStat').textContent = unverified ? 'Unknown' : `${plan.roadPercent}%`;
     el('routePreferences').hidden = unverified || state.mode !== 'cycle';
@@ -2272,9 +2657,7 @@
       ? (cultural.phase === 'joining' ? 'The red joining leg uses mapped paths. ' : '') + 'The official GPX track has unverified access, path types and conditions; combined percentages are unknown.'
       : plan.imported ? 'Imported track: path types, access and conditions are unverified. Follows file geometry, not a calculated Redway route.'
       : 'Mapped conditions may be incomplete. Crossing estimates include short road links; unknown lighting is not counted as unlit.';
-    const legend = el('culturalRouteLegend');
-    legend.hidden = !cultural;
-    if (cultural) legend.textContent = (followingTrack ? '' : cultural.phase === 'joining' ? 'Red: route to Cultural Route start / join · ' : 'Joining leg not calculated · ') + cultural.color + ': official GPX track';
+    renderCulturalLegend(cultural);
     el('startNavBtn').disabled = false;
     el('sendToPhoneBtn').disabled = false;
     renderRouteMix(cultural ? null : plan);
@@ -2282,8 +2665,41 @@
     renderApproachNote();
     setRouteStatus(cultural ? (followingTrack ? cultural.color + ' Cultural Route · unverified track' : 'Route to Cultural Route start / join · then ' + cultural.color + ' track')
       : plan.imported ? 'Imported GPX · unverified track' : routeReadyStatus(), unverified ? 'warn' : state.networkSource === 'bundled' ? 'good' : 'warn');
+    el('routeStatus').classList.toggle('is-ready-preview', true);
     setRouteSheetCollapsed(collapse);
     offerInstallOnce();
+  }
+
+  function renderCulturalLegend(cultural) {
+    el('culturalRouteLegend').hidden = !cultural;
+    if (!cultural) return;
+    el('culturalJoinLegend').hidden = cultural.phase === 'track';
+    el('culturalJoinLabel').textContent = cultural.phase === 'joining'
+      ? 'Red: start / join' : 'Joining leg not calculated';
+    el('culturalTrackLabel').textContent = cultural.color + ': official GPX track';
+    el('culturalTrackSwatch').style.backgroundColor = CULTURAL_ROUTE_COLOURS[cultural.id];
+  }
+
+  function clearArrivalSummary() {
+    state.arrivalSummary = null;
+    el('arrivalSummary').hidden = true;
+  }
+
+  function showArrivalSummary(completed) {
+    if (!completed || completed.route !== state.route || completed.routeRevision !== state.routeRevision ||
+        completed.navigationRevision + 1 !== navigationStartRevision || state.stage !== 'planner' || state.navigating) return;
+    state.arrivalSummary = completed;
+    el('arrivalDestination').textContent = completed.name || 'Your destination';
+    el('arrivalDetail').textContent = completed.address && completed.address !== completed.name
+      ? completed.address : 'Navigation has finished.';
+    el('arrivalSummary').hidden = false;
+    el('arrivalDoneBtn').focus({preventScroll: true});
+  }
+
+  function finishArrivalSummary() {
+    if (!state.arrivalSummary) return;
+    clearArrivalSummary();
+    setStage('explore');
   }
 
   async function solveRouteOnNetwork(parsed, { fit = true } = {}) {
@@ -2766,7 +3182,7 @@
     if (!menu.hidden) {
       setRouteSheetCollapsed(false);
       requestAnimationFrame(() => {
-        if (!menu.hidden) el('routeMoreBtn').scrollIntoView({block: 'end', inline: 'nearest'});
+        if (!menu.hidden) menu.scrollTop = 0;
       });
     }
   });
@@ -3265,7 +3681,9 @@
     if (hasArrived(position, state.end, remaining)) {
       speak(`You have arrived at ${state.endLabel || 'your destination'}.`, { priority: 4, dedupeMs: 10000 });
       toast('You have arrived', 4000);
+      const completed = {route: state.route, routeRevision: state.routeRevision, navigationRevision: navigationStartRevision, name: state.endLabel, address: state.endAddress};
       stopNavigation({ keepRoute: true, arrived: true });
+      showArrivalSummary(completed);
       return;
     }
 
@@ -3374,6 +3792,7 @@
         }
       }
 
+      clearArrivalSummary();
       state.navigating = true;
       state.followUser = true;
       const themeBeforeNavigation = document.documentElement.dataset.theme;
@@ -3435,6 +3854,7 @@
   }
 
   function stopNavigation({ keepRoute = true, arrived = false } = {}) {
+    clearArrivalSummary();
     cancelNavigationStart();
     if (state.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null; state.navigating = false; state.followUser = true;
@@ -3462,6 +3882,7 @@
 
   el('startNavBtn').addEventListener('click', startNavigation);
   el('exitNavBtn').addEventListener('click', () => stopNavigation({ keepRoute: true }));
+  el('arrivalDoneBtn').addEventListener('click', finishArrivalSummary);
   el('recenterBtn').addEventListener('click', () => {
     state.followUser = true;
     if (state.userLatLng) followNavigationView(state.userLatLng, state.heading, true);
@@ -3559,16 +3980,16 @@
     if (!status || !button) return;
     if (state.offlineDownloadBusy) return;
     if (state.offlineMapDownloaded) {
-      status.textContent = `Downloaded${state.offlineMapBytes ? ` · ${humanBytes(state.offlineMapBytes)}` : ''}. Map and routing are available offline.`;
+      status.textContent = `Ready for offline journeys${state.offlineMapBytes ? ` · ${humanBytes(state.offlineMapBytes)}` : ''}. Map and routing are available offline.`;
       button.textContent = 'Remove';
       button.disabled = false;
     } else if (state.offlineMapAvailable) {
-      status.textContent = `Download the MK basemap${state.offlineMapBytes ? ` (${humanBytes(state.offlineMapBytes)})` : ''} for navigation without signal.`;
+      status.textContent = `Download the MK map${state.offlineMapBytes ? ` (${humanBytes(state.offlineMapBytes)})` : ''} before travelling without signal.`;
       button.textContent = 'Download';
       button.disabled = false;
     } else {
       status.textContent = state.offlineMapMissing
-        ? 'Offline basemap is not available in this deployment yet.'
+        ? 'The offline map is not available in this deployment yet.'
         : navigator.onLine === false
           ? 'Connect to download the offline MK basemap.'
           : 'Could not check the offline basemap. Try again when connected.';
@@ -3721,7 +4142,7 @@
       try { await navigator.storage?.persist?.(); } catch (_) {}
       state.offlineMapDownloaded = true;
       state.offlineMapBytes = blob.size || received;
-      toast('Milton Keynes downloaded for offline use');
+      toast('Ready for offline journeys in Milton Keynes');
       await activatePackagedBasemap();
     } catch (err) {
       console.error(err);
@@ -3826,7 +4247,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.9';
+  el('app').dataset.appVersion = '0.14.10';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
