@@ -953,26 +953,41 @@
 
   function conciseResultName(result) {
     const a = result?.address || {};
-    const parts = [];
     const namedPlace = [a.shop, a.amenity, a.tourism, a.leisure, a.office, a.building].map(searchText).find(Boolean);
     const name = namedPlace || searchText(result?.name);
     const house = searchText(a.house_number), road = searchText(a.road);
     const address = [house, road].filter(Boolean).join(' ');
-    // Nominatim may name a house result after its street. Preserve the number,
-    // while retaining a named business or building alongside its street address.
-    if (name && !(house && road && [house, road, address].some(value => value.toLowerCase() === name.toLowerCase()))) parts.push(name);
-    if (address && (house && road || !parts.length || road && !name.toLowerCase().endsWith(road.toLowerCase()))) parts.push(address);
-    const locality = [a.suburb, a.neighbourhood, a.village, a.town, a.city_district, a.city].map(searchText).find(Boolean);
-    if (locality && !parts.some(part => part.toLowerCase() === locality.toLowerCase())) parts.push(locality);
-    if (searchText(a.postcode)) parts.push(searchText(a.postcode));
-    return parts.join(', ') || searchText(result?.display_name) || 'Map location';
+    // Keep a useful title separate from address context. A provider may name a
+    // numbered address after its street or number; neither may lose the number.
+    if (house && road && (!name || [house, road, address].some(value => value.toLowerCase() === name.toLowerCase()))) return address;
+    return name || address || searchText(result?.display_name).split(',')[0].trim() || 'Map location';
+  }
+
+  function resultAddress(result, primary) {
+    const a = result?.address || {};
+    const street = [searchText(a.house_number), searchText(a.road)].filter(Boolean).join(' ');
+    const localities = [a.suburb, a.neighbourhood, a.village, a.town, a.city_district, a.city].map(searchText).filter(Boolean);
+    const parts = [street, ...localities, searchText(a.postcode)].filter(Boolean);
+    const context = parts.length ? parts : searchText(result?.display_name).split(',').map(part => part.trim()).filter(Boolean);
+    const distinct = context.filter((part, index) => part.toLowerCase() !== primary.toLowerCase() &&
+      context.findIndex(other => other.toLowerCase() === part.toLowerCase()) === index);
+    return distinct.join(', ') || 'Milton Keynes';
   }
 
   function resultSecondary(result, primary) {
-    if (result.matchNote) return result.matchNote;
-    const text = searchText(result.display_name);
-    if (!text || text === primary) return 'Milton Keynes';
-    return text.length > 130 ? `${text.slice(0, 127)}…` : text;
+    return [resultAddress(result, primary), searchText(result?.matchNote) || resultAccuracyNote(result)].filter(Boolean).join(' · ');
+  }
+
+  function resultAccuracyNote(result) {
+    if (result.requestedHouseNumber) return `Number ${result.requestedHouseNumber} not found locally · check entrance on map`;
+    if (result.matchNote) return searchText(result.matchNote);
+    const type = searchText(result.type || result.addresstype).toLowerCase();
+    if (result.class === 'highway' || ['street or path', 'road', 'street', 'footway', 'path', 'cycleway'].includes(type)) {
+      return 'Street or path match · choose the entrance on the map';
+    }
+    if (result.address?.house_number && result.address?.road) return 'Mapped address · check entrance on map';
+    if (['house', 'building'].includes(type)) return 'Building match · check entrance on map';
+    return '';
   }
 
   function resultTypeLabel(result) {
@@ -1252,6 +1267,7 @@
         display_name: [entry.name, entry.house_number, entry.street, entry.locality, entry.postcode].filter(Boolean).join(', '),
         type: entry.kind === 'building' ? 'Building match' : entry.kind === 'address' ? 'Address' : entry.category || 'Place',
         osm_type: entry.id[0] === 'n' ? 'node' : 'way', osm_id: entry.id.slice(1), local: true,
+        requestedHouseNumber: buildingFallback ? requested[1] : '',
         matchNote: buildingFallback
           ? 'Building match · Exact house number ' + requested[1] + ' not found in local data · check entrance on map'
           : entry.location.charAt(0).toUpperCase() + entry.location.slice(1) + ' · check entrance on map'
@@ -1266,16 +1282,18 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'typeahead-item';
-    button.innerHTML = '<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><small></small></span>';
-    button.querySelector('strong').textContent = conciseResultName(result);
+    button.innerHTML = '<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span class="result-address"></span><small></small></span>';
+    const primary = conciseResultName(result);
+    button.querySelector('strong').textContent = primary;
+    button.querySelector('.result-address').textContent = resultAddress(result, primary);
     const bits = [resultTypeLabel(result) || result.type];
     const d = resultDistance(result);
     if (Number.isFinite(d)) bits.push(formatDistance(d));
     button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
-    if (result.matchNote) {
+    if (resultAccuracyNote(result)) {
       const accuracy = document.createElement('small');
       accuracy.className = 'result-accuracy';
-      accuracy.textContent = result.matchNote;
+      accuracy.textContent = resultAccuracyNote(result);
       button.querySelector('.result-copy').appendChild(accuracy);
     }
     button.addEventListener('click', () => {
@@ -1381,26 +1399,27 @@
     if (!displayResults.length) {
       const msg = document.createElement('div');
       msg.className = 'result-message';
-      msg.textContent = 'No matching mapped place was found. Try a full postcode, street address or place name, or choose a point on the map.';
+      msg.textContent = 'We couldn’t find that in the MK map area. Try a postcode, street address or place name, or choose a point on the map.';
       if (!message) list.appendChild(msg);
+      appendSearchRecovery(list, context);
     } else {
       displayResults.forEach((result, index) => {
         const primary = conciseResultName(result);
-        const secondary = resultSecondary(result.matchNote ? {...result, matchNote: ''} : result, primary);
+        const secondary = resultAddress(result, primary);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'result-item';
-        button.innerHTML = `<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span></span><small></small></span>`;
+        button.innerHTML = `<span class="result-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><span class="result-copy"><strong></strong><span class="result-address"></span><small></small></span>`;
         button.querySelector('strong').textContent = primary;
         button.querySelector('.result-copy span').textContent = secondary;
         const bits = [resultTypeLabel(result)];
         const distance = resultDistance(result);
         if (Number.isFinite(distance)) bits.push(formatDistance(distance));
         button.querySelector('small').textContent = bits.filter(Boolean).join(' · ');
-        if (result.matchNote) {
+        if (resultAccuracyNote(result)) {
           const accuracy = document.createElement('small');
           accuracy.className = 'result-accuracy';
-          accuracy.textContent = result.matchNote;
+          accuracy.textContent = resultAccuracyNote(result);
           button.querySelector('.result-copy').appendChild(accuracy);
         }
         button.addEventListener('click', () => selectSearchResult(result, context));
@@ -1421,7 +1440,61 @@
         .filter(pair => pair.every(Number.isFinite));
       if (coords.length > 1) map.fitBounds(coords, {padding:[50,70], maxZoom:15});
     }
+    const help = document.createElement('p');
+    help.id = 'resultsPrecisionHelp';
+    help.className = 'results-help';
+    help.textContent = 'Search covers the MK map area, not every MK postcode. Not every house number is mapped; building and street matches are approximate locations, not verified front doors.';
+    list.appendChild(help);
     el('resultsSheet').hidden = false;
+  }
+
+  function appendSearchRecovery(list, context) {
+    const actions = document.createElement('div');
+    actions.className = 'result-recovery-actions';
+    const postcode = document.createElement('button');
+    postcode.type = 'button';
+    postcode.className = 'secondary-action';
+    postcode.textContent = 'Try a postcode';
+    postcode.addEventListener('click', () => {
+      closeSearch();
+      const input = el(context === 'start' ? 'startSearch' : context === 'end' ? 'endSearch' : 'homeSearch');
+      input.focus();
+      input.select?.();
+    });
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'secondary-action';
+    pin.textContent = 'Choose on map';
+    pin.addEventListener('click', () => beginResultMapPick(context));
+    actions.appendChild(postcode);
+    actions.appendChild(pin);
+    list.appendChild(actions);
+  }
+
+  function beginResultMapPick(context) {
+    closeSearch();
+    if (context === 'start') cancelStartLocation();
+    state.searchMapPickContext = {context, stage: state.stage};
+    el('resultsTitle').textContent = context === 'start' ? 'Choose a starting point' : 'Choose a point on the map';
+    const hint = document.createElement('div');
+    hint.className = 'result-message';
+    hint.textContent = 'Tap the entrance or accessible point you want to use. Close this panel to cancel.';
+    el('resultsList').replaceChildren(hint);
+    el('resultsSheet').hidden = false;
+    el('routeSheet').hidden = true;
+    el('closeResults').focus();
+  }
+
+  function selectSearchMapPoint(latlng) {
+    const picking = state.searchMapPickContext;
+    if (!picking || picking.stage !== state.stage || el('resultsSheet').hidden) return false;
+    if (!validateSearchResult({lat: latlng.lat, lon: latlng.lng})) {
+      toast('Choose a point within the Milton Keynes map area.', 6000);
+      return true;
+    }
+    if (picking.context.startsWith('save-') && savePendingMapPin(latlng)) return true;
+    selectSearchResult({lat: latlng.lat, lon: latlng.lng, name: 'Dropped pin', display_name: fmtCoord(latlng)}, picking.context);
+    return true;
   }
 
   function openPlannerSearch(context) {
@@ -1445,6 +1518,7 @@
     state.localSuggestionInput = null;
     state.localSuggestionContext = null;
     state.plannerSearchOpen = false;
+    state.searchMapPickContext = null;
     el('resultsSheet').hidden = true;
     el('typeaheadSuggestions').hidden = true;
     searchResultLayer.clearLayers();
@@ -1486,10 +1560,10 @@
     let message = '';
     if (offline && !online.results?.length) message = localResults.length
       ? "You're offline. Showing mapped local matches."
-      : "You're offline. No matching local place was found. Try a saved place or a map pin.";
+      : "You're offline. We couldn’t find that in the local MK map data. Try a saved place or choose on the map.";
     else if (online.error) message = localResults.length
       ? 'Online search is unavailable. Showing mapped local matches; check the entrance on the map.'
-      : 'Online search is unavailable. No matching local place was found. Try a saved place or a map pin.';
+      : 'Online search is unavailable. We couldn’t find that in the local MK map data. Try a saved place or choose on the map.';
     else if (!online.results.length && localResults.length) message = 'No online match was found. Showing mapped local matches.';
     showResults([...(online.results || []), ...localResults], context, query, message);
   }
@@ -1852,6 +1926,7 @@
     // Mobile map libraries may synthesise a delayed click after sheet resizing.
     if (performance.now() < sheetGestureUntil || e.originalEvent?.target?.closest?.('.bottom-sheet')) return;
     if (state.navigating) return;
+    if (state.searchMapPickContext && selectSearchMapPoint(e.latlng)) return;
     if (state.editEndpoint) {
       const which = state.editEndpoint; state.editEndpoint = null;
       setPoint(which, e.latlng, 'Chosen entrance', fmtCoord(e.latlng));
@@ -1888,6 +1963,7 @@
 
   async function dropDestinationPin(latlng) {
     if (state.navigating || !['explore', 'place'].includes(state.stage)) return;
+    if (state.searchMapPickContext && selectSearchMapPoint(latlng)) return;
     if (state.pendingSaveKind && savePendingMapPin(latlng)) return;
     setPoint('end', latlng, 'Dropped pin', fmtCoord(latlng));
     showPlaceSheet();
@@ -1963,6 +2039,15 @@
     });
   }
 
+  function locationFailureMessage(error, planner = false) {
+    const reason = error?.code === 1 ? 'Location access is off.'
+      : error?.code === 3 ? 'Your location is taking a while.'
+      : 'We couldn’t get your location.';
+    return reason + (planner
+      ? ' Search for a starting address or postcode instead.'
+      : ' You can still search or choose a point on the map.');
+  }
+
   async function useCurrentLocation({ calculate = true } = {}) {
     if (state.plannerSearchOpen) closeSearch();
     const revision = ++startLocationRevision;
@@ -1981,8 +2066,8 @@
     } catch (err) {
       if (revision !== startLocationRevision || state.stage !== 'planner') return false;
       console.error(err);
-      setRouteStatus('Location unavailable. Search for the starting address or postcode instead.', 'warn');
-      toast('Location unavailable — enter a starting point');
+      setRouteStatus(locationFailureMessage(err, true), 'warn');
+      toast(locationFailureMessage(err, true), 6000);
       return true;
     } finally {
       if (revision === startLocationRevision) el('useLocationBtn').disabled = false;
@@ -1992,14 +2077,18 @@
   async function refreshBrowseLocation({ center = true, quiet = false } = {}) {
     const button = el('browseLocateBtn');
     if (button) button.disabled = true;
+    el('browseLocationRecovery').hidden = true;
     try {
       const pos = await acquireCurrentLocation();
       state.userLatLng = pos.latlng;
       setUserMarker(pos.latlng);
       if (center) map.setView(pos.latlng, Math.max(map.getZoom(), 15));
       return true;
-    } catch (_) {
-      if (!quiet) toast('Location unavailable — check browser permission');
+    } catch (error) {
+      if (!quiet && ['explore', 'place'].includes(state.stage)) {
+        el('browseLocationMessage').textContent = locationFailureMessage(error);
+        el('browseLocationRecovery').hidden = false;
+      }
       return false;
     } finally {
       if (button) button.disabled = false;
@@ -2008,6 +2097,11 @@
 
   el('useLocationBtn').addEventListener('click', () => useCurrentLocation());
   el('browseLocateBtn').addEventListener('click', () => refreshBrowseLocation({ center: true }));
+  el('searchWithoutLocationBtn').addEventListener('click', () => {
+    el('browseLocationRecovery').hidden = true;
+    el('homeSearch').focus();
+  });
+  el('dismissLocationRecoveryBtn').addEventListener('click', () => { el('browseLocationRecovery').hidden = true; });
 
   el('directionsBtn').addEventListener('click', async () => {
     setStage('planner');

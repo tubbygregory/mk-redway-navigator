@@ -297,7 +297,10 @@ def review_local_place_search(page, url, offline=False, fixtures=None, screensho
                 if with_location:
                     expect(row.locator('.result-copy > small').first).to_contain_text(re.compile(r'\d.*(?:mi|km|ft|m)'))
                 if key == 'huntley':
-                    expect(row.locator('.result-accuracy')).to_have_text('Building match · Exact house number 25 not found in local data · check entrance on map')
+                    expect(row.locator('.result-copy > small').first).to_contain_text('Building match')
+                    expect(row.locator('.result-accuracy')).to_have_text('Number 25 not found locally · check entrance on map')
+                    expect(page.locator('#resultsPrecisionHelp')).to_have_count(1)
+                    expect(page.locator('#resultsPrecisionHelp')).to_contain_text('approximate locations, not verified front doors')
                     assert not any(re.match(r'^25\s+Huntley Crescent', name) for name in names), names
                     colours = row.locator('.result-accuracy').evaluate('(el) => [getComputedStyle(el).color, getComputedStyle(el.closest("#resultsSheet")).backgroundColor]')
                     assert contrast_ratio(*colours) >= 4.5, ('Address accuracy contrast', colours)
@@ -325,7 +328,8 @@ def review_local_place_search(page, url, offline=False, fixtures=None, screensho
                     row.click()
                 expect(page.locator('#placeName')).to_have_text(primary)
                 if key == 'huntley':
-                    expect(page.locator('#placeAddress')).to_have_text('Building match · Exact house number 25 not found in local data · check entrance on map')
+                    expect(page.locator('#placeAddress')).to_contain_text('Huntley Crescent')
+                    expect(page.locator('#placeAddress')).to_contain_text('Building match · Exact house number 25 not found in local data · check entrance on map')
                 destination = save_selected_destination(page, fixtures[key])
                 assert canonical.search(destination['name']), destination
                 if key == 'huntley':
@@ -353,7 +357,7 @@ def review_local_place_search(page, url, offline=False, fixtures=None, screensho
                 expect(page.locator('#resultsSheetHandle')).to_have_attribute('aria-expanded', 'true')
             expect(page.locator('.result-item')).to_have_count(1)
             expect(page.locator('.search-result-marker')).to_have_count(1)
-            expect(page.locator('.result-item .result-copy span')).to_contain_text('Submitted-provider result fixture')
+            expect(page.locator('.result-item .result-address')).to_have_text(', '.join([warbler['street'], 'Milton Keynes', warbler['postcode']]))
             assert len(requests) == before + 1, requests
             page.locator('.result-item').click()
             save_selected_destination(page, warbler)
@@ -556,7 +560,7 @@ def review_saved_place_flow(page, context, url, fixtures=None, screenshots=False
         expect(page.locator('#placeSheet')).to_be_hidden()
         selected = read_saved_places(page)
         place = selected['favourites'][0] if kind == 'favourite' else selected[kind]
-        assert place and place['name'] == ('Dropped pin' if kind == 'favourite' else kind.title()), place
+        assert place and place['name'] == ('Saved pin 1' if kind == 'favourite' else kind.title()), place
         assert 51.95 < place['lat'] < 52.16 and -.90 < place['lng'] < -.60, place
         if kind != 'favourite':
             expect(page.locator('#' + kind + 'SavedLabel')).to_have_text(place['address'])
@@ -763,6 +767,75 @@ def review_action_contrast(browser, url):
     print('PASS action contrast: Directions, Start and Exit in all themes on light/dark systems')
     ctx.close()
 
+def review_search_recovery(page, url):
+    """Empty MK searches and denied/slow GPS retain manual, local recovery."""
+    page.goto(url, wait_until='networkidle')
+    if page.locator('#locationIntroDismiss').is_visible():
+        page.locator('#locationIntroDismiss').click()
+    requests = []
+    page.on('request', lambda request: requests.append(request.url)
+            if 'nominatim.openstreetmap.org/search' in request.url else None)
+    pattern = '**/nominatim.openstreetmap.org/search?*'
+    def no_match(route):
+        route.fulfill(status=200, json=[], headers={'Access-Control-Allow-Origin': '*'})
+    page.route(pattern, no_match)
+    page.evaluate('''() => {
+        window.recoveryOriginalLocation = navigator.geolocation.getCurrentPosition;
+        window.recoveryLocationRequests = 0; window.recoveryLocationError = 1;
+        navigator.geolocation.getCurrentPosition = (_success, error) => {
+            window.recoveryLocationRequests++;
+            error({code:window.recoveryLocationError});
+        };
+    }''')
+    try:
+        page.locator('#browseLocateBtn').click()
+        expect(page.locator('#browseLocationRecovery')).to_be_visible()
+        expect(page.locator('#browseLocationMessage')).to_contain_text('Location access is off')
+        page.locator('#searchWithoutLocationBtn').click()
+        expect(page.locator('#browseLocationRecovery')).to_be_hidden()
+        assert page.locator('#homeSearch').evaluate('(el) => el === document.activeElement')
+        assert page.evaluate('window.recoveryLocationRequests') == 1
+        def empty_search():
+            page.locator('#homeSearch').fill('Unmapped recovery fixture')
+            page.locator('#homeSearchSubmit').click()
+            expect(page.locator('#resultsTitle')).to_have_text('No matching places')
+            expect(page.locator('#resultsList')).to_contain_text('couldn’t find that in the MK map area')
+        empty_search()
+        before = len(requests)
+        page.locator('.result-recovery-actions').get_by_role('button', name='Try a postcode', exact=True).click()
+        assert page.locator('#homeSearch').evaluate('(el) => el === document.activeElement')
+        assert len(requests) == before, 'Postcode recovery made a public request'
+        empty_search()
+        page.locator('.result-recovery-actions').get_by_role('button', name='Choose on map', exact=True).click()
+        expect(page.locator('#resultsTitle')).to_have_text('Choose a point on the map')
+        page.locator('#closeResults').click()
+        page.locator('#map').click(position={'x':page.viewport_size['width'] / 2, 'y':page.viewport_size['height'] * .4})
+        expect(page.locator('#placeSheet')).to_be_hidden()
+        empty_search()
+        page.locator('.result-recovery-actions').get_by_role('button', name='Choose on map', exact=True).click()
+        before = len(requests)
+        page.locator('#map').click(position={'x':page.viewport_size['width'] / 2, 'y':page.viewport_size['height'] * .4})
+        expect(page.locator('#placeSheet')).to_be_visible()
+        expect(page.locator('#placeName')).to_have_text('Dropped pin')
+        expect(page.locator('#placeAddress')).to_contain_text(re.compile(r'52\.\d+'))
+        assert len(requests) == before, 'Choosing an explicit point made a public search'
+        assert page.evaluate('window.recoveryLocationRequests') == 1
+        plan(page, '52.0467,-0.7378', '52.025,-0.783')
+        expect(page.locator('#routeStatus')).to_have_text('Route ready')
+        location_before_retry = page.evaluate('window.recoveryLocationRequests')
+        page.evaluate('window.recoveryLocationError = 3')
+        page.locator('#useLocationBtn').click()
+        expect(page.locator('#routeStatus')).to_have_text('Your location is taking a while. Search for a starting address or postcode instead.')
+        assert page.evaluate('window.recoveryLocationRequests') == location_before_retry + 1
+        page.locator('#plannerBack').click()
+        print(f'PASS search recovery {page.viewport_size["width"]}x{page.viewport_size["height"]}: postcode edit, bounded map pick/cancel, denied/timeout GPS and no automatic location retries')
+    finally:
+        page.unroute(pattern, no_match)
+        page.evaluate('''() => {
+            navigator.geolocation.getCurrentPosition = window.recoveryOriginalLocation;
+            delete window.recoveryOriginalLocation;
+        }''')
+
 def review(browser, url):
     for width, height in [(390,844),(844,390),(1280,900)]:
         ctx = browser.new_context(viewport={'width':width,'height':height}, color_scheme='dark', accept_downloads=True, service_workers='block',
@@ -799,6 +872,7 @@ def review(browser, url):
                     assert contrast_ratio(placeholder, expected) >= 4.5, (system, choice, selector, placeholder, expected)
         page.locator('#closeSettings').click()
         review_local_place_search(page, url, screenshots=True, with_location=True)
+        review_search_recovery(page, url)
         # Local typing never sends a public geocoder request.
         requests=[];page.on('request',lambda r: requests.append(r.url) if 'nominatim.openstreetmap.org/search' in r.url else None)
         page.locator('#homeSearch').fill('Portway')

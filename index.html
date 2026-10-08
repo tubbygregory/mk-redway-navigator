@@ -62,12 +62,19 @@
       </div>
       <div id="typeaheadSuggestions" class="typeahead-suggestions" aria-label="Search suggestions" hidden></div>
       <div id="locationIntro" class="location-intro" hidden>
-        <div><strong>Show where you are?</strong><span>Location is used on this device for nearby results, routing and live navigation.</span></div>
+        <div><strong>Show where you are?</strong><span>Location is used on this device for nearby results, routing and live navigation. You can also search the MK map without it.</span></div>
         <div class="location-intro-actions">
           <button id="locationIntroAllow" class="primary-action" type="button">Use my location</button>
           <button id="locationIntroDismiss" class="secondary-action" type="button">Not now</button>
         </div>
       </div>
+      <section id="browseLocationRecovery" class="location-recovery" aria-label="Location help" hidden>
+        <p id="browseLocationMessage" role="status"></p>
+        <div class="location-intro-actions">
+          <button id="searchWithoutLocationBtn" class="secondary-action" type="button">Search instead</button>
+          <button id="dismissLocationRecoveryBtn" class="secondary-action" type="button">Close</button>
+        </div>
+      </section>
     </section>
 
     <nav id="homeNav" class="home-nav" aria-label="Main sections">

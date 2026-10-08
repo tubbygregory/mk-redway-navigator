@@ -12,20 +12,20 @@ function code(from, to) {
   return app.slice(start, end);
 }
 function harness() {
-  const elements = {}, markers = [], selected = [], searches = [];
+  const elements = {}, markers = [], selected = [], searches = [], messages = [], mapListeners = {};
   function node() {
     return {hidden: true, value: '', children: [], slots: {}, listeners: {},
       appendChild(child) { this.children.push(child); },
       replaceChildren(...children) { this.children = children; },
       querySelector(selector) { return this.slots[selector] ??= node(); },
       addEventListener(event, fn) { this.listeners[event] = fn; },
-      setAttribute(key, value) { this[key] = value; }, focus() {}, blur() {}};
+      setAttribute(key, value) { this[key] = value; }, focus() { this.focused = true; }, select() { this.selected = true; }, blur() {}};
   }
   const el = id => elements[id] ??= node();
   const state = {stage: 'planner', userLatLng: {lat: 52.0467, lng: -.7378},
     saved: {home: null, work: null, favourites: []}, localSearchIndex: [], placeSearchIndex: [], placeSearchStatus: 'unavailable'};
   const context = vm.createContext({
-    state, MK, hav, el, searchRevision: 0,
+    state, MK, hav, el, searchRevision: 0, sheetGestureUntil: 0, performance: {now: () => 100},
     edgeClass: () => 'road', syncRoutePreferenceControls() {},
     searchResultLayer: {clearLayers() { markers.length = 0; }},
     cancelStartLocation() {}, setRouteSheetCollapsed() {},
@@ -39,11 +39,12 @@ function harness() {
         return {coords, listeners: {}, addTo() { markers.push(this); return this; },
           on(event, fn) { this.listeners[event] = fn; return this; }};
       }},
-    map: {fitBounds() {}, setView() {}},
+    map: {fitBounds() {}, setView() {}, on(event, fn) { mapListeners[event] = fn; }},
+    fmtCoord: point => `${point.lat}, ${point.lng}`, savePendingMapPin: () => false,
     setPoint(which, point, label, address) { selected.push({which, point, label, address}); },
     showPlaceSheet() {}, showDestinationInContext() {}, setStage() {}, maybeCalculateRoute() {},
     geocode: async (query, isCurrent) => { searches.push(query); context.currentSearch = isCurrent; return []; }, console,
-    persistSavedPlaces() {}, finishSavedSearch() {}, toast() {}
+    persistSavedPlaces() {}, finishSavedSearch() {}, toast(message) { messages.push(message); }
   });
   for (const [from, to] of [
     [app.includes('  function searchText(') ? '  function searchText(' : '  function conciseResultName(', '  function makeSuggestionButton('],
@@ -54,9 +55,11 @@ function harness() {
   vm.runInContext(code('  function normalizeSearchQuery(', '  let geocodeGate'), context);
   vm.runInContext(code('  function makeSuggestionButton(', '  function normalizeSearchQuery('), context);
   vm.runInContext(code("  el('homeSearch').addEventListener('input'", '  async function runSearch('), context);
+  vm.runInContext(code("  map.on('click', e => {", '  async function reverseGeocode('), context);
+  vm.runInContext(code('  async function dropDestinationPin(', '  let longPressTimer'), context);
   const loadPlaceIndex = context.loadPlaceIndex;
   context.loadPlaceIndex = async () => false;
-  return {context, state, el, markers, selected, searches, loadPlaceIndex};
+  return {context, state, el, markers, selected, searches, messages, mapListeners, loadPlaceIndex};
 }
 function place(name, lat = 52.0468, address = {}) {
   return {name, lat, lon: -.7378, display_name: name + ', Milton Keynes', address};
@@ -97,19 +100,23 @@ test('search results require nonempty numeric coordinates inside the MK coverage
 
 test('numbered addresses retain house and street when the provider name repeats the street or number', () => {
   const h = harness(), address = house('25');
-  assert.equal(h.context.conciseResultName(address), '25 Huntley Crescent, Milton Keynes, MK9 4LR');
+  assert.equal(h.context.conciseResultName(address), '25 Huntley Crescent');
   address.name = '25';
-  assert.equal(h.context.conciseResultName(address), '25 Huntley Crescent, Milton Keynes, MK9 4LR');
+  assert.equal(h.context.conciseResultName(address), '25 Huntley Crescent');
   address.name = '';
-  assert.equal(h.context.conciseResultName(address), '25 Huntley Crescent, Milton Keynes, MK9 4LR');
+  assert.equal(h.context.conciseResultName(address), '25 Huntley Crescent');
+  assert.equal(h.context.resultAddress(address, '25 Huntley Crescent'), 'Milton Keynes, MK9 4LR');
+  assert.match(h.context.resultSecondary(address, '25 Huntley Crescent'), /Milton Keynes, MK9 4LR.*Mapped address.*check entrance/);
 });
 
-test('named businesses and buildings keep their name with supplied address context', () => {
+test('named businesses and buildings keep a short identity with separate supplied address context', () => {
   const h = harness();
   const pub = place('Warbler On The Wharf', 52.0468, {house_number: '6', road: 'Wharf Lane', city: 'Milton Keynes'});
-  assert.equal(h.context.conciseResultName(pub), 'Warbler On The Wharf, 6 Wharf Lane, Milton Keynes');
+  assert.equal(h.context.conciseResultName(pub), 'Warbler On The Wharf');
+  assert.equal(h.context.resultAddress(pub, 'Warbler On The Wharf'), '6 Wharf Lane, Milton Keynes');
   const building = place('Provider name', 52.0468, {building: 'Named building', house_number: '25', road: 'Huntley Crescent'});
-  assert.equal(h.context.conciseResultName(building), 'Named building, 25 Huntley Crescent');
+  assert.equal(h.context.conciseResultName(building), 'Named building');
+  assert.equal(h.context.resultAddress(building, 'Named building'), '25 Huntley Crescent');
 });
 
 test('dedupe retains specific houses, generic streets and separate nearby branches in provider order', () => {
@@ -158,7 +165,8 @@ test('search rows and pins use the same validated ordered destinations', () => {
   const results = [house('25'), null, place('Outside', 55.95), house('27', 52.0479)];
   for (const index of [0, 1]) {
     const row = harness(); row.context.showResults(results, 'destination', 'Huntley Crescent');
-    assert.equal(row.el('resultsList').children.length, 2); assert.equal(row.markers.length, 2);
+    assert.equal(row.el('resultsList').children.filter(item => item.className === 'result-item').length, 2); assert.equal(row.markers.length, 2);
+    assert.equal(row.el('resultsList').children.filter(item => item.id === 'resultsPrecisionHelp').length, 1);
     row.el('resultsList').children[index].listeners.click();
     const pin = harness(); pin.context.showResults(results, 'destination', 'Huntley Crescent');
     pin.markers[index].listeners.click();
@@ -240,11 +248,14 @@ test('Huntley house 25 is never invented: actual building alternatives keep cano
   h.context.showResults(found, 'destination', '25 Huntley Crescent');
   const row = h.el('resultsList').children[0];
   const warning = row.querySelector('.result-copy').children.find(child => child.className === 'result-accuracy');
-  assert.match(warning.textContent, /Building match.*Exact house number 25 not found/);
+  assert.equal(row.querySelector('small').textContent.split(' · ')[0], 'Building match');
+  assert.equal(warning.textContent, 'Number 25 not found locally · check entrance on map');
+  assert.match(h.el('resultsList').children.find(item => item.id === 'resultsPrecisionHelp').textContent, /approximate locations, not verified front doors/);
   row.listeners.click();
   assert.equal(h.selected[0].point.lat, found[0].lat);
   assert.match(h.selected[0].label, /^8-55 Huntley Crescent/);
-  assert.equal(h.selected[0].address, found[0].matchNote);
+  assert.match(h.selected[0].address, /Huntley Crescent/);
+  assert.ok(h.selected[0].address.endsWith(found[0].matchNote));
 });
 
 test('actual numbered addresses outrank building fallback and house numbers are never fuzzy matched', () => {
@@ -382,4 +393,95 @@ test('offline submitted MK coordinates retain the existing local shortcut withou
   h.markers[0].listeners.click(); assert.deepEqual(h.selected[0].point, {lat: 52.025, lng: -.783});
   input.value = '55.95,-3.19'; await h.context.runSearch('destination', input);
   assert.equal(h.markers.length, 0); assert.equal(requests, 0);
+});
+
+test('short result titles retain full address and precision when a row, pin or Saved result is selected', () => {
+  const result = {...place('A named cafe', 52.048, {house_number: '6', road: 'Wharf Lane', city: 'Milton Keynes', postcode: 'MK9 4BG'}),
+    matchNote: 'Mapped point · check entrance on map'};
+  const h = harness();
+  h.context.showResults([result], 'destination', 'cafe');
+  const row = h.el('resultsList').children.find(item => item.className === 'result-item');
+  assert.equal(row.querySelector('strong').textContent, 'A named cafe');
+  assert.equal(row.querySelector('.result-copy span').textContent, '6 Wharf Lane, Milton Keynes, MK9 4BG');
+  row.listeners.click();
+  assert.equal(h.selected[0].label, 'A named cafe');
+  assert.equal(h.selected[0].address, '6 Wharf Lane, Milton Keynes, MK9 4BG · Mapped point · check entrance on map');
+  vm.runInContext(code('  function savedPlaceFromResult(', '  function savedPlaceFromCurrentEnd('), h.context);
+  const saved = h.context.savedPlaceFromResult(result);
+  assert.equal(saved.name, h.selected[0].label);
+  assert.equal(saved.address, h.selected[0].address);
+  assert.equal(saved.lat, Number(result.lat));
+  assert.equal(saved.lng, Number(result.lon));
+});
+
+test('empty-result postcode recovery edits locally without another geocoder request', () => {
+  for (const context of ['destination', 'start', 'end', 'save-favourite']) {
+    const h = harness();
+    h.context.showResults([], context, 'An unmapped place');
+    const list = h.el('resultsList').children;
+    assert.match(list[0].textContent, /couldn’t find that in the MK map area/);
+    const actions = list.find(item => item.className === 'result-recovery-actions');
+    actions.children.find(item => item.textContent === 'Try a postcode').listeners.click();
+    const input = h.el(context === 'start' ? 'startSearch' : context === 'end' ? 'endSearch' : 'homeSearch');
+    assert.equal(input.focused, true);
+    assert.equal(input.selected, true);
+    assert.equal(h.el('resultsSheet').hidden, true);
+    assert.deepEqual(h.searches, []);
+  }
+});
+
+test('map recovery selects an explicit MK point without search requests and can be cancelled safely', () => {
+  for (const context of ['destination', 'start', 'end']) {
+    const h = harness();
+    h.state.stage = context === 'destination' ? 'explore' : 'planner';
+    h.context.showResults([], context, 'An unmapped place');
+    h.el('resultsList').children.find(item => item.className === 'result-recovery-actions').children[1].listeners.click();
+    h.mapListeners.click({latlng: {lat: 55.95, lng: -3.19}});
+    assert.equal(h.selected.length, 0);
+    assert.match(h.messages[0], /within the Milton Keynes map area/);
+    h.mapListeners.click({latlng: {lat: 52.025, lng: -.783}});
+    assert.equal(h.selected.length, 1);
+    assert.equal(h.selected[0].which, context === 'start' ? 'start' : 'end');
+    assert.deepEqual(h.selected[0].point, {lat: 52.025, lng: -.783});
+    assert.equal(h.state.searchMapPickContext, null);
+    assert.deepEqual(h.searches, []);
+    h.context.beginResultMapPick(context);
+    h.context.closeSearch();
+    h.mapListeners.click({latlng: {lat: 52.026, lng: -.784}});
+    assert.equal(h.selected.length, 1, 'a cancelled picker must not alter an endpoint');
+    h.context.beginResultMapPick(context);
+    h.state.stage = 'navigation';
+    h.state.navigating = true;
+    h.mapListeners.click({latlng: {lat: 52.026, lng: -.784}});
+    assert.equal(h.selected.length, 1, 'a picker must not alter active navigation');
+  }
+});
+
+test('mapped numbered addresses and streets keep distinct honest precision without claiming a front door', () => {
+  const h = harness();
+  const numbered = house('25');
+  const street = {...place('Huntley Crescent'), type: 'residential', class: 'highway', address: {road: 'Huntley Crescent'}};
+  assert.equal(h.context.resultAccuracyNote(numbered), 'Mapped address · check entrance on map');
+  assert.equal(h.context.resultAccuracyNote(street), 'Street or path match · choose the entrance on the map');
+  assert.doesNotMatch(h.context.resultSecondary(numbered, h.context.conciseResultName(numbered)), /verified|front door/);
+});
+
+test('long-press recovery obeys MK bounds and explicit Saved picker behavior without reverse geocoding', async () => {
+  const h = harness(); h.state.stage = 'explore';
+  let reverseRequests = 0, savedPoints = [];
+  h.context.reverseGeocode = async () => { reverseRequests++; return null; };
+  h.context.beginResultMapPick('destination');
+  await h.context.dropDestinationPin({lat: 55.95, lng: -3.19});
+  assert.equal(h.selected.length, 0);
+  assert.match(h.messages[0], /within the Milton Keynes map area/);
+  await h.context.dropDestinationPin({lat: 52.025, lng: -.783});
+  assert.equal(h.selected[0].which, 'end');
+  assert.equal(reverseRequests, 0);
+  h.context.savePendingMapPin = point => { savedPoints.push(point); h.context.closeSearch(); return true; };
+  h.state.pendingSaveKind = 'favourite';
+  h.context.beginResultMapPick('save-favourite');
+  await h.context.dropDestinationPin({lat: 52.026, lng: -.784});
+  assert.deepEqual(savedPoints, [{lat: 52.026, lng: -.784}]);
+  assert.equal(h.selected.length, 1, 'Saved map recovery must use the existing saved-pin flow');
+  assert.equal(reverseRequests, 0);
 });
