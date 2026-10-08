@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.6
+
+- Replace the approximate vector logo with the supplied stylised MK artwork, recoloured to the app's primary red while preserving its route, arrow, start dot and illustrated map.
+- Regenerate favicon, Apple/PWA/maskable icons and the launch image with the existing sizing and safe-area composition.
+- Refresh versioned icon references and the shell cache so installed copies can receive the corrected artwork.
+- Preserve red selected-route styling, navigation/offline fixes and installed-iPhone dark surfaces.
+
 ## 0.14.5
 
 - Discard delayed pin lookups, submitted search results and GPX loads after their destination, query or screen changes.
