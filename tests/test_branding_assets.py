@@ -44,8 +44,8 @@ class BrandingAssetsTests(unittest.TestCase):
         self.assertIn("MK Redway</strong>", html)
         self.assertIn("mk-redway-shell-v33", sw)
         self.assertNotIn('fill="#fff"/>\\n  <rect x="24"', svg)
-        self.assertIn('x="4" y="4" width="504" height="504" rx="112"', svg)
-        self.assertIn('matrix(.82 0 0 .82', svg)
+        self.assertIn('x="4" y="4" width="504" height="504" rx="108"', svg)
+        self.assertIn('id="mark"', svg)\n        self.assertIn('stroke="#f20d24"', svg)
 
 if __name__ == "__main__":
     unittest.main()
