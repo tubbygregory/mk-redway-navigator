@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 import tempfile
 from playwright.sync_api import sync_playwright, expect
 from browser_smoke import plan
+from audit_browser import review_cultural_tracks
 
 ROOT = Path(__file__).resolve().parents[1]
 def capture(page, name):
@@ -357,6 +358,40 @@ def review_delayed_location(browser, url):
     print("PASS manual start: delayed GPS success/failure, leaving planner and cancelled navigation Start: " + url)
     context.close()
 
+
+def review_offline_cultural_tracks(browser, url):
+    """A fresh installed shell must open every unseen Cultural Route offline."""
+    context = browser.new_context(
+        viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
+        accept_downloads=True,
+        user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+    )
+    context.add_init_script("""Object.defineProperty(navigator, 'standalone', {
+      configurable: true, get: () => true
+    });""")
+    page = context.new_page()
+    page.set_default_timeout(45000)
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(url, wait_until="networkidle")
+    expect(page.locator("html")).to_have_class(__import__("re").compile(r".*ios-standalone.*"))
+    if page.get_by_role("button", name="Not now", exact=True).is_visible():
+        page.get_by_role("button", name="Not now", exact=True).click()
+    # Do not open Explore online: its nearest-join hydration must not hide a
+    # missing precache. Await activation, then make the first UI track loads offline.
+    page.evaluate("async () => { await navigator.serviceWorker.ready; if (!navigator.serviceWorker.controller) await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, {once:true})); }")
+    page.locator("#visibleSettingsBtn").click()
+    page.locator("#offlineDownloadBtn").click()
+    expect(page.locator("#offlineStatus")).to_contain_text("available offline", timeout=120000)
+    page.get_by_role("button", name="Close settings", exact=True).click()
+    context.set_offline(True)
+    page.reload(wait_until="networkidle")
+    expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
+    review_cultural_tracks(page, url)
+    assert not errors, errors
+    print("PASS unseen offline Cultural Routes: all ten source geometries, installed-iOS Chromium emulation: " + url)
+    context.close()
+
 def main():
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -364,6 +399,7 @@ def main():
             review(browser, os.environ["LIVE_URL"], True)
             review_dark_shell(browser, os.environ["LIVE_URL"])
             review_delayed_location(browser, os.environ["LIVE_URL"])
+            review_offline_cultural_tracks(browser, os.environ["LIVE_URL"])
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 (Path(tmp) / "mk-redway-navigator").symlink_to(ROOT / "dist", target_is_directory=True)
@@ -374,6 +410,7 @@ def main():
                         review(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
                         review_dark_shell(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
                         review_delayed_location(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
+                        review_offline_cultural_tracks(browser, f"http://127.0.0.1:{server.server_port}{suffix}")
                     finally:
                         server.shutdown()
         browser.close()

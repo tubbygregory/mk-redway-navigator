@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.7
+
+- Load verified, unchanged Cultural Route GPX files from the app’s own site and precache them for offline Explore use.
+- Replace the failed external GPX browser handoff with an in-app retry and import guidance that preserves the current route.
+- Keep the destination panel above the bottom navigation so Explore remains reachable without clearing the destination.
+- Label official shortcut files as segments, distinguish them from complete shorter rides in the guide, and preserve original source attribution and geometry.
+- Validate source hashes, geometry and the published runtime assets; exercise all ten tracks online/offline at root and subpath deployments.
+
 ## 0.14.6
 
 - Replace the approximate vector logo with the supplied stylised MK artwork, recoloured to the app's primary red while preserving its route, arrow, start dot and illustrated map.
