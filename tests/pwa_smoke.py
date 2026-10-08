@@ -228,6 +228,12 @@ def review(browser, url, live=False):
     assert response == {"status": 206, "length": 8}, response
     plan(page, "52.0467,-0.7378", "52.025,-0.783")
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    # This URL has never been requested online; its route parameters must not
+    # prevent the service worker from serving the installed app document.
+    page.goto(url + '?from=52.0467,-0.7378&to=52.025,-0.783&mode=walk&lit=1', wait_until="networkidle")
+    expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
+    expect(page.locator("#routeStatus")).to_have_text("Route ready")
+    expect(page.locator("#walkBtn")).to_have_class("mode-chip active")
     assert not errors, errors
     assert not external_shell, external_shell
     print("PASS PWA: " + url + " mobile, settings, modes, navigation, SW and offline routing/map")
@@ -336,7 +342,13 @@ def review_delayed_location(browser, url):
     expect(page.locator("#routeSheet")).to_be_hidden()
     page.get_by_role("button", name="Directions", exact=True).click()
     expect(start).to_have_value("Station entrance")
-    print("PASS manual start: delayed GPS success/failure and leaving planner: " + url)
+    # A pending navigation start must not reopen navigation after Back.
+    page.get_by_role("button", name="Start", exact=True).click()
+    page.get_by_role("button", name="Back", exact=True).click()
+    page.evaluate("window.finishTestLocation(true)")
+    expect(page.locator("#app")).to_have_attribute("data-stage", "place")
+    expect(page.locator("#navBanner")).to_be_hidden()
+    print("PASS manual start: delayed GPS success/failure, leaving planner and cancelled navigation Start: " + url)
     context.close()
 
 def main():

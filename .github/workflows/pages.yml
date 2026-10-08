@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143"]
   workflow_dispatch:
 
 permissions:
@@ -103,7 +103,7 @@ jobs:
           node --check sw.js
 
       - name: Test routing against generated network
-        run: node --test tests/routing.test.cjs
+        run: node --test tests/*.test.cjs
 
       - name: Install browser release checks
         run: |
@@ -175,29 +175,28 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.2 beta release after production verification
+      - name: Publish v0.14.3 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.2" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.3" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Branding fit update: refined MKRW roundabout logo.
+          Offline and navigation reliability audit.
 
-          - Increase internal padding so MKRW remains legible at launcher, favicon and search-bar sizes.
-          - Use an opaque full-bleed Apple touch icon and a dedicated maskable export with essential artwork inside the safe zone.
-          - Remove the old white launcher border, refresh SVG/PNG/ICO assets and use the live vector mark in About.
-          - Routing and navigation behaviour unchanged.
+          - Open shared route requests offline using the installed app shell.
+          - Preserve cached routing data across updates and use it during server failures.
+          - Prevent delayed GPS Start requests from reopening a cancelled screen, and ignore inaccurate GPS fixes for rerouting.
+          - Protect basemap replacements from stale renderer callbacks.
+          - Validate offline routing downloads and keep failure messages visible.
+          - Add service-worker, asynchronous-state and real-browser regression checks.
+          - Preserve the v0.14.2 MKRW branding, routing weights and data format v6.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.2 >/dev/null 2>&1; then
-            # The handoff's merge published this beta while the final audit was running.
-            # Only advance a beta tag to a validated descendant; never rewrite history.
-            test "$(gh release view v0.14.2 --json isPrerelease --jq .isPrerelease)" = true
-            relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/v0.14.2...$GITHUB_SHA" --jq .status)
-            case "$relation" in ahead|identical) ;; *) exit 1 ;; esac
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v0.14.2" -f sha="$GITHUB_SHA" -F force=false
-            gh release edit v0.14.2 --notes-file "$RUNNER_TEMP/release-notes.md"
+          if gh release view v0.14.3 >/dev/null 2>&1; then
+            # An existing release may only be retried for the same commit.
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.3" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.3 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.2 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.2" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.3 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.3" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

@@ -169,3 +169,12 @@ test('unlit warning survives underpass maneuver and roundabout exits never inven
  const round=R.buildManeuvers(coords,[{junction:'roundabout'},{cls:'redway'}],c);
  assert.equal(round[0].icon,'roundabout-exit');assert.doesNotMatch(round[0].instruction,/\d|third/);
 });
+
+test('network consumer rejects corrupt geometry and metadata before installing a graph',()=>{
+ const valid={format:'mk-redway-network-v6',nodes:[[1,52,-.7],[2,52.01,-.71]],ways:[[1,[1,2],{highway:'cycleway',lit:'yes'}]]};
+ assert.doesNotThrow(()=>R.parseBundledNetwork(valid));
+ for(const mutate of [d=>d.nodes[0][1]=NaN,d=>d.nodes[0][2]=181,d=>d.nodes.push(d.nodes[0]),
+   d=>d.ways[0][1]=[1,999],d=>d.ways[0][2].lit=false,d=>d.ways.push(d.ways[0]),d=>d.ways[0][2]._mk_class='invented']) {
+  const data=structuredClone(valid);mutate(data);assert.throws(()=>R.parseBundledNetwork(data),/invalid/);
+ }
+});
