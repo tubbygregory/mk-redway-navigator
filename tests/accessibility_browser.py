@@ -179,6 +179,9 @@ def enlarge_text(page):
     """
     result = page.evaluate("""() => {
         const elements = [...document.querySelectorAll('body *')].filter(el => el instanceof HTMLElement);
+        const probe = [...document.querySelectorAll('#homeSearch, #startSearch, #endSearch')].find(el =>
+            [...el.getClientRects()].some(r => r.width>0 && r.height>0));
+        if (!probe) throw new Error('Text enlargement requires a rendered search input');
         const original = window.accessibilityOriginalFonts ||= new WeakMap();
         // Restore before measuring a new screen, including freshly rendered
         // cards; repeated checks must not compound an earlier enlargement.
@@ -188,8 +191,8 @@ def enlarge_text(page):
         });
         const sizes = elements.map(el => parseFloat(getComputedStyle(el).fontSize));
         elements.forEach((el,i) => el.style.fontSize = `${sizes[i]*2}px`);
-        return {before:sizes[elements.indexOf(document.querySelector('#homeSearch'))],
-            after:parseFloat(getComputedStyle(document.querySelector('#homeSearch')).fontSize)};
+        return {probe:probe.id, before:sizes[elements.indexOf(probe)],
+            after:parseFloat(getComputedStyle(probe).fontSize)};
     }""")
     assert result["after"] == result["before"] * 2, result
     return result
@@ -331,6 +334,7 @@ def reflow_journey(browser, url, theme):
         capture(page, f"320-{theme}-200-percent-settings")
         activate(page, "#aboutData > summary", "Space")
         expect(page.locator("#aboutData")).to_have_attribute("open", "")
+        enlarge_text(page)
         no_overflow(page, theme + " enlarged About")
         capture(page, f"320-{theme}-200-percent-about")
         activate(page, "#closeSettings", reverse=True)
