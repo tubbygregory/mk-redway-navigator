@@ -211,11 +211,16 @@ def navigation_labels(page, label):
         const span=el.querySelector('span'), range=document.createRange();
         range.selectNodeContents(span);
         const button=el.getBoundingClientRect(), nav=el.parentElement.getBoundingClientRect();
-        return {text:span.textContent, button:button.toJSON(), nav:nav.toJSON(),
+        return {text:span.textContent, font:getComputedStyle(span).font,
+            fontFamily:getComputedStyle(span).fontFamily, button:button.toJSON(), nav:nav.toJSON(),
             fragments:[...range.getClientRects()].map(r=>({rect:r.toJSON(),
                 nativeHit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})),
             nativeHit:el.contains(document.elementFromPoint(button.x+button.width/2,button.y+button.height/2))};
     })""")
+    # Record before asserting so a CI failure retains the actual font/geometry.
+    EVIDENCE.append({"case": label, "navigationLabels": items})
+    nav = items[0]["nav"]
+    assert nav["left"] >= 0 and nav["right"] <= page.viewport_size["width"], (label, nav)
     for item in items:
         button, nav = item["button"], item["nav"]
         assert button["width"] >= 44 and button["height"] >= 44 and item["nativeHit"], (label, item)
@@ -231,7 +236,6 @@ def navigation_labels(page, label):
                     a, b = left["rect"], right["rect"]
                     assert not (a["left"] < b["right"] and a["right"] > b["left"] and
                                 a["top"] < b["bottom"] and a["bottom"] > b["top"]), (label, item, other)
-    EVIDENCE.append({"case": label, "navigationLabels": items})
 
 
 def navigation_reflow_reference(browser, url):
@@ -252,9 +256,39 @@ def navigation_reflow_reference(browser, url):
             capture(page, f"{width}-{theme}-200-percent-navigation-labels")
             assert not errors, errors
             assert not providers, providers
+        except Exception:
+            capture(page, f"{width}-{theme}-navigation-failure")
+            (CAPTURES / f"{width}-{theme}-navigation-failure-geometry.json").write_text(
+                json.dumps(EVIDENCE[-1:], indent=2) + "\n")
+            raise
         finally:
             context.close()
     print("PASS accessibility: 320/390 navigation label ranges stay separate inside native 44px targets at 100/200%", flush=True)
+
+
+def navigation_font_stress(browser, url):
+    context, page, errors, providers = new_page(browser, url, 320, 844)
+    try:
+        dismiss_intro(page)
+        enlarge_text(page)
+        for family in ("Arial", "DejaVu Sans", "Noto Sans"):
+            page.locator("#homeNav span").evaluate_all("""(spans, family) =>
+                spans.forEach(span => span.style.fontFamily = `"${family}", sans-serif`)
+            """, family)
+            navigation_labels(page, f"320-200-percent-font-{family}")
+            for selector in ("#layersBtn", "#browseLocateBtn"):
+                hit(page, selector)
+            capture(page, "320-200-percent-font-" + family.replace(" ", "-"))
+        assert not errors, errors
+        assert not providers, providers
+    except Exception:
+        capture(page, "320-font-navigation-failure")
+        (CAPTURES / "320-font-navigation-failure-geometry.json").write_text(
+            json.dumps(EVIDENCE[-1:], indent=2) + "\n")
+        raise
+    finally:
+        context.close()
+    print("PASS accessibility: 320px 200% navigation fits Arial, DejaVu Sans and Noto Sans text metrics", flush=True)
 
 
 def reflow_journey(browser, url, theme):
@@ -443,6 +477,7 @@ def main():
             try:
                 keyboard_journey(browser, url)
                 navigation_reflow_reference(browser, url)
+                navigation_font_stress(browser, url)
                 for theme in ("light", "dark"):
                     reflow_journey(browser, url, theme)
                 reduced_motion(browser, url)

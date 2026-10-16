@@ -1492,7 +1492,9 @@ html.ios-standalone .toast {
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
-  width: min(310px, calc(100% - 92px));
+  width: max-content;
+  min-width: min(310px, calc(100% - 92px));
+  max-width: calc(100% - 20px);
   min-height: 58px;
   padding: 5px;
   display: grid;
