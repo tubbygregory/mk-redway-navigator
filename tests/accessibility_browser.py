@@ -218,7 +218,14 @@ def reflow_journey(browser, url, theme):
         tab_to(page, "#preferSuperBtn", reverse=True)
         activate(page, "#routeMoreBtn")
         tab_to(page, "#clearBtn", reverse=True)
-        attribution(page)
+        # Exercise a real fallback font with inter-line gaps, where the union
+        # centre of the wrapped credit is not part of the clickable inline link.
+        page.add_style_tag(content=".map-attribution a {font-family:Arial,sans-serif !important;}")
+        credit = attribution(page)
+        assert len(credit[0]["fragments"]) >= 2, ("Wrapped credit regression did not wrap", credit)
+        assert all(item["nativeHit"] and all(fragment["nativeHit"] for fragment in item["fragments"])
+                   for item in credit), credit
+        EVIDENCE.append({"case": f"320-{theme}-wrapped-credits", "links": credit})
         capture(page, f"320-{theme}-200-percent-route")
         activate(page, "#plannerBack")
         activate(page, "#visibleSettingsBtn")
@@ -245,6 +252,17 @@ def reflow_journey(browser, url, theme):
         assert not errors, errors
         assert not providers, providers
         print(f"PASS accessibility: 320px {theme}, 200% text, Route/Settings/Saved/Explore keyboard reachability and credits", flush=True)
+    except Exception:
+        capture(page, f"320-{theme}-failure")
+        geometry = page.locator("#app, .bottom-sheet:not([hidden]), .map-attribution, .map-attribution a").evaluate_all("""elements => elements.map(el => {
+            const r=el.getBoundingClientRect();
+            return {id:el.id, class:el.className, text:el.matches('a')?el.textContent:'',
+                rect:r.toJSON(), font:getComputedStyle(el).font, active:el===document.activeElement,
+                fragments:[...el.getClientRects()].map(r=>({rect:r.toJSON(),
+                    nativeHit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}))};
+        })""")
+        (CAPTURES / f"320-{theme}-failure-geometry.json").write_text(json.dumps(geometry, indent=2) + "\n")
+        raise
     finally:
         context.close()
 

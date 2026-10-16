@@ -62,10 +62,14 @@ def hit(page, selector):
     page.wait_for_function("""selector => {
         const el = document.querySelector(selector);
         if (!el || !el.getClientRects().length) return false;
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 &&
+        // A wrapped inline link's union can include unclickable line gaps.
+        // Require every actual text fragment instead of an invented union point.
+        const rects = el.matches('a') && getComputedStyle(el).display === 'inline'
+            ? [...el.getClientRects()].filter(r => r.width > 0 && r.height > 0)
+            : [el.getBoundingClientRect()];
+        return rects.length > 0 && rects.every(r => r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 &&
             r.right <= innerWidth && r.bottom <= innerHeight &&
-            el.contains(document.elementFromPoint(r.x+r.width/2, r.y+r.height/2));
+            el.contains(document.elementFromPoint(r.x+r.width/2, r.y+r.height/2)));
     }""", arg=selector, timeout=10000)
 
 
@@ -79,8 +83,11 @@ def attribution(page):
         hit(page, selector)
     return page.locator(".map-attribution a").evaluate_all("""links => links.map(el => {
         const r=el.getBoundingClientRect();
-        return {text:el.textContent, rect:r.toJSON(),
-            nativeHit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};
+        const fragments=[...el.getClientRects()].filter(r => r.width>0 && r.height>0).map(r =>
+            ({rect:r.toJSON(), nativeHit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}));
+        return {text:el.textContent, rect:r.toJSON(), fragments,
+            unionNativeHit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),
+            nativeHit:fragments.length>0 && fragments.every(fragment => fragment.nativeHit)};
     })""")
 
 
