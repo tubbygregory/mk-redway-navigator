@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons"]
   workflow_dispatch:
 
 permissions:
@@ -113,6 +113,7 @@ jobs:
           node --check app.js
           node --check about.js
           node --check routing.js
+          node --check navigation-icons.js
           node --check sw.js
 
       - name: Test routing against generated network
@@ -129,6 +130,7 @@ jobs:
           python3 tests/pwa_smoke.py
           python3 tests/audit_browser.py
           python3 tests/design_polish_browser.py
+          python3 tests/navigation_icons_browser.py
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
@@ -176,6 +178,7 @@ jobs:
           python3 tests/pwa_smoke.py
           python3 tests/audit_browser.py
           python3 tests/design_polish_browser.py
+          python3 tests/navigation_icons_browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -190,28 +193,27 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.10 beta release after production verification
+      - name: Publish v0.14.11 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.10" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.11" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Make Milton Keynes journeys easier to read and the app more helpful to use.
+          Choose how your location appears on the map.
 
-          - Keep map attribution links clear of foreground panels and long navigation instructions.
-          - Keep route decisions and Start prominent, surface approach warnings, and clarify Cultural joining and unverified track conditions.
-          - Name and rename favourites locally, offer Undo after removal, and make empty Saved states helpful.
-          - Separate place names from addresses, simplify result rows and offer honest MK search and location recovery.
-          - Reduce background map clutter during preview, simplify Explore cards and organise Settings.
-          - Show validated offline readiness in plain language and retain a clear arrival summary until dismissed.
-          - Preserve the approved MK logo, standard red selected route, Cultural Route colours, routing weights, source GPX and device-local privacy.
+          - Add Red dot, Arrow, Cyclist and MK Cow under Settings → Appearance → Your map icon.
+          - Use a red-and-white vector of the specifically requested foreground Concrete Cow, with a white outline.
+          - Save the choice on this device, with honest feedback when browser storage is unavailable.
+          - Keep artwork bundled for offline use and root/subpath installs, with no remote icon requests or extra location prompts.
+          - Point the arrow using reliable measured travel, compensate for map rotation, and keep the cyclist and cow upright.
+          - Retain the red dot default, existing navigation/routing behaviour, approved MK branding and source attribution.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.10 >/dev/null 2>&1; then
+          if gh release view v0.14.11 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.10" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.10 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.11" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.11 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.10 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.10" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.11 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.11" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

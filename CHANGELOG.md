@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.11
+
+- Add a local map-icon choice in Settings → Appearance: Red dot (default), Arrow, Cyclist or MK Cow, with red-and-white previews and clear selected state.
+- Use the specifically requested foreground Milton Keynes Concrete Cow as the basis for the cow vector, including its blunt face, white blaze and bulky three-quarter shape.
+- Keep icons bundled and available offline; remember the choice on this device and explain when browser storage cannot save it. Choosing an icon does not request location.
+- Rotate only the arrow from reliable measured travel and compensate for the map bearing; retain direction during stationary or poor-GPS fixes. Keep cyclist and cow artwork upright.
+- Add focused storage, movement and rendered mobile/desktop/PWA regression coverage.
+
 ## 0.14.10
 
 - Keep map attribution links clear of Saved/Explore panels and long navigation instructions, including changing panel sizes.

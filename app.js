@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
+  const navigationIcons = window.MKNavigationIcons;
 
   const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
 
@@ -136,6 +137,7 @@
     voiceEnabled: true,
     units: 'metric',
     themeChoice: 'system',
+    navigationIcon: 'dot',
     preferLit: false,
     preferSuper: false,
     lightingCoverage: 0,
@@ -155,6 +157,8 @@
     followUser: true,
     userLatLng: null,
     userMarker: null,
+    markerHeading: null,
+    markerHeadingFix: null,
     lastSegment: 0,
     navProgressMeters: 0,
     maneuverIndex: 0,
@@ -361,6 +365,7 @@
       if (['system','light','dark','high-contrast'].includes(raw.themeChoice)) state.themeChoice = raw.themeChoice;
       if (typeof raw.preferLit === 'boolean') state.preferLit = raw.preferLit;
       if (typeof raw.preferSuper === 'boolean') state.preferSuper = raw.preferSuper;
+      state.navigationIcon = navigationIcons.normalise(raw.navigationIcon);
     } catch (_) {}
   }
 
@@ -371,10 +376,35 @@
         units: state.units,
         themeChoice: state.themeChoice,
         preferLit: state.preferLit,
-        preferSuper: state.preferSuper
+        preferSuper: state.preferSuper,
+        navigationIcon: state.navigationIcon
       }));
-    } catch (_) {}
+      return true;
+    } catch (_) { return false; }
   }
+
+  function syncNavigationIconControls(saved = null) {
+    const selected = navigationIcons.normalise(state.navigationIcon);
+    document.querySelectorAll('[data-navigation-icon-choice]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.navigationIconChoice === selected));
+      button.querySelector('.navigation-icon-preview').innerHTML = navigationIcons.svg(button.dataset.navigationIconChoice);
+    });
+    const label = navigationIcons.choices.find(choice => choice.id === selected).label;
+    el('navigationIconStatus').textContent = saved === false
+      ? `${label} selected for this visit. Your browser could not save this choice.`
+      : `${label} selected.${saved === true ? ' Saved on this device.' : ''}`;
+  }
+
+  function setNavigationIcon(value) {
+    if (!navigationIcons.choices.some(choice => choice.id === value)) return;
+    state.navigationIcon = value;
+    syncNavigationIconControls(persistSettings());
+    if (state.userLatLng && state.userMarker && userLayer.hasLayer(state.userMarker)) setUserMarker(state.userLatLng);
+  }
+
+  document.querySelectorAll('[data-navigation-icon-choice]').forEach(button => {
+    button.addEventListener('click', () => setNavigationIcon(button.dataset.navigationIconChoice));
+  });
 
   function syncVoiceControls() {
     const navButton = el('voiceBtn');
@@ -3273,6 +3303,8 @@
   function resetMapOrientation() {
     state.heading = null;
     state.lastHeadingFix = null;
+    state.markerHeading = null;
+    state.markerHeadingFix = null;
     if (!state.headingSupported) return;
     try {
       map.setHeading(null);
@@ -3377,10 +3409,59 @@
     return best;
   }
 
-  function setUserMarker(latlng) {
+  function setUserMarker(latlng, position) {
+    if (position) updateUserIconHeading(position, latlng);
     userLayer.clearLayers();
-    const icon = L.divIcon({ className: '', html: '<div class="user-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
-    state.userMarker = L.marker(latlng, { icon, interactive: false }).addTo(userLayer);
+    const selected = navigationIcons.normalise(state.navigationIcon);
+    const size = {dot: 18, arrow: 32, cyclist: 36, cow: 40}[selected];
+    const html = selected === 'dot'
+      ? '<div class="user-location-icon user-pulse" data-navigation-icon="dot" aria-hidden="true"></div>'
+      : `<div class="user-location-icon" data-navigation-icon="${selected}" aria-hidden="true"><span class="user-location-artwork">${navigationIcons.svg(selected)}</span></div>`;
+    const icon = L.divIcon({ className: '', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+    state.userMarker = L.marker(latlng, { icon, interactive: false, keyboard: false }).addTo(userLayer);
+    syncUserIconRotation();
+  }
+
+  function updateUserIconHeading(position, latlng) {
+    const coords = position.coords;
+    if (!Number.isFinite(coords.accuracy) || coords.accuracy < 0 || coords.accuracy > 35) {
+      state.markerHeadingFix = null;
+      return;
+    }
+    const current = {lat: latlng.lat, lng: latlng.lng, accuracy: coords.accuracy};
+    const speedKnown = typeof coords.speed === 'number' && Number.isFinite(coords.speed) && coords.speed >= 0;
+    if (speedKnown && coords.speed < .45) {
+      state.markerHeadingFix = current;
+      return;
+    }
+    let course = typeof coords.heading === 'number' && Number.isFinite(coords.heading) &&
+      coords.heading >= 0 && coords.heading < 360 && speedKnown ? coords.heading : null;
+    if (course === null && state.markerHeadingFix) {
+      const previous = state.markerHeadingFix;
+      const threshold = Math.max(state.mode === 'cycle' ? 5 : 3, previous.accuracy + current.accuracy);
+      if (map.distance(previous, current) >= threshold) course = bearingBetween(previous, current);
+    }
+    if (!state.markerHeadingFix || course !== null) state.markerHeadingFix = current;
+    if (course === null) return;
+    // The camera may use the planned route as a fallback. The arrow only uses
+    // measured movement and keeps its last course while stationary or uncertain.
+    if (!Number.isFinite(state.markerHeading)) state.markerHeading = course;
+    else {
+      const delta = ((course - state.markerHeading + 540) % 360) - 180;
+      state.markerHeading = normalizeHeading(state.markerHeading + delta * (state.mode === 'cycle' ? .42 : .32));
+    }
+  }
+
+  function syncUserIconRotation() {
+    const artwork = state.userMarker?.getElement()?.querySelector('.user-location-artwork');
+    if (!artwork) return;
+    const directional = state.navigationIcon === 'arrow' && Number.isFinite(state.markerHeading);
+    const mapBearing = map.getBearing?.();
+    // Leaflet Rotate stores clockwise map rotation (heading-up uses -course).
+    // Rotate only the inner artwork, leaving Leaflet's positioning untouched.
+    const angle = directional ? normalizeHeading(state.markerHeading + (Number.isFinite(mapBearing) ? mapBearing : 0)) : 0;
+    artwork.style.transform = `rotate(${angle}deg)`;
+    artwork.dataset.headingKnown = String(directional);
   }
 
   function turnIconSvg(kind) {
@@ -3595,7 +3676,7 @@
     const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
     state.userLatLng = latlng;
     state.lastPositionAt = Date.now();
-    setUserMarker(latlng);
+    setUserMarker(latlng, position);
     if (state.themeChoice === 'system' && Date.now() - state.lastThemeCheckAt > 30000) {
       state.lastThemeCheckAt = Date.now();
       const before = document.documentElement.dataset.theme;
@@ -3793,6 +3874,8 @@
       }
 
       clearArrivalSummary();
+      state.markerHeading = null;
+      state.markerHeadingFix = null;
       state.navigating = true;
       state.followUser = true;
       const themeBeforeNavigation = document.documentElement.dataset.theme;
@@ -4056,7 +4139,7 @@
 
   async function cacheOfflineDependencies(cache) {
     const urls = [
-      './data/network.json', './data/places.json', './data/data-meta.json', './about.js', './index.html', './styles.css', './app.js', './routing.js', './manifest.webmanifest',
+      './data/network.json', './data/places.json', './data/data-meta.json', './about.js', './index.html', './styles.css', './app.js', './routing.js', './navigation-icons.js', './manifest.webmanifest',
       './icons/app-logo.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
       './vendor/leaflet.css',
       './vendor/leaflet.js',
@@ -4247,7 +4330,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.10';
+  el('app').dataset.appVersion = '0.14.11';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -4305,6 +4388,7 @@
   renderSavedPlaces();
   syncVoiceControls();
   syncUnitControls();
+  syncNavigationIconControls();
   syncRoutePreferenceControls();
   applyTheme();
   updatePlannerFields();
@@ -4312,6 +4396,11 @@
   setTurnIcon('straight');
   loadRedways();
   loadPlaceIndex();
+  map.on('rotate', syncUserIconRotation);
+  document.addEventListener('visibilitychange', () => {
+    // Keep the last arrow course, but require fresh movement after a GPS gap.
+    state.markerHeadingFix = null;
+  });
   const sharedRouteRestored = restoreSharedRoute();
   probeOfflineMap().then(() => activatePackagedBasemap()).catch(console.warn);
 

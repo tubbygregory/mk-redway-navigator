@@ -340,6 +340,18 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
   box-shadow: 0 0 0 6px rgba(169,37,29,.20), 0 2px 5px rgba(0,0,0,.25);
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--red) 20%, transparent), 0 2px 5px rgba(0,0,0,.25);
 }
+.user-location-icon { width: 100%; height: 100%; color: var(--red); pointer-events: none; }
+.user-location-artwork { display: block; width: 100%; height: 100%; transform-origin: center; }
+.user-location-artwork svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
+.navigation-icon-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.navigation-icon-option { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 88px; padding: 9px 24px; border: 2px solid var(--border); border-radius: 12px; background: var(--soft); color: var(--text); font: inherit; font-size: 14px; font-weight: 700; }
+.navigation-icon-option[aria-pressed="true"] { border-color: var(--red); }
+.navigation-icon-option:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
+.navigation-icon-preview { display: block; width: 40px; height: 40px; color: var(--red); }
+.navigation-icon-preview svg { display: block; width: 100%; height: 100%; stroke: none; }
+.navigation-icon-selected { position: absolute; right: 8px; top: 6px; color: var(--accent-text); visibility: hidden; }
+.navigation-icon-option[aria-pressed="true"] .navigation-icon-selected { visibility: visible; }
+.navigation-icon-status { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.4; }
 
 /* Keep Leaflet attribution clear of the iPhone bottom sheets. */
 .leaflet-bottom.leaflet-right { bottom: auto; top: calc(max(76px, env(safe-area-inset-top, 0px) + 72px)); right: 3px; }
