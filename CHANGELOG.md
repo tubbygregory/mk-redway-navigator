@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.12
+
+- Treat missing or invalid GPS heading/speed as unavailable so navigation keeps measured-movement and route fallbacks instead of turning north.
+- Fix keyboard search-result focus without stealing focus after a delayed search; remove passive map-label tab stops and keep route menu commands visible.
+- Keep route summaries, sticky panel headers, navigation labels, theme choices and About text usable at 200% text size on narrow screens; retain clear keyboard focus and 44px navigation targets.
+- Respect reduced motion for interface transitions, map zoom/pan and navigation heading, including preference changes while the app is open.
+- Add actual WebKit browser coverage, previous-release service-worker upgrades at root/subpaths, complete keyboard journeys, enlarged-text reflow and reduced-motion checks.
+- Require the new checks against the inspected Pages artifact before deployment, plus WebKit and accessibility live checks before publishing the beta release.
+- Preserve approved branding, map-icon choices, geographic data, routing weights, Cultural Route colours and source attribution.
+
 ## 0.14.11
 
 - Add a local map-icon choice in Settings → Appearance: Red dot (default), Arrow, Cyclist or MK Cow, with red-and-white previews and clear selected state.

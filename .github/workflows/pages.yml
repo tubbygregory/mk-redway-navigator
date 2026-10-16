@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks"]
   workflow_dispatch:
 
 permissions:
@@ -148,9 +148,56 @@ jobs:
           path: test-results/
           if-no-files-found: warn
 
+  reliability-checks:
+    name: Release reliability (${{ matrix.gate }})
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: upgrade
+            browser: chromium
+            script: release_upgrade_browser.py
+          - gate: webkit
+            browser: webkit
+            script: webkit_browser.py
+          - gate: accessibility
+            browser: chromium
+            script: accessibility_browser.py
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Download the inspected Pages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: pages-artifact
+      - name: Extract the runtime under test
+        run: |
+          mkdir -p dist
+          tar -xf pages-artifact/artifact.tar -C dist
+      - name: Install the required test browser
+        run: |
+          python3 -m pip install -r requirements.txt
+          python3 -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Check release reliability
+        timeout-minutes: 10
+        run: python3 tests/${{ matrix.script }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reliability-${{ matrix.gate }}
+          path: test-results/
+          if-no-files-found: warn
+
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, reliability-checks]
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
@@ -185,35 +232,68 @@ jobs:
           name: live-mobile-review
           path: test-results/
 
+  live-reliability:
+    name: Live reliability (${{ matrix.gate }})
+    if: github.ref == 'refs/heads/main'
+    needs: deploy
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: webkit
+            browser: webkit
+            script: webkit_browser.py
+          - gate: accessibility
+            browser: chromium
+            script: accessibility_browser.py
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install the required test browser
+        run: |
+          python3 -m pip install -r requirements.txt
+          python3 -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Check the deployed application
+        timeout-minutes: 10
+        env:
+          LIVE_URL: https://mkredway.co.uk/
+        run: python3 tests/${{ matrix.script }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-reliability-${{ matrix.gate }}
+          path: test-results/
+          if-no-files-found: warn
+
   release:
     if: github.ref == 'refs/heads/main'
-    needs: live-review
+    needs: [live-review, live-reliability]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.11 beta release after production verification
+      - name: Publish v0.14.12 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.11" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.12" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Choose how your location appears on the map.
+          Improve camera direction handling and strengthen release validation.
 
-          - Add Red dot, Arrow, Cyclist and MK Cow under Settings → Appearance → Your map icon.
-          - Use a red-and-white vector of the specifically requested foreground Concrete Cow, with a white outline.
-          - Save the choice on this device, with honest feedback when browser storage is unavailable.
-          - Keep artwork bundled for offline use and root/subpath installs, with no remote icon requests or extra location prompts.
-          - Point the arrow using reliable measured travel, compensate for map rotation, and keep the cyclist and cow upright.
-          - Retain the red dot default, existing navigation/routing behaviour, approved MK branding and source attribution.
+          - Treat missing or invalid GPS heading/speed as unavailable, preserving measured-movement and route fallbacks instead of inventing north.
+          - Add focused WebKit checks alongside Chromium for planning, Settings, panels, Saved places and offline behaviour.
+          - Require real previous-release browser upgrades at root and project subpaths, retaining saved places, preferences and downloaded data through network failure.
+          - Add complete keyboard journeys, enlarged-text/reflow and reduced-motion checks, with evidence-backed accessibility fixes.
+          - Run the new gates against the inspected Pages artifact before deployment, and require WebKit/accessibility production checks before release.
+          - Preserve map-icon choices, approved branding, route preferences, source geometry and attribution.
 
           Published after build, artifact, deployment and live-review checks.
           NOTES
-          if gh release view v0.14.11 >/dev/null 2>&1; then
+          if gh release view v0.14.12 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.11" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.11 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.12" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.12 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.11 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.11" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.12 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.12" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

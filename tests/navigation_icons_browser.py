@@ -104,6 +104,11 @@ def load(page, url):
     page.goto(url, wait_until="networkidle")
     expect(page.locator("#app")).to_have_attribute("data-app-version", (ROOT / "VERSION").read_text().strip())
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
+    page.wait_for_function("""() => {
+        const tiles = [...document.querySelectorAll('.leaflet-tile-container canvas')];
+        return tiles.length > 0 && tiles.every(canvas => canvas.width >= 256 && canvas.height >= 256 &&
+            canvas.classList.contains('leaflet-tile-loaded'));
+    }""")
     if page.locator("#locationIntroDismiss").is_visible():
         page.locator("#locationIntroDismiss").click()
 
@@ -171,7 +176,16 @@ def review_viewport(browser, url, width, height, theme):
     try:
         load(page, url)
         assert page.evaluate("window.iconGeoRequests") == 0, "First run requested GPS"
-        open_choices(page)
+        # Settings itself checks offline-map availability asynchronously. Finish
+        # that known request and startup rendering before measuring whether an
+        # icon selection starts ANY request; retain the exact count below.
+        with page.expect_response(lambda response: response.request.method == "HEAD" and
+                                  urlsplit(response.url).path.endswith("/data/mk-basemap.pmtiles")) as probe:
+            open_choices(page)
+        # HEAD has no body: receiving its response completes the probe. Chromium
+        # can report bodyless-fetch cleanup as an aborted request afterwards.
+        assert probe.value.ok, "Settings basemap check did not complete successfully"
+        page.wait_for_load_state("networkidle")
         expect(page.locator('[data-navigation-icon-choice="dot"][aria-pressed="true"]')).to_have_count(1)
         before_requests = len(requests)
         for kind in KINDS:

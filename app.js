@@ -32,6 +32,7 @@
     el('useLocationBtn').disabled = false;
   }
   let sheetGestureUntil = 0;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const map = L.map('map', {
     zoomControl: false,
     attributionControl: true,
@@ -42,6 +43,20 @@
     touchRotate: false,
     rotateControl: false
   }).setView([52.0406, -0.7594], 12);
+  // Leaflet controls and keyboard navigation call these same public methods.
+  // Read the preference on every call so changing it also affects an open app.
+  const originalSetView = map.setView;
+  map.setView = function (center, zoom, options) {
+    if (reducedMotion.matches && options !== true) {
+      options = {...options, animate: false,
+        zoom: {...options?.zoom, animate: false}, pan: {...options?.pan, animate: false}};
+    }
+    return originalSetView.call(this, center, zoom, options);
+  };
+  const originalPanBy = map.panBy;
+  map.panBy = function (offset, options) {
+    return originalPanBy.call(this, offset, reducedMotion.matches ? {...options, animate: false} : options);
+  };
   map.attributionControl.setPrefix(false);
   map.attributionControl.addAttribution('<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>');
   const onlineBaseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -223,6 +238,14 @@
     const viewport = window.visualViewport;
     const width = frame.width;
     const height = Math.min(frame.height, viewport?.height || frame.height);
+    for (const id of ['savedSheet', 'settingsSheet', 'exploreSheet']) {
+      const sheet = el(id);
+      if (sheet.hidden) continue;
+      const handleHeight = sheet.querySelector('.sheet-handle').getBoundingClientRect().height;
+      const headingHeight = sheet.querySelector('.sheet-heading').getBoundingClientRect().height;
+      sheet.style.setProperty('--sheet-handle-height', `${handleHeight}px`);
+      sheet.style.setProperty('--sheet-sticky-height', `${handleHeight + headingHeight + 10}px`);
+    }
     mapCredit.style.maxWidth = `${Math.min(260, Math.max(120, width - 24))}px`;
     const credit = mapCredit.getBoundingClientRect();
     const visibleRect = node => {
@@ -277,6 +300,10 @@
     const panel = el(id);
     if (panel) {
       creditObserver.observe(panel);
+      if (['savedSheet', 'settingsSheet', 'exploreSheet'].includes(id)) {
+        creditObserver.observe(panel.querySelector('.sheet-handle'));
+        creditObserver.observe(panel.querySelector('.sheet-heading'));
+      }
       new MutationObserver(syncBrowseAttribution).observe(panel, {attributes: true, attributeFilter: ['hidden', 'class']});
     }
   }
@@ -1595,6 +1622,7 @@
     const revision = ++searchRevision;
     state.searchSubmissionActive = true;
     searchResultLayer.clearLayers();
+    const restoreKeyboardFocus = document.activeElement === input;
     input.blur();
     el('resultsSheet').hidden = false;
     el('resultsTitle').textContent = 'Searching…';
@@ -1617,6 +1645,12 @@
       : 'Online search is unavailable. We couldn’t find that in the local MK map data. Try a saved place or choose on the map.';
     else if (!online.results.length && localResults.length) message = 'No online match was found. Showing mapped local matches.';
     showResults([...(online.results || []), ...localResults], context, query, message);
+    // Forward tabbing through the planner inputs can replace these results.
+    // Hand keyboard submissions to their first action, unless the user has
+    // already moved focus while the search was pending.
+    if (restoreKeyboardFocus && document.activeElement === document.body) {
+      el('resultsList').querySelector('button')?.focus();
+    }
   }
 
   function selectSearchResult(result, context) {
@@ -2341,7 +2375,7 @@
         iconSize: [34, 22],
         iconAnchor: [17, 11]
       });
-      L.marker(point, {icon, interactive:false}).addTo(redwayLayer);
+      L.marker(point, {icon, interactive:false, keyboard:false}).addTo(redwayLayer);
     }
     state.redwayReady = Object.values(groups).some(lines => lines.length > 0);
   }
@@ -2555,7 +2589,7 @@
           iconSize: [54, 24],
           iconAnchor: [27, 12]
         });
-        L.marker(point, {icon, interactive:false}).addTo(routeLayer);
+        L.marker(point, {icon, interactive:false, keyboard:false}).addTo(routeLayer);
       }
     }
   }
@@ -3211,9 +3245,9 @@
     el('routeMoreBtn').setAttribute('aria-expanded', String(!menu.hidden));
     if (!menu.hidden) {
       setRouteSheetCollapsed(false);
-      requestAnimationFrame(() => {
-        if (!menu.hidden) menu.scrollTop = 0;
-      });
+      // Reset before the next keyboard action, so a later frame cannot undo
+      // the browser's native scroll to a newly focused command.
+      menu.scrollTop = 0;
     }
   });
   for (const which of ['start','end']) {
@@ -3282,9 +3316,13 @@
   }
 
   function resolveTravelHeading(position, snap, latlng) {
-    let raw = Number(position.coords.heading);
-    const speed = Number(position.coords.speed);
-    if (!Number.isFinite(raw) || raw < 0 || (Number.isFinite(speed) && speed < .45)) raw = null;
+    const {heading, speed} = position.coords;
+    // Missing Geolocation values are null: coercion would turn an unavailable
+    // course into north. Only trust a real course with confirmed movement;
+    // otherwise retain the measured-displacement and route fallbacks below.
+    const speedKnown = typeof speed === 'number' && Number.isFinite(speed) && speed >= 0;
+    let raw = typeof heading === 'number' && Number.isFinite(heading) &&
+      heading >= 0 && heading < 360 && speedKnown && speed >= .45 ? heading : null;
 
     if (state.lastHeadingFix) {
       const moved = map.distance(state.lastHeadingFix, latlng);
@@ -3354,7 +3392,7 @@
     map.invalidateSize({ pan: false });
 
     if (state.headingSupported && Number.isFinite(heading)) {
-      try { map.setHeading(heading, { ease: .22, deadzone: .6 }); } catch (err) { console.warn(err); }
+      try { map.setHeading(heading, { ease: reducedMotion.matches ? 1 : .22, deadzone: .6 }); } catch (err) { console.warn(err); }
     }
 
     map.setView(latlng, zoom, { animate: false });
@@ -4330,7 +4368,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.11';
+  el('app').dataset.appVersion = '0.14.12';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
