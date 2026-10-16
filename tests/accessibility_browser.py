@@ -13,6 +13,7 @@ from threading import Thread
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect, sync_playwright
 
+from browser_smoke import plan
 from design_polish_browser import GPS, RangeHandler, attribution, hit, saved_fixture
 
 
@@ -294,6 +295,75 @@ def navigation_font_stress(browser, url):
     print("PASS accessibility: 320px 200% navigation fits Arial, DejaVu Sans and Noto Sans text metrics", flush=True)
 
 
+def alternative_text_geometry(page, label):
+    items = page.locator(".route-option").evaluate_all("""buttons => buttons.map(el => ({
+        button:el.getBoundingClientRect().toJSON(), children:[...el.children].map(child => {
+            const range=document.createRange(); range.selectNodeContents(child);
+            return {text:child.textContent, font:getComputedStyle(child).font,
+                fragments:[...range.getClientRects()].map(r=>r.toJSON())};
+        })
+    }))""")
+    EVIDENCE.append({"case": label, "alternativeText": items})
+    for item in items:
+        button = item["button"]
+        assert button["width"] >= 44 and button["height"] >= 44, (label, item)
+        for child in item["children"]:
+            for rect in child["fragments"]:
+                assert rect["left"] >= button["left"] and rect["right"] <= button["right"] and \
+                    rect["top"] >= button["top"] and rect["bottom"] <= button["bottom"], (label, "Text spills outside alternative", item)
+        for title in item["children"][0]["fragments"]:
+            for detail in item["children"][1]["fragments"]:
+                assert not (title["left"] < detail["right"] and title["right"] > detail["left"] and
+                            title["top"] < detail["bottom"] and title["bottom"] > detail["top"]), \
+                    (label, "Alternative title overlaps statistics", item)
+
+
+def alternative_reflow(browser, url):
+    """Stress valid grouped display text on real buttons, independent of graph deduplication."""
+    for theme in ("light", "dark"):
+        context, page, errors, providers = new_page(browser, url, 320, 844, theme)
+        try:
+            page.add_style_tag(content='body {font-family:"DejaVu Sans",sans-serif;}')
+            dismiss_intro(page)
+            context.grant_permissions(["geolocation"])
+            plan(page, "52.0467,-0.7378", "52.025,-0.783")
+            expect(page.locator("#routeStatus")).to_have_text("Route ready")
+            if page.locator("#routeSheetHandle").get_attribute("aria-expanded") == "false":
+                activate(page, "#routeSheetHandle")
+            alternative_text_geometry(page, f"{theme}-actual-alternatives")
+            for scale in (100, 200):
+                if scale == 200:
+                    enlarge_text(page)
+                for title in ("Max Redway / Balanced", "Max Redway / Balanced / Fastest"):
+                    # Only presentation text changes. The computed route and real
+                    # button's selection handler remain intact; no app state hooks.
+                    page.locator(".route-option").first.evaluate("""(el, title) => {
+                        el.querySelector('strong').textContent=title;
+                        el.querySelector('span').textContent='20 min · 4.8 km · 0% road · same route';
+                    }""", title)
+                    alternative_text_geometry(page, f"320-{theme}-{scale}-percent-{title}")
+                    # At 200% the previous phase ends on Start. Traverse back
+                    # through route options rather than forward through the
+                    # planner inputs, whose focus deliberately opens a search.
+                    tab_to(page, ".route-option:first-child", reverse=scale == 200)
+                    capture(page, f"320-{theme}-{scale}-percent-{title.count('/') + 1}-grouped-alternatives")
+                # Exercise the genuine handler after typography fixtures, then
+                # verify the recalculated display and primary action remain usable.
+                page.keyboard.press("Space")
+                expect(page.locator("#routeStatus")).to_have_text("Route ready")
+                tab_to(page, "#startNavBtn")
+            assert not errors, errors
+            assert not providers, providers
+        except Exception:
+            capture(page, f"320-{theme}-alternative-failure")
+            (CAPTURES / f"320-{theme}-alternative-failure-geometry.json").write_text(
+                json.dumps(EVIDENCE[-1:], indent=2) + "\n")
+            raise
+        finally:
+            context.close()
+    print("PASS accessibility: actual/grouped alternative labels and statistics do not overlap at 320px/200%", flush=True)
+
+
 def reflow_journey(browser, url, theme):
     context, page, errors, providers = new_page(browser, url, 320, 844, theme)
     try:
@@ -495,6 +565,7 @@ def main():
                 keyboard_journey(browser, url)
                 navigation_reflow_reference(browser, url)
                 navigation_font_stress(browser, url)
+                alternative_reflow(browser, url)
                 for theme in ("light", "dark"):
                     reflow_journey(browser, url, theme)
                 reduced_motion(browser, url)

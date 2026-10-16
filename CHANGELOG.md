@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.13
+
+- Keep grouped route-option names and their statistics separate on narrow screens and at enlarged text sizes, preventing long labels from overlapping journey details.
+- Add native rendered-text overlap regressions for combined route preferences in light/dark themes and 200% text.
+- Preserve the camera correction, WebKit, previous-release upgrade and accessibility gates introduced in 0.14.12.
+
 ## 0.14.12
 
 - Treat missing or invalid GPS heading/speed as unavailable so navigation keeps measured-movement and route fallbacks instead of turning north.
