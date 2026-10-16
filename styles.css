@@ -1496,7 +1496,7 @@ html.ios-standalone .toast {
   min-height: 58px;
   padding: 5px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
+  grid-template-columns: repeat(3, minmax(min-content,1fr));
   gap: 4px;
   border: 1px solid var(--border);
   border-radius: 22px;
@@ -1506,6 +1506,7 @@ html.ios-standalone .toast {
   -webkit-backdrop-filter: blur(18px);
 }
 .home-nav-button {
+  min-width: 44px;
   min-height: 48px;
   padding: 5px 8px;
   display: grid;

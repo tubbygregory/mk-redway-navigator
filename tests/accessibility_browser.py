@@ -13,7 +13,7 @@ from threading import Thread
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect, sync_playwright
 
-from design_polish_browser import GPS, RangeHandler, attribution, saved_fixture
+from design_polish_browser import GPS, RangeHandler, attribution, hit, saved_fixture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -205,6 +205,58 @@ def no_overflow(page, label):
     assert not problems, (label, "Horizontal overflow", problems)
 
 
+def navigation_labels(page, label):
+    """Text ranges must fit their own targets, even when the page cannot overflow."""
+    items = page.locator("#homeNav .home-nav-button").evaluate_all("""buttons => buttons.map(el => {
+        const span=el.querySelector('span'), range=document.createRange();
+        range.selectNodeContents(span);
+        const button=el.getBoundingClientRect(), nav=el.parentElement.getBoundingClientRect();
+        return {text:span.textContent, button:button.toJSON(), nav:nav.toJSON(),
+            fragments:[...range.getClientRects()].map(r=>({rect:r.toJSON(),
+                nativeHit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})),
+            nativeHit:el.contains(document.elementFromPoint(button.x+button.width/2,button.y+button.height/2))};
+    })""")
+    for item in items:
+        button, nav = item["button"], item["nav"]
+        assert button["width"] >= 44 and button["height"] >= 44 and item["nativeHit"], (label, item)
+        assert button["left"] >= nav["left"] and button["right"] <= nav["right"], (label, item)
+        for fragment in item["fragments"]:
+            rect = fragment["rect"]
+            assert fragment["nativeHit"] and rect["left"] >= button["left"] and rect["right"] <= button["right"] \
+                and rect["top"] >= button["top"] and rect["bottom"] <= button["bottom"], (label, item)
+    for index, item in enumerate(items):
+        for other in items[index + 1:]:
+            for left in item["fragments"]:
+                for right in other["fragments"]:
+                    a, b = left["rect"], right["rect"]
+                    assert not (a["left"] < b["right"] and a["right"] > b["left"] and
+                                a["top"] < b["bottom"] and a["bottom"] > b["top"]), (label, item, other)
+    EVIDENCE.append({"case": label, "navigationLabels": items})
+
+
+def navigation_reflow_reference(browser, url):
+    for width, theme in [(320, "light"), (320, "dark"), (390, "light")]:
+        context, page, errors, providers = new_page(browser, url, width, 844, theme)
+        try:
+            dismiss_intro(page)
+            for scale in (100, 200):
+                if scale == 200:
+                    enlarge_text(page)
+                navigation_labels(page, f"{width}-{theme}-{scale}-percent-browse-navigation")
+                for selector in ("#layersBtn", "#browseLocateBtn"):
+                    hit(page, selector)
+                    rect = page.locator(selector).bounding_box()
+                    assert rect["width"] >= 44 and rect["height"] >= 44, (selector, rect)
+            activate(page, "#exploreRoutesBtn")
+            navigation_labels(page, f"{width}-{theme}-200-percent-Explore-navigation")
+            capture(page, f"{width}-{theme}-200-percent-navigation-labels")
+            assert not errors, errors
+            assert not providers, providers
+        finally:
+            context.close()
+    print("PASS accessibility: 320/390 navigation label ranges stay separate inside native 44px targets at 100/200%", flush=True)
+
+
 def reflow_journey(browser, url, theme):
     context, page, errors, providers = new_page(browser, url, 320, 844, theme)
     try:
@@ -390,6 +442,7 @@ def main():
             browser = playwright.chromium.launch(executable_path=os.environ.get("CHROMIUM_EXECUTABLE"))
             try:
                 keyboard_journey(browser, url)
+                navigation_reflow_reference(browser, url)
                 for theme in ("light", "dark"):
                     reflow_journey(browser, url, theme)
                 reduced_motion(browser, url)
