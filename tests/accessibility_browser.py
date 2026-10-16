@@ -342,6 +342,12 @@ def alternative_reflow(browser, url):
                         el.querySelector('span').textContent='20 min · 4.8 km · 0% road · same route';
                     }""", title)
                     alternative_text_geometry(page, f"320-{theme}-{scale}-percent-{title}")
+                    if page.locator(".route-option").first.evaluate("el => el === document.activeElement"):
+                        # Changing an already-focused fixture's text can grow
+                        # its box without firing the browser's focus scroll.
+                        # Re-enter through native keys, as a real selection does.
+                        page.keyboard.press("Tab")
+                        page.keyboard.press("Shift+Tab")
                     # At 200% the previous phase ends on Start. Traverse back
                     # through route options rather than forward through the
                     # planner inputs, whose focus deliberately opens a search.

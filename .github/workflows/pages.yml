@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus"]
   workflow_dispatch:
 
 permissions:
