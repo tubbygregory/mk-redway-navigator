@@ -1311,14 +1311,14 @@ html.ios-standalone .toast {
 .route-alternatives { grid-template-columns: 1fr; }
 .route-option {
   display: grid;
-  grid-template-columns: minmax(0,1fr) auto;
+  grid-template-columns: minmax(0,1fr);
   align-items: center;
   gap: 10px;
   min-height: 50px;
   padding: 8px 10px;
 }
 .route-option strong { font-size: 13px; }
-.route-option span { margin-top: 0; text-align: right; font-size: 11px; }
+.route-option span { margin-top: 0; text-align: left; font-size: 11px; }
 
 .route-more-menu {
   display: grid;

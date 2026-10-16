@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives"]
   workflow_dispatch:
 
 permissions:
@@ -273,27 +273,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.12 beta release after production verification
+      - name: Publish v0.14.13 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.12" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.13" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Improve camera direction handling and strengthen release validation.
+          Prevent route-option labels from overlapping their journey statistics on narrow screens.
 
-          - Treat missing or invalid GPS heading/speed as unavailable, preserving measured-movement and route fallbacks instead of inventing north.
-          - Add focused WebKit checks alongside Chromium for planning, Settings, panels, Saved places and offline behaviour.
-          - Require real previous-release browser upgrades at root and project subpaths, retaining saved places, preferences and downloaded data through network failure.
-          - Add complete keyboard journeys, enlarged-text/reflow and reduced-motion checks, with evidence-backed accessibility fixes.
-          - Run the new gates against the inspected Pages artifact before deployment, and require WebKit/accessibility production checks before release.
-          - Preserve map-icon choices, approved branding, route preferences, source geometry and attribution.
+          - Keep long grouped preference names and route statistics on separate, readable lines.
+          - Add rendered-text overlap regressions at 320px and 200% text size in light/dark themes.
+          - Retain the GPS camera correction, WebKit coverage, previous-release upgrade tests and accessibility improvements from v0.14.12.
+          - Preserve approved branding, all four map icons, routing weights, source geometry and attribution.
 
-          Published after build, artifact, deployment and live-review checks.
+          Published after the inspected artifact, upgrade, browser, deployment and all production live-review gates.
           NOTES
-          if gh release view v0.14.12 >/dev/null 2>&1; then
+          if gh release view v0.14.13 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.12" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.12 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.13" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.13 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.12 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.12" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.13 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.13" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
