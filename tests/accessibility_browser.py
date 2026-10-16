@@ -294,6 +294,10 @@ def navigation_font_stress(browser, url):
 def reflow_journey(browser, url, theme):
     context, page, errors, providers = new_page(browser, url, 320, 844, theme)
     try:
+        # CI's DejaVu system font has wider metrics than some cloud desktops.
+        # Retain one native-font case and one wider-font complete journey.
+        if theme == "light":
+            page.add_style_tag(content='body {font-family:"DejaVu Sans", sans-serif;}')
         dismiss_intro(page)
         plan_route(page)
         sizes = enlarge_text(page)
@@ -317,9 +321,18 @@ def reflow_journey(browser, url, theme):
         activate(page, "#visibleSettingsBtn")
         enlarge_text(page)
         no_overflow(page, theme + " enlarged settings")
+        activate(page, '[data-theme-choice="high-contrast"]', "Space")
+        expect(page.locator("html")).to_have_attribute("data-theme", "high-contrast")
+        activate(page, f'[data-theme-choice="{theme}"]', "Space", reverse=True)
+        expect(page.locator("html")).to_have_attribute("data-theme", theme)
+        capture(page, f"320-{theme}-200-percent-themes")
         tab_to(page, '[data-navigation-icon-choice="cow"]')
         tab_to(page, "#offlineDownloadBtn")
         capture(page, f"320-{theme}-200-percent-settings")
+        activate(page, "#aboutData > summary", "Space")
+        expect(page.locator("#aboutData")).to_have_attribute("open", "")
+        no_overflow(page, theme + " enlarged About")
+        capture(page, f"320-{theme}-200-percent-about")
         activate(page, "#closeSettings", reverse=True)
         activate(page, "#savedPlacesBtn")
         enlarge_text(page)

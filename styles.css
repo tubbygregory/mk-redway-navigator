@@ -33,7 +33,7 @@ body {
 button, input { font: inherit; }
 button { touch-action: manipulation; }
 button, input { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
 .leaflet-container:focus-visible { outline: 3px solid var(--accent-text); outline-offset: -3px; }
 button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 [hidden] { display: none !important; }
@@ -1806,12 +1806,13 @@ html.ios-standalone .toast {
 }
 
 .theme-choice {
-  display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 7px;
   margin-top: 10px;
 }
 .theme-choice button {
+  flex: 1 1 calc((100% - 7px)/2);
   min-height: 44px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -2107,6 +2108,7 @@ html[data-theme="high-contrast"][data-network-zoom="street"] #app[data-stage="pl
 .setting-copy span, .offline-copy span, .offline-note, .unit-choice button small { font-size: 13px; line-height: 1.4; }
 .offline-button { border-radius: 14px; }
 .settings-sheet .compact-action { border-radius: 14px; }
+.about-brand { flex-wrap: wrap; }
 .saved-sheet, .settings-sheet, .explore-sheet { scroll-padding-top: var(--sheet-sticky-height, 98px); scroll-padding-bottom: 12px; }
 .saved-sheet > .sheet-heading, .settings-sheet > .sheet-heading, .explore-sheet > .sheet-heading { top: var(--sheet-handle-height, 44px); }
 .leaflet-control-zoom { border: 1px solid var(--border) !important; border-radius: 14px !important; overflow: hidden; box-shadow: var(--shadow); }
