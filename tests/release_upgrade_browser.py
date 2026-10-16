@@ -263,6 +263,21 @@ def assert_saved_ui(page):
     open_settings(page)
 
 
+def assert_offline(context, page):
+    """Reapply native Chromium emulation if document reload reset its flag.
+
+    The origin has already been shut down, so this transition cannot allow a
+    successful network request. It does not override navigator.onLine or fetch.
+    """
+    reapplied = page.evaluate("navigator.onLine")
+    if reapplied:
+        context.set_offline(False)
+        context.set_offline(True)
+    page.wait_for_function("navigator.onLine === false")
+    assert page.evaluate("navigator.onLine") is False
+    return int(reapplied)
+
+
 def review(browser, previous, current, historical, current_version, out, scope, theme, label):
     from playwright.sync_api import expect
 
@@ -302,6 +317,7 @@ def review(browser, previous, current, historical, current_version, out, scope, 
     page.on("pageerror", lambda error: errors.append(str(error)))
     result = {"label": label, "scope": scope, "theme": theme, "source": historical,
               "current_version": current_version}
+    origin_stopped = False
     try:
         print(f"Upgrade {label}: install {historical['ref']} and download offline assets", flush=True)
         page.goto(base, wait_until="networkidle")
@@ -355,13 +371,17 @@ def review(browser, previous, current, historical, current_version, out, scope, 
         for relative, digest in cached.items():
             assert digest == hashlib.sha256((current / relative).read_bytes()).hexdigest(), relative
         print(f"Upgrade {label}: {old_shell} → {new_shell}; cached graph/map retained under HTTP 503", flush=True)
+        # Stop the actual origin as well as browser emulation. No offline reload
+        # or unseen navigation can fall back to a live development server.
+        server.shutdown()
+        server.server_close()
+        origin_stopped = True
         context.set_offline(True)
         count_before_offline = len(server.requests)
         page.reload(wait_until="networkidle")
         expect(page.locator("#app")).to_have_attribute("data-app-version", current_version)
         expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
-        page.wait_for_function("navigator.onLine === false")
-        assert page.evaluate("navigator.onLine") is False
+        offline_reapplications = assert_offline(context, page)
         assert raw_state(page) == before
         open_settings(page)
         assert_preferences(page, theme)
@@ -370,6 +390,7 @@ def review(browser, previous, current, historical, current_version, out, scope, 
         unseen = base + "?from=52.0467,-0.7378&to=52.025,-0.783&mode=walk&lit=1&super=1"
         assert not any("?from=" in request["path"] for request in server.requests)
         page.goto(unseen, wait_until="networkidle")
+        offline_reapplications += assert_offline(context, page)
         expect(page.locator("#app")).to_have_attribute("data-app-version", current_version)
         expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
         expect(page.locator("#routeStatus")).to_have_text("Route ready")
@@ -392,6 +413,8 @@ def review(browser, previous, current, historical, current_version, out, scope, 
                        "graph_http_503_responses": server.graph_failures, "offline_pmtiles_range": response,
                        "gps_requests": gps, "external_requests": external, "page_errors": errors,
                        "escaped_scope_requests": server.escaped_requests,
+                       "offline_origin_stopped": origin_stopped,
+                       "offline_emulation_reapplications": offline_reapplications,
                        "offline_server_requests": len(server.requests) - count_before_offline})
         print(f"PASS release upgrade {label}: preferences/Home/Work/favourites/cow retained; offline unseen shared route and PMTiles 206", flush=True)
         return result
@@ -403,8 +426,9 @@ def review(browser, previous, current, historical, current_version, out, scope, 
         raise
     finally:
         context.close()
-        server.shutdown()
-        server.server_close()
+        if not origin_stopped:
+            server.shutdown()
+            server.server_close()
 
 
 def main():
