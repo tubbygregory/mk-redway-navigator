@@ -72,27 +72,35 @@ Use Python 3.12, Node.js and Docker (for basemap extraction).
 
 ```sh
 python3 -m pip install -r requirements.txt
-python3 -m playwright install --with-deps chromium
+python3 -m playwright install --with-deps chromium webkit
 python3 scripts/extract_council_routes.py
 python3 scripts/build_network.py
 python3 scripts/build_places.py
 bash scripts/build_offline_map.sh
 python3 scripts/build_site.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-node --test tests/routing.test.cjs
+node --test tests/*.test.cjs
 python3 tests/browser_smoke.py
 python3 tests/pwa_smoke.py
 python3 tests/audit_browser.py
 python3 tests/design_polish_browser.py
 python3 tests/navigation_icons_browser.py
+python3 tests/webkit_browser.py
+git fetch --tags
+python3 tests/release_upgrade_browser.py
+python3 tests/accessibility_browser.py
 python3 -m http.server 8000 --directory dist
 ```
+
+The release-upgrade browser gate selects the newest numeric release tag older than `VERSION`; set `UPGRADE_FROM_REF` to test a specific older release. It reconstructs that release's tracked app shell and uses the current validated geographic data and byte-matching vendor dependencies. It tests software/cache upgrades, rather than reconstructing historical geographic data. Fetch tags before running it.
+
+The WebKit suite uses the actual Playwright WebKit engine. Its local offline cases stop the test server after caching, because WebKit's network-emulation switch can fail cached navigation even for a minimal independent service-worker app. Production WebKit checks validate the UI and offline cache; the live Chromium suite separately requires offline reloads. These checks cannot establish physical iPhone GPS, audio or background behaviour.
 
 Data generation requires internet access and can take several minutes. Generated data, downloads and Python caches are not committed. Runtime dependency downloads occur during packaging, not in the user's browser.
 
 ## Deployment
 
-`.github/workflows/pages.yml` builds and validates data, packages an explicit runtime allowlist into `dist/`, runs routing/browser release gates, and publishes that directory to GitHub Pages. A failed gate prevents publication, leaving the previous deployment available.
+`.github/workflows/pages.yml` builds and validates data, packages an explicit runtime allowlist into `dist/`, runs routing/browser release gates, and publishes that directory to GitHub Pages. The existing release suites and actual-archive inspection remain required. Upgrade, WebKit and accessibility jobs then test that same artifact in parallel; deployment waits for all of them. After deployment, the existing live review and new WebKit/accessibility checks must all pass before the immutable beta release is published.
 
 Use GitHub Actions as the Pages source. Runtime paths are relative so a project subpath and custom-domain root can use the same artifact. Source-only files and council diagnostics are excluded from Pages; diagnostics are separate Actions artifacts.
 

@@ -34,6 +34,7 @@ button, input { font: inherit; }
 button { touch-action: manipulation; }
 button, input { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
+.leaflet-container:focus-visible { outline: 3px solid var(--accent-text); outline-offset: -3px; }
 button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 [hidden] { display: none !important; }
 
@@ -231,7 +232,7 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
 }
 .pref-menu button { min-height: 40px; padding: 0 8px; background: var(--soft); color: var(--text); font-size: 12px; }
 .pref-menu button.active { background: var(--red); color: #fff; }
-.route-summary { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 12px 2px 5px; }
+.route-summary { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 12px 2px 5px; }
 .route-summary > div:first-child { min-width: 0; }
 .route-summary strong { display: block; color: var(--green); font-size: 30px; line-height: 1; }
 .route-summary #arrivalStat { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
@@ -389,7 +390,13 @@ button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { scroll-behavior: auto !important; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* v0.5 responsive navigation layout -------------------------------------- */
@@ -1108,9 +1115,9 @@ html.ios-standalone .toast {
 .about-links a { min-height: 44px; display: flex; align-items: center; color: var(--blue); text-underline-offset: 3px; }
 
 /* 0.12.1: issues verified in the live mobile review. */
-.route-summary > div:first-child { flex: 0 0 auto; min-width: 108px; }
-#timeStat { white-space: nowrap; }
-.route-meta { min-width: 0; }
+.route-summary > div:first-child { flex: 0 0 auto; min-width: 108px; max-width: 100%; }
+#timeStat { overflow-wrap: anywhere; }
+.route-meta { flex-shrink: 0; min-width: 0; max-width: 100%; }
 .endpoint-actions button { min-height: 44px; font-size: 12px; }
 .small-icon, .inline-icon, .saved-remove { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
 .setting-switch { height: 44px; background: transparent; }
@@ -2097,6 +2104,8 @@ html[data-theme="high-contrast"][data-network-zoom="street"] #app[data-stage="pl
 .setting-copy span, .offline-copy span, .offline-note, .unit-choice button small { font-size: 13px; line-height: 1.4; }
 .offline-button { border-radius: 14px; }
 .settings-sheet .compact-action { border-radius: 14px; }
+.saved-sheet, .settings-sheet, .explore-sheet { scroll-padding-top: var(--sheet-sticky-height, 98px); scroll-padding-bottom: 12px; }
+.saved-sheet > .sheet-heading, .settings-sheet > .sheet-heading, .explore-sheet > .sheet-heading { top: var(--sheet-handle-height, 44px); }
 .leaflet-control-zoom { border: 1px solid var(--border) !important; border-radius: 14px !important; overflow: hidden; box-shadow: var(--shadow); }
 .leaflet-control-zoom.leaflet-bar a { width: 44px; height: 44px; line-height: 44px; background: var(--surface-solid); color: var(--text); border-color: var(--border); }
 .leaflet-control-zoom a:hover, .leaflet-control-zoom a:focus { background: var(--soft); color: var(--text); }
