@@ -8,7 +8,7 @@
     Object.freeze({ id: 'dot', label: 'Red dot' }),
     Object.freeze({ id: 'arrow', label: 'Arrow' }),
     Object.freeze({ id: 'cyclist', label: 'Cyclist' }),
-    Object.freeze({ id: 'cow', label: 'MK Cow' })
+    Object.freeze({ id: 'cow', label: 'Concrete Cow' })
   ]);
 
   // Constant, local artwork: saved settings cannot introduce SVG markup or URLs.

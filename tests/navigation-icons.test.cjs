@@ -164,7 +164,7 @@ test('a failed settings write keeps the current visit usable and reports the uns
   h.select('cow');
   assert.equal(h.state.navigationIcon, 'cow');
   assert.equal(h.buttons[3].attributes['aria-pressed'], 'true');
-  assert.match(h.elements.navigationIconStatus.textContent, /MK Cow selected for this visit/);
+  assert.match(h.elements.navigationIconStatus.textContent, /Concrete Cow selected for this visit/);
   assert.match(h.elements.navigationIconStatus.textContent, /could not save/);
   assert.doesNotMatch(h.elements.navigationIconStatus.textContent, /Saved on this device/);
   assert.equal(h.calls.writes.length, 0);

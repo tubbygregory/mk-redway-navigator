@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery", "polish/concrete-cow-name"]
   workflow_dispatch:
 
 permissions:
@@ -293,6 +293,7 @@ jobs:
           - Test latest and skipped-release upgrades at root and project subpaths, including an active journey in another tab.
           - Keep versioned icons available offline to older open clients after the worker updates.
           - End active guidance honestly when location permission is revoked, retain the planned route and explain how to restart.
+          - Name the local cow map icon “Concrete Cow” throughout the interface.
           - Preserve approved branding, all four map icons, routing weights, source geometry and attribution.
 
           Published after all existing and new artifact, browser, upgrade, deployment and production review gates.
