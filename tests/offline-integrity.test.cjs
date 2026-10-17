@@ -27,7 +27,7 @@ function mapBytes(size=100000,declaredSize=size) {
   }
   return bytes;
 }
-function app(mapResponse=()=>new Response(mapBytes(),{headers:{'Content-Length':'100000'}})) {
+function app(mapResponse=()=>new Response(mapBytes(),{headers:{'Content-Length':'100000'}}),fastInactivity=false) {
   const stores=new Map(), elements={offlineStatus:{},offlineDownloadBtn:{}}, messages=[];
   const key=url=>new URL(url,scope).href;
   const cache={
@@ -35,7 +35,10 @@ function app(mapResponse=()=>new Response(mapBytes(),{headers:{'Content-Length':
     async match(url){return stores.get(key(url))?.clone();},
     async delete(url){return stores.delete(key(url));}
   };
-  const context=vm.createContext({URL,Response,Blob,Uint8Array,DataView,parseBundledNetwork,MK:places.bounds,
+  const context=vm.createContext({URL,Response,Blob,Uint8Array,DataView,AbortController,parseBundledNetwork,MK:places.bounds,
+    // Only this extracted VM harness accelerates the production inactivity timer.
+    // Browser regressions use the real 30-second deadline and native networking.
+    setTimeout:(callback,ms)=>setTimeout(callback,fastInactivity?ms/600:ms),clearTimeout,
     window:{caches:{}},caches:{open:async()=>cache,match:cache.match},
     location:{href:scope},OFFLINE_MAP_URL:'./data/mk-basemap.pmtiles',OFFLINE_CACHE:'offline',
     navigator:{onLine:true,storage:{persist:async()=>true}},
@@ -44,6 +47,7 @@ function app(mapResponse=()=>new Response(mapBytes(),{headers:{'Content-Length':
     activatePackagedBasemap:async()=>true,
     fetch:async(url,options)=>{
       if(url.endsWith('mk-basemap.pmtiles'))return mapResponse(options);
+      if(context.dependencyResponse)return context.dependencyResponse(url,options);
       if(url.endsWith('places.json'))return context.placeResponse ? context.placeResponse() : new Response(JSON.stringify(places));
       return new Response(url.endsWith('network.json')?JSON.stringify(graph):'dependency');
     }
@@ -73,6 +77,79 @@ test('offline download rejects empty, HTML, partial and truncated basemaps befor
     assert.match(a.elements.offlineStatus.textContent,/Download failed/);
     assert.equal(a.elements.offlineDownloadBtn.disabled,false);
   }
+});
+test('header and body stalls abort the transfer, clear busy state and allow a clean retry',async()=>{
+  for(const phase of ['headers','body','probe']) {
+    let stalled=true,aborted=false;
+    const a=app(options=>{
+      if(!stalled)return new Response(mapBytes(),{headers:{'Content-Length':'100000'}});
+      const signal=options?.signal;
+      if(phase!=='body')return new Promise((_resolve,reject)=>signal?.addEventListener('abort',()=>{
+        aborted=true;reject(signal.reason);
+      },{once:true}));
+      return new Response(new ReadableStream({
+        start(controller){
+          controller.enqueue(mapBytes().subarray(0,127));
+          signal?.addEventListener('abort',()=>{aborted=true;controller.error(signal.reason);},{once:true});
+        }
+      }),{headers:{'Content-Length':'100000'}});
+    },true);
+    if(phase==='probe')a.context.state.offlineMapAvailable=false;
+    const result=await Promise.race([a.context.downloadOfflineMap().then(()=>true),
+      new Promise(resolve=>setTimeout(()=>resolve(false),250))]);
+    assert.equal(result,true,`${phase}: stalled download must settle`);
+    assert.equal(aborted,true,`${phase}: network request must be aborted`);
+    assert.equal(a.context.state.offlineDownloadBusy,false);
+    assert.equal(a.elements.offlineDownloadBtn.disabled,false);
+    assert.equal(a.context.state.offlineMapDownloaded,false);
+    assert.equal(a.stores.has(mapUrl),false);
+    assert.doesNotMatch(a.elements.offlineStatus.textContent,/Ready for offline journeys/);
+    stalled=false;
+    await a.context.downloadOfflineMap();
+    assert.equal(a.context.state.offlineMapDownloaded,true,`${phase}: retry succeeds`);
+  }
+});
+test('byte progress refreshes inactivity deadline instead of imposing a total duration limit',async()=>{
+  const bytes=mapBytes(),part=20000;
+  const a=app(options=>new Response(new ReadableStream({
+    async pull(controller){
+      await new Promise(resolve=>setTimeout(resolve,25));
+      const offset=this.offset||0;
+      if(offset===bytes.length){controller.close();return;}
+      controller.enqueue(bytes.subarray(offset,offset+part));this.offset=offset+part;
+    }
+  }),{headers:{'Content-Length':String(bytes.length)}}),true);
+  await a.context.downloadOfflineMap();
+  assert.equal(a.context.state.offlineMapDownloaded,true);
+  assert.equal(a.context.state.offlineMapBytes,bytes.length);
+});
+test('unsuccessful and partial responses are rejected before their bodies can stall',async()=>{
+  for(const status of [206,503]) {
+    let readerCalls=0;
+    const a=app(()=>({status,headers:new Headers(),body:{getReader(){readerCalls++;throw Error('Must not read');}}}));
+    await a.context.downloadOfflineMap();
+    assert.equal(readerCalls,0);
+    assert.equal(a.context.state.offlineMapDownloaded,false);
+    assert.equal(a.elements.offlineDownloadBtn.disabled,false);
+    assert.equal(a.stores.has(mapUrl),false);
+  }
+});
+test('a stalled dependency stops the batch promptly rather than compounding inactivity deadlines',async()=>{
+  const a=app(undefined,true),requests=[];
+  a.context.dependencyResponse=(url,options)=>{
+    requests.push(url);
+    return new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  };
+  await a.context.downloadOfflineMap();
+  assert.equal(requests.length,1,'Do not start another dependency after inactivity timeout');
+  assert.equal(a.context.state.offlineMapDownloaded,false);
+  assert.equal(a.context.state.offlineDownloadBusy,false);
+  assert.equal(a.elements.offlineDownloadBtn.disabled,false);
+  assert.match(a.elements.offlineStatus.textContent,/Download stalled/);
+  assert.equal(await a.context.offlineMapCached(),false,'A complete map alone is not offline-ready');
+  a.context.dependencyResponse=null;
+  await a.context.downloadOfflineMap();
+  assert.equal(a.context.state.offlineMapDownloaded,true);
 });
 test('complete maps become offline-ready only after map and graph storage succeeds',async()=>{
   const a=app();await a.context.downloadOfflineMap();

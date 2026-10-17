@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'mk-redway-shell-v43';
+const SHELL_CACHE = 'mk-redway-shell-v44';
 const OFFLINE_CACHE = 'mk-redway-offline-v1';
 const SHELL = [
   './',
@@ -32,15 +32,15 @@ const SHELL = [
   './vendor/images/marker-icon-2x.png',
   './vendor/images/marker-shadow.png',
   './manifest.webmanifest',
-  './icons/app-logo.svg?v=0.14.13',
-  './icons/icon-maskable-512.png?v=0.14.13',
-  './icons/favicon.ico?v=0.14.13',
-  './icons/favicon-16.png?v=0.14.13',
-  './icons/favicon-32.png?v=0.14.13',
-  './icons/icon-192.png?v=0.14.13',
-  './icons/icon-512.png?v=0.14.13',
-  './icons/apple-touch-icon.png?v=0.14.13',
-  './icons/iphone16-splash.png?v=0.14.13'
+  './icons/app-logo.svg?v=0.14.14',
+  './icons/icon-maskable-512.png?v=0.14.14',
+  './icons/favicon.ico?v=0.14.14',
+  './icons/favicon-16.png?v=0.14.14',
+  './icons/favicon-32.png?v=0.14.14',
+  './icons/icon-192.png?v=0.14.14',
+  './icons/icon-512.png?v=0.14.14',
+  './icons/apple-touch-icon.png?v=0.14.14',
+  './icons/iphone16-splash.png?v=0.14.14'
 ];
 
 
@@ -176,7 +176,14 @@ self.addEventListener('fetch', event => {
     // Only the actual entry points may use this fallback; missing files stay missing.
     const isAppNavigation = request.mode === 'navigate' &&
       [scope.pathname, new URL('index.html', scope).pathname].includes(url.pathname);
-    const key = isAppNavigation ? new URL('index.html', scope).href : request;
+    // An open older document still uses its old icon version after clients.claim.
+    // Match only numeric version queries for icons in this shell's allowlist;
+    // other assets and missing files retain their exact request semantics.
+    const icon = /^\?v=\d+\.\d+\.\d+$/.test(url.search)
+      ? SHELL.find(path => path.startsWith('./icons/') && new URL(path, scope).pathname === url.pathname)
+      : null;
+    const key = isAppNavigation ? new URL('index.html', scope).href
+      : icon ? new URL(icon, scope).href : request;
     const cached = await matchCache(cache, key);
     if (cached) return cached;
     const response = await fetch(request);

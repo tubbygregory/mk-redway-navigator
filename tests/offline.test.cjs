@@ -101,3 +101,30 @@ test('failed graph migration preserves older shell storage and claims clients',a
     assert.equal(await(await w.request('data/network.json')).text(),'retained graph');
   }
 });
+
+test('older clients can fetch a known versioned icon offline after the old shell is deleted',async()=>{
+  const icon = /'\.\/(icons\/iphone16-splash\.png\?v=[^']+)'/.exec(source)[1];
+  for (const scope of ['https://example.test/','https://example.test/app/']) {
+    const w=worker(scope);
+    await w.put(shell,icon,'current approved icon');
+    await w.put('mk-redway-shell-old','icons/iphone16-splash.png?v=0.0.1','previous icon');
+    await w.activate();
+    assert.equal(w.stores.has('mk-redway-shell-old'),false);
+    assert.equal(await(await w.request('icons/iphone16-splash.png?v=0.0.1')).text(),'current approved icon');
+    assert.equal(await(await w.request(icon)).text(),'current approved icon');
+    assert.equal(w.context.claimed,true);
+  }
+});
+
+test('versioned icon compatibility cannot serve missing files, other assets or arbitrary queries',async()=>{
+  const w=worker();
+  const icon = /'\.\/(icons\/iphone16-splash\.png\?v=[^']+)'/.exec(source)[1];
+  await w.put(shell,icon,'current approved icon');
+  await w.put(shell,'app.js','app');
+  for (const path of ['icons/not-bundled.png?v=0.0.1','app.js?v=0.0.1',
+    'icons/iphone16-splash.png?v=bad','icons/iphone16-splash.png?v=0.0.1&extra=1']) {
+    await assert.rejects(w.request(path),/Offline/);
+  }
+  assert.equal(await w.request('https://other.test/app/'+icon),undefined);
+  assert.equal(await w.request('https://example.test/elsewhere/'+icon),undefined);
+});

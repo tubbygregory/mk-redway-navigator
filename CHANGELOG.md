@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.14
+
+- Recover offline-map requests that stop delivering data, release the download controls and allow an honest retry without accepting partial maps.
+- Add real interrupted-transfer, tab-close/reopen and offline retry regressions at root and project subpaths.
+- Check upgrades from both the previous release and a skipped release, including two open clients with navigation active in one.
+- Keep bundled icons available offline to older open clients after a service-worker update.
+- Stop active guidance when location permission is revoked, preserve the planned route and show a persistent recovery message without prompting again.
+- Retain all existing release gates, approved artwork and map icons, routing weights and source attribution.
+
 ## 0.14.13
 
 - Keep grouped route-option names and their statistics separate on narrow screens and at enlarged text sizes, preventing long labels from overlapping journey details.
