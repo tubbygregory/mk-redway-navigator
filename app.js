@@ -149,6 +149,7 @@
     lastGeocodeAt: 0,
     watchId: null,
     navigating: false,
+    navigationLocationDenied: false,
     voiceEnabled: true,
     units: 'metric',
     themeChoice: 'system',
@@ -3911,6 +3912,10 @@
         }
       }
 
+      if (state.navigationLocationDenied) {
+        state.navigationLocationDenied = false;
+        setRouteStatus('Location access restored.', 'good');
+      }
       clearArrivalSummary();
       state.markerHeading = null;
       state.markerHeadingFix = null;
@@ -3964,9 +3969,18 @@
         speak('Join the imported route to begin guidance.', {priority:3});
       } else speak(`Navigation started. ${state.route.initialInstruction}.`, { priority: 3, dedupeMs: 1000 });
 
+      const watchRevision = navigationStartRevision;
       state.watchId = navigator.geolocation.watchPosition(
         updateNavigation,
-        err => { console.warn(err); toast('GPS signal unavailable'); },
+        err => {
+          if (!state.navigating || watchRevision !== navigationStartRevision) return;
+          console.warn(err);
+          if (err?.code === 1) {
+            stopNavigation({keepRoute: true});
+            state.navigationLocationDenied = true;
+            setRouteStatus('Location access is off. Enable location in your browser or device settings, then tap Start to resume.', 'warn');
+          } else toast('GPS signal unavailable');
+        },
         { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
       );
     } finally {
@@ -4031,6 +4045,60 @@
     if (!Number.isFinite(bytes) || bytes <= 0) return '';
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(bytes < 20 * 1024 * 1024 ? 1 : 0)} MB`;
+  }
+
+  async function fetchOfflineResponse(url, options = {}, onProgress) {
+    const controller = new AbortController();
+    let timer, reader, active = true, refresh;
+    const stalled = new Promise((_, reject) => {
+      refresh = () => {
+        if (!active) return;
+        clearTimeout(timer);
+        // Bound silence, including waiting for headers, rather than the total
+        // transfer time: a slow download can continue while bytes arrive.
+        timer = setTimeout(() => {
+          const error = new Error('Offline download stalled. Check your connection and retry.');
+          error.name = 'OfflineTransferTimeout';
+          reject(error);
+          controller.abort();
+        }, 30000);
+      };
+      refresh();
+    });
+    try {
+      const transfer = (async () => {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        // Offline assets require a complete HTTP 200 body. Let callers reject
+        // other statuses immediately, even if that error response never ends.
+        if (options.method === 'HEAD' || response.status !== 200) return response;
+        const chunks = [];
+        let received = 0;
+        if (response.body?.getReader) {
+          reader = response.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (!value.byteLength) continue;
+            chunks.push(value);
+            received += value.byteLength;
+            refresh();
+            onProgress?.(received, response);
+          }
+        } else {
+          chunks.push(new Uint8Array(await response.arrayBuffer()));
+        }
+        return new Response(new Blob(chunks, { type: response.headers.get('Content-Type') || 'application/octet-stream' }), {
+          status: response.status, statusText: response.statusText, headers: response.headers
+        });
+      })();
+      return await Promise.race([transfer, stalled]);
+    } finally {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+      // Cancellation must not keep retry disabled if a stream refuses to close.
+      reader?.cancel().catch(() => {});
+    }
   }
 
   function validPmtilesHeader(header, size) {
@@ -4122,7 +4190,7 @@
   async function probeOfflineMap() {
     state.offlineMapDownloaded = await offlineMapCached();
     try {
-      const response = await fetch(OFFLINE_MAP_URL, { method: 'HEAD', cache: 'no-store' });
+      const response = await fetchOfflineResponse(OFFLINE_MAP_URL, { method: 'HEAD', cache: 'no-store' });
       state.offlineMapMissing = [404, 410].includes(response.status);
       state.offlineMapAvailable = response.status === 200 || state.offlineMapDownloaded;
       const len = Number(response.headers.get('Content-Length') || 0);
@@ -4186,8 +4254,8 @@
     ];
     for (const url of urls) {
       try {
-        const response = await fetch(url, { cache: 'reload', mode: url.startsWith('http') ? 'cors' : 'same-origin' });
-        if (response.ok) {
+        const response = await fetchOfflineResponse(url, { cache: 'reload', mode: url.startsWith('http') ? 'cors' : 'same-origin' });
+        if (response.status === 200) {
           if (url === './data/network.json') {
             const parsed = parseBundledNetwork(await response.clone().json());
             if (parsed.nodes.size < 1000 || parsed.ways.length < 100) throw new Error('Offline routing data is incomplete');
@@ -4195,7 +4263,10 @@
           if (url === './data/places.json') parsePlaceIndex(await response.clone().json());
           await cache.put(url, response.clone());
         }
-      } catch (err) { console.warn('Could not cache offline dependency', url, err); }
+      } catch (err) {
+        console.warn('Could not cache offline dependency', url, err);
+        if (err.name === 'OfflineTransferTimeout') throw err;
+      }
     }
     const network = await cache.match(new URL('./data/network.json', location.href).href);
     if (!network?.ok) throw new Error('Routing data could not be downloaded');
@@ -4223,28 +4294,16 @@
     button.disabled = true;
     button.textContent = 'Downloading…';
     status.textContent = 'Starting offline map download…';
-    let downloadFailed = false;
+    let downloadFailure = '';
     try {
-      const response = await fetch(OFFLINE_MAP_URL, { cache: 'no-store' });
+      const response = await fetchOfflineResponse(OFFLINE_MAP_URL, { cache: 'no-store' }, (received, response) => {
+        const total = Number(response.headers.get('Content-Length') || state.offlineMapBytes || 0);
+        status.textContent = total > 0
+          ? `Downloading map… ${Math.min(100, Math.round(received / total * 100))}%`
+          : `Downloading map… ${humanBytes(received)}`;
+      });
       if (response.status !== 200) throw new Error(`Offline map returned ${response.status}; a complete download is required`);
-      const total = Number(response.headers.get('Content-Length') || state.offlineMapBytes || 0);
-      const chunks = [];
-      let received = 0;
-      if (response.body?.getReader) {
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value); received += value.byteLength;
-          status.textContent = total > 0
-            ? `Downloading map… ${Math.min(100, Math.round(received / total * 100))}%`
-            : `Downloading map… ${humanBytes(received)}`;
-        }
-      } else {
-        chunks.push(new Uint8Array(await response.arrayBuffer()));
-        received = chunks[0].byteLength;
-      }
-      const blob = new Blob(chunks, { type: response.headers.get('Content-Type') || 'application/octet-stream' });
+      const blob = await response.blob();
       const header = new Uint8Array(await blob.slice(0, 127).arrayBuffer());
       if (!validPmtilesHeader(header, blob.size)) throw new Error('Offline map is invalid or incomplete');
       const declaredLength = response.headers.get('Content-Length');
@@ -4262,18 +4321,20 @@
       await cacheOfflineDependencies(cache);
       try { await navigator.storage?.persist?.(); } catch (_) {}
       state.offlineMapDownloaded = true;
-      state.offlineMapBytes = blob.size || received;
+      state.offlineMapBytes = blob.size;
       toast('Ready for offline journeys in Milton Keynes');
       await activatePackagedBasemap();
     } catch (err) {
       console.error(err);
-      downloadFailed = true;
+      downloadFailure = err.name === 'OfflineTransferTimeout'
+        ? 'Download stalled. Check your connection, then retry.'
+        : 'Download failed. Check your connection and available device storage, then retry.';
       state.offlineMapDownloaded = false;
       toast('Offline map download failed');
     } finally {
       state.offlineDownloadBusy = false;
       renderOfflineStatus();
-      if (downloadFailed) status.textContent = 'Download failed. Check your connection and available device storage, then retry.';
+      if (downloadFailure) status.textContent = downloadFailure;
     }
   }
 
@@ -4368,7 +4429,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.13';
+  el('app').dataset.appVersion = '0.14.14';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

@@ -88,11 +88,15 @@ python3 tests/navigation_icons_browser.py
 python3 tests/webkit_browser.py
 git fetch --tags
 python3 tests/release_upgrade_browser.py
+python3 tests/offline_recovery_browser.py
+python3 tests/navigation_permission_browser.py
 python3 tests/accessibility_browser.py
 python3 -m http.server 8000 --directory dist
 ```
 
-The release-upgrade browser gate selects the newest numeric release tag older than `VERSION`; set `UPGRADE_FROM_REF` to test a specific older release. It reconstructs that release's tracked app shell and uses the current validated geographic data and byte-matching vendor dependencies. It tests software/cache upgrades, rather than reconstructing historical geographic data. Fetch tags before running it.
+The release-upgrade browser gate tests the newest numeric release tag older than `VERSION` and the oldest of the three newest prior tags, covering skipped releases; with less history it tests each available prior tag. Set `UPGRADE_FROM_REF` to test one specific older release. Each root/subpath case keeps two clients open, including real active navigation during the worker update. It reconstructs each release's tracked app shell and uses current validated geographic data and byte-matching vendor dependencies. It tests software/cache upgrades, rather than reconstructing historical geographic data. Fetch tags before running it.
+
+The offline-recovery browser gate uses real HTTP header/body stalls, truncation and tab closure, then stops its origin to prove successful retry, offline routing and PMTiles range responses. It uses the production 30-second inactivity deadline; progressing downloads may take longer. The permission-recovery browser gate starts real Chromium geolocation and revokes permission through its browser permission controls, then requires an explicit restart after permission is restored. These checks do not establish physical iPhone background or speech behaviour.
 
 The WebKit suite uses the actual Playwright WebKit engine. Its local offline cases stop the test server after caching, because WebKit's network-emulation switch can fail cached navigation even for a minimal independent service-worker app. Production WebKit checks validate the UI and offline cache; the live Chromium suite separately requires offline reloads. These checks cannot establish physical iPhone GPS, audio or background behaviour.
 
@@ -100,7 +104,7 @@ Data generation requires internet access and can take several minutes. Generated
 
 ## Deployment
 
-`.github/workflows/pages.yml` builds and validates data, packages an explicit runtime allowlist into `dist/`, runs routing/browser release gates, and publishes that directory to GitHub Pages. The existing release suites and actual-archive inspection remain required. Upgrade, WebKit and accessibility jobs then test that same artifact in parallel; deployment waits for all of them. After deployment, the existing live review and new WebKit/accessibility checks must all pass before the immutable beta release is published.
+`.github/workflows/pages.yml` builds and validates data, packages an explicit runtime allowlist into `dist/`, runs routing/browser release gates, and publishes that directory to GitHub Pages. The existing release suites and actual-archive inspection remain required. Upgrade, WebKit, accessibility and offline/permission recovery jobs then test that same artifact in parallel; deployment waits for all of them. After deployment, the existing live review and new WebKit/accessibility checks must all pass before the immutable beta release is published.
 
 Use GitHub Actions as the Pages source. Runtime paths are relative so a project subpath and custom-domain root can use the same artifact. Source-only files and council diagnostics are excluded from Pages; diagnostics are separate Actions artifacts.
 

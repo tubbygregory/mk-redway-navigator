@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery"]
   workflow_dispatch:
 
 permissions:
@@ -168,6 +168,9 @@ jobs:
           - gate: accessibility
             browser: chromium
             script: accessibility_browser.py
+          - gate: offline-recovery
+            browser: chromium
+            script: offline_recovery_browser.py
     steps:
       - uses: actions/checkout@v6
         with:
@@ -188,6 +191,10 @@ jobs:
       - name: Check release reliability
         timeout-minutes: 10
         run: python3 tests/${{ matrix.script }}
+      - name: Check live location permission recovery
+        if: matrix.gate == 'offline-recovery'
+        timeout-minutes: 3
+        run: python3 tests/navigation_permission_browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -273,25 +280,27 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.13 beta release after production verification
+      - name: Publish v0.14.14 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.13" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.14" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Prevent route-option labels from overlapping their journey statistics on narrow screens.
+          Improve recovery from interrupted downloads, app updates and lost location permission.
 
-          - Keep long grouped preference names and route statistics on separate, readable lines.
-          - Add rendered-text overlap regressions at 320px and 200% text size in light/dark themes.
-          - Retain the GPS camera correction, WebKit coverage, previous-release upgrade tests and accessibility improvements from v0.14.12.
+          - Recover stalled offline-map downloads with a progress-based timeout and an available retry.
+          - Validate interrupted transfers, closing/reopening the app, and genuine offline recovery.
+          - Test latest and skipped-release upgrades at root and project subpaths, including an active journey in another tab.
+          - Keep versioned icons available offline to older open clients after the worker updates.
+          - End active guidance honestly when location permission is revoked, retain the planned route and explain how to restart.
           - Preserve approved branding, all four map icons, routing weights, source geometry and attribution.
 
-          Published after the inspected artifact, upgrade, browser, deployment and all production live-review gates.
+          Published after all existing and new artifact, browser, upgrade, deployment and production review gates.
           NOTES
-          if gh release view v0.14.13 >/dev/null 2>&1; then
+          if gh release view v0.14.14 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.13" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.13 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.14" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.14 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.13 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.13" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.14 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.14" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

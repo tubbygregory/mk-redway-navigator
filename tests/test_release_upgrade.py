@@ -6,7 +6,7 @@ import tempfile
 from threading import Thread
 import unittest
 
-from release_upgrade_browser import (UpgradeHandler, previous_release, runtime_files, safe_asset,
+from release_upgrade_browser import (UpgradeHandler, previous_releases, upgrade_refs, runtime_files, safe_asset,
                                      version_tuple, worker_literal, worker_shell)
 
 
@@ -39,19 +39,42 @@ class ReleaseUpgradeTests(unittest.TestCase):
     def test_release_selection_uses_numeric_order_and_excludes_current_future_and_prerelease(self):
         tags = ["v0.14.9", "v0.14.10", "v0.14.11", "v0.14.12", "v0.15.0",
                 "v0.14.11-beta", "branch-looking-like-0.14.11", "v0.13.99"]
-        self.assertEqual(previous_release(tags, "0.14.12"), "v0.14.11")
-        self.assertEqual(previous_release(tags, "0.14.11"), "v0.14.10")
-        self.assertEqual(previous_release(tags, "0.15.0"), "v0.14.12")
+        self.assertEqual(previous_releases(tags, "0.14.12"), ["v0.14.11", "v0.14.9"])
+        self.assertEqual(previous_releases(tags, "0.14.11"), ["v0.14.10", "v0.13.99"])
+        self.assertEqual(previous_releases(tags, "0.15.0"), ["v0.14.12", "v0.14.10"])
 
     def test_missing_history_fails_with_actionable_fetch_instruction(self):
         with self.assertRaisesRegex(ValueError, "Fetch all published tags"):
-            previous_release(["v0.14.12", "v0.15.0"], "0.14.12")
+            previous_releases(["v0.14.12", "v0.15.0"], "0.14.12")
+
+    def test_latest_and_skipped_origins_are_selected_from_latest_three_numeric_tags(self):
+        tags = ["v0.14.1", "v0.14.13", "v0.14.12", "v0.14.11", "v0.14.10", "v0.14.13"]
+        self.assertEqual(previous_releases(tags, "0.14.14"), ["v0.14.13", "v0.14.11"])
+        self.assertEqual(previous_releases(reversed(tags), "v0.14.14"), ["v0.14.13", "v0.14.11"])
+
+    def test_one_or_two_historical_tags_run_every_available_origin_once(self):
+        for tags, expected in [(["v1.0.0"], ["v1.0.0"]),
+                               (["v1.0.0", "v1.0.0"], ["v1.0.0"]),
+                               (["v1.0.0", "v1.1.0"], ["v1.1.0", "v1.0.0"])]:
+            with self.subTest(tags=tags):
+                self.assertEqual(previous_releases(tags, "1.2.0"), expected)
+
+    def test_explicit_ref_is_an_exact_single_origin_even_without_tag_history(self):
+        for override in ["v0.14.11", "review/old-shell", "7fc2d84"]:
+            with self.subTest(override=override):
+                self.assertEqual(upgrade_refs([], "0.14.14", override), [override])
+        self.assertEqual(upgrade_refs(["v0.14.11", "v0.14.12", "v0.14.13"], "0.14.14"),
+                         ["v0.14.13", "v0.14.11"])
+        with self.assertRaisesRegex(ValueError, "Fetch all published tags"):
+            upgrade_refs([], "0.14.14")
 
     def test_non_release_versions_are_rejected(self):
         self.assertEqual(version_tuple("v1.2.10"), (1, 2, 10))
         for value in ["", "0.14", "0.14.12-beta", "0.14.12\n", "version0.14.12"]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 version_tuple(value)
+            with self.subTest(current=value), self.assertRaises(ValueError):
+                previous_releases(["v0.14.11"], value)
 
     def test_historical_script_is_parsed_without_executing_any_code(self):
         self.assertEqual(runtime_files("raise RuntimeError('must never execute')\n"
