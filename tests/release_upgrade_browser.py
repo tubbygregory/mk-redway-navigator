@@ -471,18 +471,35 @@ def review(browser, previous, current, historical, current_version, out, scope, 
         offline_reapplications = assert_offline(context, navigation)
         expect(navigation.locator("#app")).to_have_attribute("data-app-version", historical["version"])
         assert navigation.evaluate("performance.timeOrigin") == documents[navigation]
-        old_asset_response = navigation.evaluate("""async url => {
-            try {
-                const response=await fetch(url);
-                const bytes=await response.arrayBuffer();
-                const hash=await crypto.subtle.digest('SHA-256',bytes);
-                return {status:response.status,size:bytes.byteLength,
-                        sha256:Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('')};
-            } catch(error) { return {error:String(error)}; }
-        }""", old_query_asset)
-        old_asset_file = previous / urlsplit(old_query_asset).path
-        assert old_asset_response == {"status": 200, "size": old_asset_file.stat().st_size,
-                                      "sha256": hashlib.sha256(old_asset_file.read_bytes()).hexdigest()}, old_asset_response
+        current_query_assets = [asset for asset in shell
+                                if urlsplit(asset).path == urlsplit(old_query_asset).path]
+        assert len(current_query_assets) == 1, current_query_assets
+        current_query_asset = current_query_assets[0]
+        missing_query_asset = f"./icons/upgrade-missing-file.png?v={historical['version']}"
+        offline_icons = navigation.evaluate("""async urls => {
+            const result={};
+            for (const [name,url] of Object.entries(urls)) {
+                try {
+                    const response=await fetch(url);
+                    const bytes=await response.arrayBuffer();
+                    const hash=await crypto.subtle.digest('SHA-256',bytes);
+                    result[name]={status:response.status,size:bytes.byteLength,
+                                  sha256:Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('')};
+                } catch(error) { result[name]={error:String(error)}; }
+            }
+            return result;
+        }""", {"previous": old_query_asset, "current": current_query_asset, "missing": missing_query_asset})
+        old_asset_response = offline_icons["previous"]
+        current_asset_response = offline_icons["current"]
+        missing_asset_response = offline_icons["missing"]
+        # Compatibility serves the inspected current shell asset. CI regenerates
+        # PNGs, so historical tracked bytes need not equal the deployed artifact.
+        current_asset_file = current / urlsplit(current_query_asset).path
+        expected_current_asset = {"status": 200, "size": current_asset_file.stat().st_size,
+                                  "sha256": hashlib.sha256(current_asset_file.read_bytes()).hexdigest()}
+        assert old_asset_response == current_asset_response == expected_current_asset, offline_icons
+        assert set(missing_asset_response) == {"error"}, missing_asset_response
+        assert len(server.requests) == count_before_offline, server.requests[count_before_offline:]
         # The old client follows its update notice only after a deliberate
         # Exit. Its actual reload happens with the real origin already stopped.
         navigation.locator("#plannerBack").click()
@@ -542,6 +559,8 @@ def review(browser, previous, current, historical, current_version, out, scope, 
                        "external_requests": external, "page_errors": errors,
                        "escaped_scope_requests": server.escaped_requests,
                        "old_client_offline_query_asset": {"url": old_query_asset, **old_asset_response},
+                       "current_offline_query_asset": {"url": current_query_asset, **current_asset_response},
+                       "missing_offline_query_asset": {"url": missing_query_asset, **missing_asset_response},
                        "clients_not_automatically_reloaded": True, "old_client_guidance_survived_update": True,
                        "offline_origin_stopped": origin_stopped,
                        "offline_emulation_reapplications": offline_reapplications,
