@@ -13,7 +13,7 @@ Plan a journey around Milton Keynes, compare cycling routes and follow location-
 - Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode, plus optional preferences for mapped lighting and named Super Routes.
 - Route previews with distance, estimated time, complete route mix, road share, mapped underpasses/crossings/unlit distance and alternative-route labels on the map.
 - Live navigation, spoken guidance, automatic rerouting, H/V grid-road underpass wording and low-glare night mode.
-- Choose your map icon in Settings → Appearance: Red dot, Arrow, Cyclist or MK Cow. The choice stays on this device and works offline; icons use the app red with white outlines.
+- Choose your map icon in Settings → Appearance: Red dot, Arrow, Cyclist or Concrete Cow. The choice stays on this device and works offline; icons use the app red with white outlines.
 - Home, Work and favourites saved on this device from search or a chosen map pin, with clear Saved feedback, quick shortcuts and local MK street, place and address suggestions.
 - Explore MK cards for the five Get Around MK Cultural Routes, with source-verified full loops and shortcut GPX tracks available inside the app and offline, plus official route-guide links. Shortcut files are segments, not complete shorter loops.
 - Cultural Route navigation includes a calculated red journey to the chosen track start/join; the unchanged source track keeps its designated colour. Its path types, access and conditions remain unverified GPX data.

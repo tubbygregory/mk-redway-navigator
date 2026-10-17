@@ -2,6 +2,7 @@
 
 ## 0.14.14
 
+- Name the cow map icon “Concrete Cow” throughout the interface and documentation.
 - Recover offline-map requests that stop delivering data, release the download controls and allow an honest retry without accepting partial maps.
 - Add real interrupted-transfer, tab-close/reopen and offline retry regressions at root and project subpaths.
 - Check upgrades from both the previous release and a skipped release, including two open clients with navigation active in one.
@@ -27,7 +28,7 @@
 
 ## 0.14.11
 
-- Add a local map-icon choice in Settings → Appearance: Red dot (default), Arrow, Cyclist or MK Cow, with red-and-white previews and clear selected state.
+- Add a local map-icon choice in Settings → Appearance: Red dot (default), Arrow, Cyclist or Concrete Cow, with red-and-white previews and clear selected state.
 - Use the specifically requested foreground Milton Keynes Concrete Cow as the basis for the cow vector, including its blunt face, white blaze and bulky three-quarter shape.
 - Keep icons bundled and available offline; remember the choice on this device and explain when browser storage cannot save it. Choosing an icon does not request location.
 - Rotate only the arrow from reliable measured travel and compensate for the map bearing; retain direction during stationary or poor-GPS fixes. Keep cyclist and cow artwork upright.
