@@ -64,7 +64,7 @@ The app loads Google AdSense asynchronously for publisher `ca-pub-84046732575659
 
 The publisher must obtain site approval and configure Auto ads or supply ad units in AdSense. For personalised advertising to UK/EEA users, configure a [Google-certified consent management platform](https://support.google.com/adsense/answer/13554116), such as Google’s European regulations message under **Privacy & messaging**. Adding the bootstrap alone does not configure consent or guarantee ad delivery. No custom ad slots or consent platform are added by this integration.
 
-Browser gates block only the exact configured AdSense bootstrap URL, recording it separately where tests reject unexpected external traffic. This isolates provider-driven content while retaining routing, location-permission and offline assertions. The browser smoke gate requires the publisher script and verifies route planning when its request is blocked.
+Browser gates block only the exact configured AdSense bootstrap URL, recording it separately where tests reject unexpected external traffic. Those strict gates also record and block the existing numeric OpenStreetMap raster-tile fallback URLs; other destinations and paths remain unexpected. This isolates provider-driven content while retaining routing, location-permission and offline assertions. The browser smoke gate requires the publisher script and verifies route planning when its request is blocked. Provider-controlled ad rendering and placement need review in AdSense; the isolated gates do not validate live advertising content.
 
 ## Data sources and attribution
 

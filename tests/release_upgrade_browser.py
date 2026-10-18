@@ -12,7 +12,7 @@ vendor assets. This exercises real service-worker/cache/settings migration, not
 the exact historical published artifact or physical Safari/iPhone behaviour.
 Evidence and failure screenshots go to test-results/release-upgrade/.
 """
-from advertising_fixture import block_adsense
+from advertising_fixture import block_adsense, block_osm_fallback
 import ast
 import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -357,6 +357,7 @@ def review(browser, previous, current, historical, current_version, out, scope, 
         }
     })();""".replace("SEED", json.dumps(seeded)))
     context.route("https://**/*", lambda route: (external.append(route.request.url), route.abort()))
+    expected_map_requests = block_osm_fallback(context)
     expected_advertising_requests = block_adsense(context)
     page, navigation = context.new_page(), context.new_page()
     for client, client_label in [(page, "normal"), (navigation, "navigation")]:
@@ -560,6 +561,7 @@ def review(browser, previous, current, historical, current_version, out, scope, 
                        "normal_client_gps_requests": [request for request in gps if request["client"] == "normal"],
                        "external_requests": external, "page_errors": errors,
                        "expected_advertising_requests": expected_advertising_requests,
+                       "expected_map_requests": expected_map_requests,
                        "escaped_scope_requests": server.escaped_requests,
                        "old_client_offline_query_asset": {"url": old_query_asset, **old_asset_response},
                        "current_offline_query_asset": {"url": current_query_asset, **current_asset_response},
@@ -577,7 +579,8 @@ def review(browser, previous, current, historical, current_version, out, scope, 
         (out / f"{label}-failure.json").write_text(json.dumps({**result, "requests": server.requests,
             "escaped_scope_requests": server.escaped_requests, "gps_requests": gps, "gps_fixes": fixes,
             "external_requests": external, "page_errors": errors,
-            "expected_advertising_requests": expected_advertising_requests}, indent=2) + "\n")
+            "expected_advertising_requests": expected_advertising_requests,
+            "expected_map_requests": expected_map_requests}, indent=2) + "\n")
         raise
     finally:
         context.close()

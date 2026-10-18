@@ -1,7 +1,7 @@
-"""Isolate the configured ad bootstrap while exercising the real application.
+"""Isolate known optional provider requests while testing the real application.
 
-Only this exact publisher URL is blocked; geocoding, runtime assets and
-unexpected external traffic retain each browser gate's existing assertions.
+Only the exact ad bootstrap and documented startup OSM raster paths are handled;
+geocoding, runtime assets and unexpected traffic retain existing gate assertions.
 """
 import re
 
@@ -28,4 +28,20 @@ def block_adsense(context):
         route.abort()
 
     context.route(ADSENSE_SCRIPT_PATTERN, block)
+    return requests
+
+
+def block_osm_fallback(context):
+    """Record the existing startup raster fallback without contacting its host.
+
+    The app adds OSM raster tiles before its bundled PMTiles layer is ready.
+    Preserve strict unexpected-traffic checks for every other URL and query.
+    """
+    requests = []
+
+    def block(route):
+        requests.append(route.request.url)
+        route.abort()
+
+    context.route(re.compile(r"^https://[abc]\.tile\.openstreetmap\.org/\d+/\d+/\d+\.png$"), block)
     return requests
