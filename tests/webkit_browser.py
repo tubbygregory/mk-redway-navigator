@@ -9,10 +9,11 @@ app; a real origin disconnect succeeds. Therefore this test deliberately avoids
 that emulation API. LIVE_URL checks the real UI and validated cached packages;
 real WebKit disconnect coverage runs against the artifact, while the existing
 Chromium production gate also requires a live-site offline reload. Neither gate
-claims to prove installed iOS behaviour. Provider traffic is intercepted; local
-journeys need no geocoder.
+claims to prove installed iOS behaviour. An unreachable proxy blocks off-host
+providers even when controlled requests bypass route interception; the runtime
+hostname alone bypasses it. Local journeys need no geocoder.
 """
-from advertising_fixture import block_adsense
+from advertising_fixture import block_adsense, external_provider_proxy
 from functools import partial
 from http.server import ThreadingHTTPServer
 import json
@@ -70,15 +71,32 @@ def new_page(browser, width=390, height=844, theme="dark", *, offline=False):
     })();""".replace("SETTINGS", json.dumps(json.dumps({"themeChoice": theme, "voiceEnabled": False}))))
     page = context.new_page()
     page.set_default_timeout(30000)
-    errors, providers, fallbacks = [], [], []
-    page.on("pageerror", lambda error: errors.append(str(error)))
+    errors, providers, fallbacks, responses = [], [], [], []
+
+    def page_error(error):
+        detail = {"name": error.name, "message": error.message, "stack": error.stack}
+        errors.append(detail)
+        print("WebKit page error: " + json.dumps(detail), flush=True)
+
+    page.on("pageerror", page_error)
+    page.on("response", lambda response: responses.append({"url": response.url, "status": response.status}))
     page.on("request", lambda request: providers.append(request.url)
             if "nominatim.openstreetmap.org" in request.url else None)
     page.on("request", lambda request: fallbacks.append(request.url)
             if "/api/interpreter" in request.url else None)
     page.route("**/nominatim.openstreetmap.org/**", lambda route: route.fulfill(json=[]))
     page.route("**/api/interpreter", lambda route: route.abort())
-    return context, page, errors, providers, fallbacks
+    return context, page, errors, providers, fallbacks, responses
+
+
+def assert_provider_isolation(responses, runtime_url):
+    """Controlled reloads must not silently execute live advertising code."""
+    host = urlsplit(runtime_url).hostname
+    external = [response for response in responses
+                if urlsplit(response["url"]).scheme in ("http", "https")
+                and urlsplit(response["url"]).hostname != host]
+    assert not external, ("Unexpected provider HTTP responses", external)
+    return external
 
 
 def load(page, url):
@@ -102,7 +120,7 @@ def select_coordinates(page, value):
 
 
 def review_viewport(browser, url, width, height, theme):
-    context, page, errors, providers, fallbacks = new_page(browser, width, height, theme)
+    context, page, errors, providers, fallbacks, responses = new_page(browser, width, height, theme)
     tag = f"{width}x{height}-{theme}"
     try:
         load(page, url)
@@ -200,17 +218,20 @@ def review_viewport(browser, url, width, height, theme):
         assert not errors, errors
         assert not providers, providers
         assert not fallbacks, fallbacks
+        external = assert_provider_isolation(responses, url)
         print(f"PASS WebKit {tag}: rendered map, themes/icons, Saved persistence, alternatives/walking, Explore and privacy", flush=True)
         return {"viewport": [width, height], "theme": theme, "page_errors": errors,
-                "provider_requests": providers, "fallback_requests": fallbacks}
+                "provider_requests": providers, "fallback_requests": fallbacks,
+                "provider_http_responses": external}
     finally:
         context.close()
 
 
 def review_cached_runtime(browser, url, label, *, disconnect=None):
-    context, page, errors, providers, fallbacks = new_page(browser, offline=True)
+    context, page, errors, providers, fallbacks, responses = new_page(browser, offline=True)
     try:
         load(page, url)
+        assert_provider_isolation(responses, url)
         assert page.evaluate("'serviceWorker' in navigator"), "WebKit lacks service-worker support"
         page.wait_for_function("navigator.serviceWorker.controller !== null")
         assert page.evaluate("navigator.serviceWorker.controller.scriptURL") == urljoin(url, "sw.js")
@@ -250,6 +271,7 @@ def review_cached_runtime(browser, url, label, *, disconnect=None):
         # verify the cached package/retained preference without claiming a real
         # disconnect: WebKit's emulation API cannot provide that assertion.
         page.reload(wait_until="networkidle")
+        assert_provider_isolation(responses, url)
         expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")
         open_choices(page)
         expect(page.locator('[data-navigation-icon-choice="cyclist"]')).to_have_attribute("aria-pressed", "true")
@@ -269,12 +291,14 @@ def review_cached_runtime(browser, url, label, *, disconnect=None):
         assert not errors, errors
         assert not providers, providers
         assert not fallbacks, fallbacks
+        external = assert_provider_isolation(responses, url)
         if disconnect:
             print(f"PASS WebKit {label}: real origin unavailable, SW reload/graph/PMTiles206, retained icon and unseen shared URL", flush=True)
         else:
             print("PASS WebKit production cache: validated graph/PMTiles, retained icon and shared route; real WebKit disconnect is covered by the artifact gate (emulation limitation)", flush=True)
         return {"scope": label, "origin_disconnected": bool(disconnect), "package": package,
-                "range_response": response, "retained_icon": "cyclist", "unseen_shared_route": True}
+                "range_response": response, "retained_icon": "cyclist", "unseen_shared_route": True,
+                "provider_http_responses": external, "page_errors": errors}
     finally:
         context.close()
 
@@ -317,8 +341,8 @@ def main():
         url = f"http://127.0.0.1:{server.server_port}/"
     evidence = {"engine": "WebKit", "url": url, "viewports": [], "offline": []}
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.webkit.launch(executable_path=os.environ.get("WEBKIT_EXECUTABLE"))
+        with external_provider_proxy(url) as proxy, sync_playwright() as playwright:
+            browser = playwright.webkit.launch(executable_path=os.environ.get("WEBKIT_EXECUTABLE"), proxy=proxy)
             evidence["engine_version"] = browser.version
             try:
                 for width, height, theme in [(320, 568, "light"), (390, 844, "dark")]:
