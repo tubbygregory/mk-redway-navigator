@@ -4,6 +4,7 @@ Real browser geolocation is opt-in and measured. Artwork is inspected as rendere
 including native touch targets; the local PWA cases exercise root and subpath
 service-worker scopes. iPhone/standalone emulation does not prove Safari behaviour.
 """
+from advertising_fixture import block_adsense
 from functools import partial
 from http.server import ThreadingHTTPServer
 import json
@@ -48,6 +49,7 @@ def new_context(browser, width=390, height=844, theme="light", *, offline=False,
         color_scheme="dark" if theme == "system" else "light",
         geolocation=GPS,
     )
+    block_adsense(context)
     settings = {"themeChoice": theme, "voiceEnabled": False}
     if initial_icon is not None:
         settings["navigationIcon"] = initial_icon

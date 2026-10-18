@@ -4,6 +4,7 @@ Journeys use native keyboard input, never forced clicks or application state hoo
 Text is genuinely enlarged in layout (including fixed-pixel UI text), not stretched
 with a transform. Browser/standalone emulation does not verify physical Safari.
 """
+from advertising_fixture import block_adsense
 from functools import partial
 from http.server import ThreadingHTTPServer
 import json
@@ -31,6 +32,7 @@ def new_page(browser, url, width=1280, height=900, theme="light", motion="no-pre
     context = browser.new_context(viewport={"width": width, "height": height},
                                   service_workers="block", geolocation=GPS,
                                   reduced_motion=motion)
+    block_adsense(context)
     context.add_init_script("localStorage.setItem('mk-redway-settings-v1', " +
                             json.dumps(json.dumps({"themeChoice": theme, "voiceEnabled": False})) + ");")
     context.add_init_script("localStorage.setItem('mk-redway-saved-v1', " +

@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery", "polish/concrete-cow-name"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery", "polish/concrete-cow-name", "integration/adsense-v01415"]
   workflow_dispatch:
 
 permissions:
@@ -280,28 +280,26 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.14 beta release after production verification
+      - name: Publish v0.14.15 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.14" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.15" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Improve recovery from interrupted downloads, app updates and lost location permission.
+          Add the supplied Google AdSense integration and explain its privacy implications.
 
-          - Recover stalled offline-map downloads with a progress-based timeout and an available retry.
-          - Validate interrupted transfers, closing/reopening the app, and genuine offline recovery.
-          - Test latest and skipped-release upgrades at root and project subpaths, including an active journey in another tab.
-          - Keep versioned icons available offline to older open clients after the worker updates.
-          - End active guidance honestly when location permission is revoked, retain the planned route and explain how to restart.
-          - Name the local cow map icon “Concrete Cow” throughout the interface.
-          - Preserve approved branding, all four map icons, routing weights, source geometry and attribution.
+          - Load the publisher script asynchronously in the app head.
+          - Document Google advertising, cookies or identifiers and advertising choices in About & Data.
+          - Keep advertising outside offline caches; isolate only its exact bootstrap in automated browser checks.
+          - Retain all routing, offline, accessibility, upgrade and production release gates.
+          - Ad delivery still requires publisher approval, ad configuration and the required consent setup in AdSense.
 
-          Published after all existing and new artifact, browser, upgrade, deployment and production review gates.
+          Published after the inspected artifact, deployment and all production live-review gates.
           NOTES
-          if gh release view v0.14.14 >/dev/null 2>&1; then
+          if gh release view v0.14.15 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.14" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.14 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.15" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.15 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.14 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.14" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.15 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.15" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

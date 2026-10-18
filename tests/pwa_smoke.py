@@ -1,4 +1,5 @@
 """Root/subpath service-worker and offline release gate; optional live review."""
+from advertising_fixture import block_adsense
 import base64
 import json
 import os
@@ -53,6 +54,7 @@ def review(browser, url, live=False):
                                   is_mobile=True, has_touch=True,
                                   user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
                                   permissions=["geolocation"], geolocation={"latitude": 52.0467, "longitude": -.7378})
+    block_adsense(context)
     page = context.new_page()
     page.set_default_timeout(45000)
     errors, external_shell = [], []
@@ -256,6 +258,7 @@ def review_dark_shell(browser, url):
         color_scheme="dark",
         user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/26.0 Mobile/15E148 Safari/604.1"
     )
+    block_adsense(context)
     context.add_init_script("""Object.defineProperty(navigator, 'standalone', {
       configurable: true,
       get: () => true
@@ -295,6 +298,7 @@ def review_dark_shell(browser, url):
 def review_delayed_location(browser, url):
     """A late GPS result must never replace a manually chosen start."""
     context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+    block_adsense(context)
     context.add_init_script("""(() => {
       const pending = [];
       Object.defineProperty(navigator.geolocation, 'getCurrentPosition', {
@@ -366,6 +370,7 @@ def review_offline_cultural_tracks(browser, url):
         accept_downloads=True,
         user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
     )
+    block_adsense(context)
     context.add_init_script("""Object.defineProperty(navigator, 'standalone', {
       configurable: true, get: () => true
     });""")

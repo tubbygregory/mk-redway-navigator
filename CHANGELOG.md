@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.15
+
+- Add the supplied Google AdSense publisher script asynchronously to the app head.
+- Explain Google advertising, third-party cookies or identifiers and advertising choices in About & Data.
+- Keep advertising outside offline caches and isolate its exact bootstrap request in browser tests so failed or blocked ads cannot undermine navigation checks.
+
 ## 0.14.14
 
 - Name the cow map icon “Concrete Cow” throughout the interface and documentation.
