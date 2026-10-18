@@ -7,6 +7,7 @@ reload, unseen route and PMTiles range request. CHROMIUM_EXECUTABLE optionally
 selects a Chromium binary; OFFLINE_RECOVERY_SITE selects an existing site artifact
 (for example a historical negative control). Evidence goes to test-results/.
 """
+from advertising_fixture import block_adsense, block_osm_fallback
 import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -173,7 +174,9 @@ def review(browser, scope, label, out):
     context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True,
                                   has_touch=True, service_workers="allow")
     errors, external = [], []
-    context.route("https://**", lambda route: (external.append(route.request.url), route.abort()))
+    context.route("https://**/*", lambda route: (external.append(route.request.url), route.abort()))
+    expected_map_requests = block_osm_fallback(context)
+    expected_advertising_requests = block_adsense(context)
     context.on("page", lambda page: page.on("pageerror", lambda error: errors.append(str(error))))
     page = context.new_page()
     page.set_default_timeout(45000)
@@ -269,7 +272,10 @@ def review(browser, scope, label, out):
         result.update({"status": "passed", "interrupted_bytes_sent": interrupted["bytes_sent"],
                        "assets": assets, "offline_origin_stopped": True, "offline_server_requests": 0,
                        "offline_emulation_reapplications": reapplied, "offline_pmtiles_range": part,
-                       "page_errors": errors, "external_requests": external, "escaped_scope_requests": server.escaped})
+                       "page_errors": errors, "external_requests": external,
+                       "expected_advertising_requests": expected_advertising_requests,
+                       "expected_map_requests": expected_map_requests,
+                       "escaped_scope_requests": server.escaped})
         print(f"PASS recovery {label}: header/body timeout, truncation, tab close/reopen, retry, offline route + range206", flush=True)
         return result
     except Exception:
@@ -277,6 +283,8 @@ def review(browser, scope, label, out):
             page.screenshot(path=str(out / f"{label}-failure.png"))
         (out / f"{label}-failure.json").write_text(json.dumps({**result, "downloads": server.downloads,
             "requests": server.requests, "page_errors": errors, "external_requests": external,
+            "expected_advertising_requests": expected_advertising_requests,
+            "expected_map_requests": expected_map_requests,
             "escaped_scope_requests": server.escaped}, indent=2) + "\n")
         raise
     finally:

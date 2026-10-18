@@ -3,6 +3,7 @@
 No geocoding or live Overpass is needed: coordinate search is a normal offline UI
 feature. A client/schema mismatch must fail this gate before Pages publication.
 """
+from advertising_fixture import ADSENSE_SCRIPT_URL, block_adsense
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,7 @@ def main():
             browser = p.chromium.launch()
             for width, height in [(1280, 900), (390, 844)]:
                 context = browser.new_context(viewport={'width': width, 'height': height}, service_workers='block')
+                expected_advertising_requests = block_adsense(context)
                 page = context.new_page()
                 page.set_default_timeout(30000)
                 errors, fallbacks = [], []
@@ -37,6 +39,10 @@ def main():
                 page.on('request', lambda req: fallbacks.append(req.url) if '/api/interpreter' in req.url else None)
                 page.route('**/api/interpreter', lambda route: route.abort())
                 page.goto(f'http://127.0.0.1:{server.server_port}/', wait_until='networkidle')
+                advertising = page.locator('head > script[src="' + ADSENSE_SCRIPT_URL + '"]')
+                expect(advertising).to_have_count(1)
+                assert advertising.evaluate("el => el.async && el.crossOrigin === 'anonymous'"), "AdSense must load asynchronously with anonymous CORS"
+                assert expected_advertising_requests == [ADSENSE_SCRIPT_URL], expected_advertising_requests
                 expect(page.locator('#visibleSettingsBtn')).to_be_visible()
                 expect(page.locator('html')).to_have_attribute('data-routing-source', 'bundled')
                 page.locator('#map').click(position={'x': width // 2, 'y': height // 2})
@@ -80,7 +86,7 @@ def main():
                 expect(page.get_by_role('button', name='Choose destination entrance', exact=True)).to_be_visible()
                 assert not errors, errors
                 assert not fallbacks, fallbacks
-                print(f'PASS browser {width}x{height}: bundled v6, route choices, walking, blocked endpoint')
+                print(f'PASS browser {width}x{height}: failed AdSense does not block bundled v6, route choices, walking or blocked endpoint recovery')
                 page.get_by_role('button', name='Clear route', exact=True).click()
                 page.locator('#visibleSettingsBtn').click()
                 page.locator('#aboutData summary').click()

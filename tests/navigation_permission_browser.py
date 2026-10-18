@@ -5,6 +5,7 @@ changes; navigator.geolocation and application functions are never replaced.
 CHROMIUM_EXECUTABLE optionally selects a local Chromium binary. This checks
 Chromium permission delivery, not physical phone/background behaviour.
 """
+from advertising_fixture import block_adsense
 from functools import partial
 from http.server import ThreadingHTTPServer
 import json
@@ -26,6 +27,7 @@ def review_permission(browser, url):
     context = browser.new_context(viewport={"width": 390, "height": 844},
                                   geolocation=GPS, permissions=["geolocation"],
                                   service_workers="block", is_mobile=True, has_touch=True)
+    block_adsense(context)
     context.add_init_script("localStorage.setItem('mk-redway-settings-v1', JSON.stringify({voiceEnabled:false, preferLit:true}));")
     page = context.new_page()
     page.set_default_timeout(30000)

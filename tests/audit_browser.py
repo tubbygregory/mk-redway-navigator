@@ -1,4 +1,5 @@
 """Focused v0.14 release regressions using the real UI; no production test hooks."""
+from advertising_fixture import block_adsense
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -625,6 +626,7 @@ def review_saved_place_matrix(browser, url):
         context = browser.new_context(viewport={'width': width, 'height': height}, service_workers='block',
                                       is_mobile=width < 900, has_touch=width < 900,
                                       user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1' if width < 900 else None)
+        block_adsense(context)
         if width < 900:
             context.add_init_script("Object.defineProperty(navigator, 'standalone', {value:true, configurable:true});")
         page = context.new_page(); page.set_default_timeout(30000)
@@ -673,6 +675,7 @@ def review_cultural_navigation(browser, url):
     context = browser.new_context(viewport={'width':390, 'height':844}, is_mobile=True, has_touch=True,
                                   service_workers='block', permissions=['geolocation'], geolocation=origin,
                                   accept_downloads=True)
+    block_adsense(context)
     page = context.new_page(); page.set_default_timeout(30000)
     page.route('**/nominatim.openstreetmap.org/**', lambda route: route.abort())
     page.goto(url, wait_until='networkidle')
@@ -717,6 +720,7 @@ def review_cultural_navigation(browser, url):
     # through the normal UI. A cancelled fix must not reopen navigation.
     context = browser.new_context(viewport={'width':390, 'height':844}, is_mobile=True, has_touch=True,
                                   service_workers='block')
+    block_adsense(context)
     context.add_init_script('''(() => {
         const pending = []; window.culturalLocationRequests = 0;
         navigator.geolocation.getCurrentPosition = (success, failure) => { window.culturalLocationRequests++; pending.push({success, failure}); };
@@ -747,6 +751,7 @@ def review_cultural_navigation(browser, url):
 def review_action_contrast(browser, url):
     ctx = browser.new_context(viewport={'width':390,'height':844}, service_workers='block',
                               permissions=['geolocation'], geolocation={'latitude':52.0467,'longitude':-.7378,'accuracy':5})
+    block_adsense(ctx)
     page = ctx.new_page()
     page.set_default_timeout(30000)
     page.goto(url, wait_until='networkidle')
@@ -843,6 +848,7 @@ def review(browser, url):
     for width, height in [(390,844),(844,390),(1280,900)]:
         ctx = browser.new_context(viewport={'width':width,'height':height}, color_scheme='dark', accept_downloads=True, service_workers='block',
                                   permissions=['geolocation'],geolocation={'latitude':52.0467,'longitude':-.7378,'accuracy':5})
+        block_adsense(ctx)
         page=ctx.new_page();page.set_default_timeout(30000)
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
         page.goto(url,wait_until='networkidle')

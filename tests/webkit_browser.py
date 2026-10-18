@@ -12,6 +12,7 @@ Chromium production gate also requires a live-site offline reload. Neither gate
 claims to prove installed iOS behaviour. Provider traffic is intercepted; local
 journeys need no geocoder.
 """
+from advertising_fixture import block_adsense
 from functools import partial
 from http.server import ThreadingHTTPServer
 import json
@@ -51,6 +52,7 @@ def new_page(browser, width=390, height=844, theme="dark", *, offline=False):
         color_scheme="dark", geolocation=GPS,
         service_workers="allow" if offline else "block",
     )
+    block_adsense(context)
     # Seed only once. A reload must restore the actual user's subsequent writes.
     context.add_init_script("""(() => {
         if (!sessionStorage.getItem('webkit-fixture-seeded')) {

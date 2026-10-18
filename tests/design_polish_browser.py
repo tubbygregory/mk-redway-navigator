@@ -5,6 +5,7 @@ scroll them into view. Browser GPS is controlled; provider searches are intercep
 at the browser boundary. No public geocoder or application test hooks are used.
 Chromium iPhone/standalone emulation is not physical Safari verification.
 """
+from advertising_fixture import block_adsense
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -109,6 +110,7 @@ def new_page(browser, url, width, height, theme="light", saved=None):
         geolocation=GPS, accept_downloads=True,
         user_agent=IOS if mobile else None,
     )
+    block_adsense(context)
     # Observe the real browser API without changing its answers or timing.
     context.add_init_script("""(() => {
         window.designGeo = {requests:0, watches:0, fixes:[]};
