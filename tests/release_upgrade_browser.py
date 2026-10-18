@@ -31,7 +31,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ALLOWED = frozenset({
     "index.html", "styles.css", "app.js", "routing.js", "navigation-icons.js",
-    "about.js", "sw.js", "manifest.webmanifest", "DATA-LICENCE.md", "LICENSE", ".nojekyll",
+    "about.js", "sw.js", "manifest.webmanifest", "ads.txt", "DATA-LICENCE.md", "LICENSE", ".nojekyll",
 })
 DATA_FILES = ("network.json", "places.json", "mk-basemap.pmtiles", "data-meta.json")
 IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"

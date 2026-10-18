@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery", "polish/concrete-cow-name", "integration/adsense-v01415"]
+    branches: ["main", "pdf-review-completion", "fix/v014-validation", "fix/v014-appearance", "branding/mkrw-logo", "branding/mkrw-logo-fit", "audit/v0143", "fix/mobile-header-fit", "audit/reliability-v0145", "fix/exact-mk-logo-v0146", "fix/cultural-route-loading-v0147", "fix/mk-address-search-v0148", "fix/saved-cultural-ux-v0149", "polish/design-friendliness-v01410", "feature/navigation-map-icons", "reliability/automated-release-checks", "fix/narrow-route-alternatives", "fix/alternative-fixture-focus", "reliability/offline-update-recovery", "polish/concrete-cow-name", "integration/adsense-v01415", "integration/settings-ad-v01416"]
   workflow_dispatch:
 
 permissions:
@@ -280,26 +280,28 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish v0.14.15 beta release after production verification
+      - name: Publish v0.14.16 beta release after production verification
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(cat VERSION)" != "0.14.15" ]; then exit 0; fi
+          if [ "$(cat VERSION)" != "0.14.16" ]; then exit 0; fi
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          Add the supplied Google AdSense integration and explain its privacy implications.
+          Publish ads.txt and place the supplied responsive display ad in Settings.
 
-          - Load the publisher script asynchronously in the app head.
-          - Document Google advertising, cookies or identifiers and advertising choices in About & Data.
-          - Keep advertising outside offline caches; isolate only its exact bootstrap in automated browser checks.
-          - Retain all routing, offline, accessibility, upgrade and production release gates.
-          - Ad delivery still requires publisher approval, ad configuration and the required consent setup in AdSense.
+          - Publish the missing root ads.txt and validate its publisher record and live plain-text response.
+          - Add unit 7271687520 after About & Data, labelled Advertisements.
+          - Keep the unit within the Settings sheet and outside route/navigation controls.
+          - Request it once, after page loading, only when visible with a usable width.
+          - Preserve offline navigation when advertising is blocked or unavailable.
+          - Retain all artifact, accessibility, upgrade and production live-review gates.
+          - Ad delivery and consent configuration remain controlled through AdSense.
 
           Published after the inspected artifact, deployment and all production live-review gates.
           NOTES
-          if gh release view v0.14.15 >/dev/null 2>&1; then
+          if gh release view v0.14.16 >/dev/null 2>&1; then
             # An existing release may only be retried for the same commit.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.15" --jq .sha)" = "$GITHUB_SHA"
-            gh release edit v0.14.15 --notes-file "$RUNNER_TEMP/release-notes.md"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/v0.14.16" --jq .sha)" = "$GITHUB_SHA"
+            gh release edit v0.14.16 --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create v0.14.15 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.15" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create v0.14.16 --target "$GITHUB_SHA" --title "MK Redway Navigator v0.14.16" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

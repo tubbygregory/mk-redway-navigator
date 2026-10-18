@@ -66,6 +66,10 @@ def review(browser, url, live=False):
     metadata = context.request.get(urljoin(url, "data/data-meta.json"), headers={"Cache-Control": "no-cache"})
     assert metadata.ok, f"Runtime metadata returned {metadata.status}"
     assert metadata.json()["app_version"] == expected_version, "Runtime metadata is from a different release"
+    authorisation = context.request.get(urljoin(url, "ads.txt"), headers={"Cache-Control": "no-cache"})
+    assert authorisation.status == 200, f"ads.txt returned {authorisation.status}"
+    assert authorisation.headers.get("content-type", "").split(";")[0].strip() == "text/plain", "ads.txt must be plain text"
+    assert authorisation.text().strip() == "google.com, pub-8404673257565926, DIRECT, f08c47fec0942fa0", "ads.txt publisher authorisation mismatch"
     capture(page, "first-run")
     expect(page.locator("#visibleSettingsBtn")).to_be_visible()
     expect(page.locator("html")).to_have_attribute("data-routing-source", "bundled")

@@ -1113,6 +1113,9 @@ html.ios-standalone .toast {
 .data-details dd { margin: 0; overflow-wrap: anywhere; }
 .about-links { display: grid; gap: 4px; }
 .about-links a { min-height: 44px; display: flex; align-items: center; color: var(--blue); text-underline-offset: 3px; }
+.settings-ad { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
+.settings-ad-label { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.settings-ad .adsbygoogle { min-height: 100px; }
 
 /* 0.12.1: issues verified in the live mobile review. */
 .route-summary > div:first-child { flex: 0 0 auto; min-width: 108px; max-width: 100%; }

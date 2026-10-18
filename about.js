@@ -36,4 +36,34 @@
   document.getElementById('aboutData').addEventListener('toggle', event => {
     if (event.target.open) refresh();
   });
+
+  function setupSettingsAdvertisement() {
+    const sheet = document.getElementById('settingsSheet');
+    const unit = document.getElementById('settingsAd');
+    if (!sheet || !unit || !('IntersectionObserver' in window)) return;
+    let requested = false;
+    let loaded = document.readyState === 'complete';
+    const request = () => {
+      if (requested || !loaded || !navigator.onLine || document.hidden || sheet.hidden ||
+          sheet.classList.contains('is-collapsed')) return;
+      const bounds = unit.getBoundingClientRect();
+      const panel = sheet.getBoundingClientRect();
+      const heading = sheet.querySelector('.sheet-heading').getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0 ||
+          bounds.bottom <= Math.max(panel.top, heading.bottom, 0) ||
+          bounds.top >= Math.min(panel.bottom, window.innerHeight)) return;
+      requested = true;
+      observer.disconnect();
+      // The async bootstrap must finish before dispatch: a queued request could
+      // otherwise be processed after Settings closes, when its width is zero.
+      try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (_) {}
+    };
+    const observer = new IntersectionObserver(request, {root: sheet});
+    observer.observe(unit);
+    sheet.addEventListener('scroll', request, {passive: true});
+    window.addEventListener('load', () => { loaded = true; request(); }, {once: true});
+    window.addEventListener('online', request);
+    document.addEventListener('visibilitychange', request);
+  }
+  setupSettingsAdvertisement();
 })();
