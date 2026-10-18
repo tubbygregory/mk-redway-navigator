@@ -5,7 +5,7 @@ scroll them into view. Browser GPS is controlled; provider searches are intercep
 at the browser boundary. No public geocoder or application test hooks are used.
 Chromium iPhone/standalone emulation is not physical Safari verification.
 """
-from advertising_fixture import block_adsense
+from advertising_fixture import ADSENSE_SCRIPT_PATTERN, ADSENSE_SCRIPT_URL, block_adsense
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -377,6 +377,118 @@ def review_arrival(browser, url):
         context.close()
 
 
+def review_settings_ad(browser, url, width, height, theme):
+    """A delayed, isolated provider must not process a hidden or repeated unit."""
+    context = browser.new_context(viewport={"width": width, "height": height},
+                                  service_workers="block", is_mobile=width < 900,
+                                  has_touch=width < 900)
+    context.add_init_script("window.settingsAdPushes = [];")
+    context.add_init_script("localStorage.setItem('mk-redway-settings-v1', " +
+                            json.dumps(json.dumps({"themeChoice": theme, "voiceEnabled": False})) + ");")
+    pending = []
+    # Hold only the configured bootstrap. No Google advertising code or requests
+    # run; the normal application scripts, layout and visibility observers do.
+    context.route(ADSENSE_SCRIPT_PATTERN, lambda route: pending.append(route))
+    page = context.new_page()
+    page.set_default_timeout(30000)
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.route("**/nominatim.openstreetmap.org/**", lambda route: route.fulfill(json=[]))
+    page.route("**/api/interpreter", lambda route: route.abort())
+    tag = f"{width}x{height}-{theme}"
+
+    def settle():
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+
+    def no_overflow():
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Advertising overflows the document"
+        assert page.locator("#settingsSheet").evaluate("el => el.scrollWidth <= el.clientWidth"), "Advertising overflows Settings"
+
+    try:
+        page.goto(url, wait_until="domcontentloaded")
+        expect(page.locator("#app")).to_have_attribute("data-app-version", (ROOT / "VERSION").read_text().strip())
+        assert len(pending) == 1, "Expected one isolated AdSense bootstrap"
+        expect(page.locator('head > script[src="' + ADSENSE_SCRIPT_URL + '"]')).to_have_count(1)
+        unit = page.locator("#settingsAd")
+        expect(page.locator("ins.adsbygoogle")).to_have_count(1)
+        for name, value in {"data-ad-client": "ca-pub-8404673257565926", "data-ad-slot": "7271687520",
+                            "data-ad-format": "auto", "data-full-width-responsive": "false"}.items():
+            expect(unit).to_have_attribute(name, value)
+        assert unit.evaluate("""el => el.parentElement.parentElement.id === 'settingsSheet' &&
+            el.parentElement.previousElementSibling.id === 'aboutData' &&
+            getComputedStyle(el.parentElement).position === 'static' && getComputedStyle(el).position === 'static'"""), "Ad must be ordinary Settings content after About"
+        expect(page.locator(".settings-ad-label")).to_have_text("Advertisements")
+        if page.locator("#locationIntroDismiss").is_visible():
+            page.locator("#locationIntroDismiss").click()
+        page.locator("#visibleSettingsBtn").click()
+        assert unit.evaluate("el => el.getBoundingClientRect().top >= el.closest('#settingsSheet').getBoundingClientRect().bottom"), "Ad should start below the Settings controls"
+        page.locator("#settingsSheet").evaluate("el => el.scrollTop = el.scrollHeight")
+        settle()
+        assert unit.evaluate("el => el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height >= 100"), "Visible unit needs reserved geometry"
+        assert page.evaluate("settingsAdPushes.length === 0 && (!window.adsbygoogle || !window.adsbygoogle.length)"), "Unloaded bootstrap received a queued unit"
+        hit(page, "#closeSettings")
+        page.locator("#closeSettings").click()
+        pending.pop().fulfill(content_type="application/javascript", headers={"Access-Control-Allow-Origin": "*"}, body="""
+            window.adsbygoogle = {push() {
+                const el=document.getElementById('settingsAd'), sheet=el.closest('#settingsSheet');
+                const r=el.getBoundingClientRect(), p=sheet.getBoundingClientRect();
+                window.settingsAdPushes.push({width:r.width,height:r.height,hidden:sheet.hidden,
+                    collapsed:sheet.classList.contains('is-collapsed'),
+                    intersects:r.bottom>p.top && r.top<p.bottom});
+                const fill=document.createElement('div');
+                fill.textContent='Advertising layout fixture';
+                fill.style.cssText='height:250px;width:100%;box-sizing:border-box;display:grid;place-items:center;border:1px dashed currentColor';
+                el.append(fill);
+            }};
+        """)
+        page.wait_for_load_state("load")
+        settle()
+        assert page.evaluate("settingsAdPushes.length") == 0, "Late bootstrap processed a hidden Settings unit"
+        page.locator("#visibleSettingsBtn").click()
+        page.locator("#settingsSheet").evaluate("el => el.scrollTop = el.scrollHeight")
+        page.wait_for_function("settingsAdPushes.length === 1")
+        request = page.evaluate("settingsAdPushes[0]")
+        assert request["width"] > 0 and request["height"] >= 100 and request["intersects"], request
+        assert not request["hidden"] and not request["collapsed"], request
+        page.locator("#settingsSheet").evaluate("el => el.scrollTop = el.scrollHeight")
+        page.locator(".settings-ad-label").evaluate("el => el.scrollIntoView({block:'start'})")
+        settle()
+        no_overflow()
+        hit(page, ".settings-ad-label")
+        hit(page, "#closeSettings")
+        label_geometry = page.locator(".settings-ad-label").bounding_box()
+        screenshot(page, tag + "-settings-ad")
+        page.locator("#closeSettings").click()
+        page.locator("#visibleSettingsBtn").click()
+        # Native collapse/expand and changed layout must retain the same request.
+        page.locator("#settingsSheetHandle").click()
+        expect(page.locator("#settingsSheetHandle")).to_have_attribute("aria-expanded", "false")
+        page.locator("#settingsSheetHandle").click()
+        expect(page.locator("#settingsSheetHandle")).to_have_attribute("aria-expanded", "true")
+        for size, choice in [({"width": 320, "height": 568}, "light"),
+                             ({"width": 844, "height": 390}, "dark"),
+                             ({"width": 1280, "height": 900}, "high-contrast")]:
+            page.set_viewport_size(size)
+            page.locator(f'[data-theme-choice="{choice}"]').click()
+            page.locator("#settingsSheet").evaluate("el => el.scrollTop = el.scrollHeight")
+            page.locator(".settings-ad-label").evaluate("el => el.scrollIntoView({block:'start'})")
+            settle()
+            assert page.evaluate("settingsAdPushes.length") == 1, "Settings interaction requested a duplicate ad"
+            no_overflow()
+            hit(page, ".settings-ad-label")
+            hit(page, "#closeSettings")
+        page.locator("#closeSettings").click()
+        hit(page, "#homeSearch")
+        hit(page, "#savedPlacesBtn")
+        assert not errors, errors
+        print(f"PASS Settings ad {tag}: delayed bootstrap, hidden/visible sizing, one request, resize/themes/collapse and reachable Close", flush=True)
+        return {"viewport": {"width": width, "height": height}, "theme": theme, "request": request,
+                "requests": page.evaluate("settingsAdPushes"), "label_rect": label_geometry,
+                "page_errors": errors}
+    finally:
+        context.close()
+
+
 def main():
     server = None
     url = os.environ.get("LIVE_URL")
@@ -384,7 +496,7 @@ def main():
         server = ThreadingHTTPServer(("127.0.0.1", 0), partial(RangeHandler, directory=str(ROOT / "dist")))
         Thread(target=server.serve_forever, daemon=True).start()
         url = f"http://127.0.0.1:{server.server_port}/"
-    evidence = []
+    evidence, advertising = [], []
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=os.environ.get("CHROMIUM_EXECUTABLE"))
@@ -394,11 +506,15 @@ def main():
                     evidence.append(review_viewport(browser, url, width, height, theme))
                 review_friendly_actions(browser, url)
                 review_arrival(browser, url)
+                for width, height, theme in [(320, 568, "light"), (844, 390, "dark"),
+                                             (1280, 900, "high-contrast")]:
+                    advertising.append(review_settings_ad(browser, url, width, height, theme))
             finally:
                 browser.close()
     finally:
         CAPTURES.mkdir(parents=True, exist_ok=True)
         (CAPTURES / "native-attribution-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        (CAPTURES / "settings-ad-evidence.json").write_text(json.dumps(advertising, indent=2) + "\n")
         if server:
             server.shutdown()
     print("PASS design/friendliness gate: " + url, flush=True)

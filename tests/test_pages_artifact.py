@@ -1,4 +1,5 @@
 import io
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -18,6 +19,7 @@ class PagesArtifactTests(unittest.TestCase):
             script.write_bytes((ROOT / "scripts/check_pages_artifact.py").read_bytes())
             (root / "dist/cultural-routes").mkdir(parents=True)
             files = {"index.html": b"<title>MK Redway</title>",
+                     "ads.txt": (ROOT / "ads.txt").read_bytes(),
                      "cultural-routes/gpx-blue-main.gpx": b'<gpx><trk/></gpx>'}
             for name, body in files.items():
                 (root / "dist" / name).write_bytes(body)
@@ -49,3 +51,13 @@ class PagesArtifactTests(unittest.TestCase):
         result = self.check_archive(extra=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("archive differs", result.stderr)
+
+    def test_ads_txt_authorises_the_configured_google_publisher_and_is_packaged(self):
+        from release_upgrade_browser import runtime_files
+        runtime = runtime_files((ROOT / "scripts/build_site.py").read_text())
+        self.assertIn("ads.txt", runtime)
+        html = (ROOT / "index.html").read_text()
+        publisher = re.search(r"adsbygoogle\.js\?client=ca-(pub-\d+)", html).group(1)
+        records = [line.strip() for line in (ROOT / "ads.txt").read_text("ascii").splitlines()
+                   if line.strip() and not line.lstrip().startswith("#")]
+        self.assertEqual(records, [f"google.com, {publisher}, DIRECT, f08c47fec0942fa0"])

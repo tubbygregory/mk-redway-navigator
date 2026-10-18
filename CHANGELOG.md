@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.16
+
+- Publish the missing root ads.txt with the supplied Google publisher's authorisation record, and validate it in the runtime package and live HTTP checks.
+- Add the supplied responsive AdSense unit at the bottom of Settings, after About & Data, labelled “Advertisements”.
+- Constrain the unit to the Settings sheet and initialise it once only when visible, after the page finishes loading. Offline, background and hidden/collapsed Settings do not request it.
+- Preserve the existing single publisher bootstrap, privacy disclosure and routing/offline release gates.
+
 ## 0.14.15
 
 - Add the supplied Google AdSense publisher script asynchronously to the app head.

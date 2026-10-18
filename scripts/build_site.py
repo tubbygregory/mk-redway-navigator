@@ -13,7 +13,7 @@ from place_validation import validate_places
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 RUNTIME = ("index.html", "styles.css", "app.js", "routing.js", "navigation-icons.js", "about.js",
-           "sw.js", "manifest.webmanifest", "DATA-LICENCE.md", "LICENSE", ".nojekyll")
+           "sw.js", "manifest.webmanifest", "ads.txt", "DATA-LICENCE.md", "LICENSE", ".nojekyll")
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 def read_optional(path):
