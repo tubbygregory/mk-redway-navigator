@@ -30,11 +30,14 @@ function harness() {
   const state = {mode: 'cycle', pref: 'maximum', routeRevision: 1, stage: 'planner', route: null,
     importedRouteName: '', culturalRoute: null, userLatLng: null, start: null, end: null,
     routing: false, navigating: false, networkSource: 'bundled', themeChoice: 'light',
+    phoneShare: null, phoneShareRevision: 0,
     lastSegment: 0, navProgressMeters: 0, offRouteCount: 0, lastRerouteAt: 0,
     announcedFar: new Set(), announcedNear: new Set(), headingSupported: false};
   const el = id => {
     if (elements[id]) return elements[id];
-    const node = elements[id] = {hidden: true, style: {}, focus() {}, classList: {toggle() {}}, querySelectorAll: () => []};
+    const node = elements[id] = {hidden: true, open: false, disabled: false, style: {}, dataset: {},
+      focus() {}, select() {}, showModal() { this.open = true; }, close() { this.open = false; },
+      addEventListener() {}, setAttribute() {}, getClientRects: () => [], classList: {toggle() {}}, querySelectorAll: () => []};
     // Mirror the static legend's child text, as a real DOM parent does.
     if (id === 'culturalRouteLegend') Object.defineProperty(node, 'textContent', {
       get() { return [el('culturalJoinLabel').textContent, el('culturalTrackLabel').textContent].filter(Boolean).join(' · '); }
@@ -87,7 +90,7 @@ function harness() {
     ['  async function calculateRoute(', '  function xmlEscape('],
     ['  function xmlEscape(', '  function downloadText('],
     ['  function importedPlan(', '  async function loadOfficialGpx('],
-    ['  async function sendRouteToPhone(', '  function restoreSharedRoute('],
+    ['  function routeShareUrl(', '  function restoreSharedRoute('],
     ['  function xy(', '  function normalizeHeading('],
     ['  function nearestOnRoute(', '  function setUserMarker('],
     ['  function updateNavigation(', '  async function rerouteFromPosition('],
@@ -282,7 +285,12 @@ test('Cultural export and phone sharing keep the original source geometry during
   assert.equal((xml.match(/<trkpt /g) || []).length, source.length);
   for (const pair of source) assert.ok(xml.includes(`lat="${pair[0].toFixed(6)}" lon="${pair[1].toFixed(6)}"`));
   assert.ok(!xml.includes('lon="-0.750000"')); assert.match(xml, /Blue · Source &amp; route/);
-  await h.context.sendRouteToPhone(); assert.equal(h.files.length, 1); assert.equal(h.files[0].text, xml);
+  const sharing = h.context.sendRouteToPhone();
+  assert.equal(h.el('phoneShareDialog').open, true);
+  assert.equal(h.files.length, 0, 'Opening the dialog must not trigger an automatic download');
+  await sharing;
+  h.context.downloadPhoneGpx();
+  assert.equal(h.files.length, 1); assert.equal(h.files[0].text, xml);
 });
 
 test('generic outside-MK GPX keeps its original import, red display, mode change and export behaviour', () => {

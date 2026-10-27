@@ -28,6 +28,14 @@ OpenStreetMap supplies connected topology and access restrictions. Council route
 
 Endpoints snap to usable path segments while retaining one-way restrictions. Gaps up to 150 metres are shown as unverified approaches and included in estimates; larger gaps block navigation. Choose the actual entrance when a destination pin is away from a path. Estimates cannot account for every closure, surface condition or crossing.
 
+## Choosing a starting pin and sending a route to a phone
+
+Select the starting field, then **Choose on map**. Drag or zoom the map and tap/click the entrance or accessible point to use. Closing the picker cancels it and keeps the existing endpoints. This also works when planning how to join a Cultural Route: the joining leg is red and the official track keeps its designated colour. Pin selection requires neither a location prompt nor a geocoding request.
+
+On desktop, **Send to phone** opens a panel with a selectable route link and explicit **Copy link** and, where supported, **Share link** actions. Send the link to yourself through a messaging or email service, open it on the phone and tap Start. Copy/share failures and cancellation keep the panel available, including manual link copying. The link contains the start, destination, travel mode and preferences; the phone calculates the route using its available graph. No account, device pairing, shortener or transfer service is used.
+
+Imported and Cultural Route tracks offer **Download GPX** and supported native file sharing. Transfer the file to the phone and import it in Explore. Cultural Route export preserves the original source track; choose the joining journey on the phone. These actions provide a transfer mechanism, not automatic delivery to another device.
+
 ## Official MK route classification
 
 The build reads six explicitly selected Get Around MK KML/KMZ sources for Super Redway, Redway and Leisure Route geometry, then matches them onto OSM ways. Earlier extraction approaches risked collecting unrelated map traffic; the current extractor uses only the intended source files and validates their classes and feature counts.

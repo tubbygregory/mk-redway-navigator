@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.17
+
+- Offer “Choose on map” immediately when choosing a route start or destination, including Cultural Route joins, and keep it available with suggestions and results.
+- Preserve a Cultural Route’s designated colour and calculate its red joining leg from the chosen starting pin.
+- Cancel delayed navigation/GPS starts, older join calculations and stale endpoint-edit intent when choosing a replacement point; closing the picker restores the selected labels.
+- Make Send to phone open a persistent panel with a readable route link, explicit Copy/Share actions and useful recovery when browser capabilities fail or are cancelled.
+- Add explicit GPX sharing and download actions, with clear phone-import instructions and the original Cultural Route geometry preserved.
+
 ## 0.14.16
 
 - Publish the missing root ads.txt with the supplied Google publisher's authorisation record, and validate it in the runtime package and live HTTP checks.
