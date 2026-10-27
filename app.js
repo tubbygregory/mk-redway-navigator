@@ -202,6 +202,8 @@
     exploreFilter: 'all',
     importedRouteName: '',
     culturalRoute: null,
+    phoneShare: null,
+    phoneShareRevision: 0,
     nightThemeActive: false,
     lastThemeCheckAt: 0
   };
@@ -1401,6 +1403,7 @@
     } else {
       list.innerHTML = '<div class="result-message">Press Search for addresses and places. Suggestions use local MK map data.</div>';
     }
+    appendSearchMapChoice(list, context);
   }
 
   function normalizeSearchQuery(query) {
@@ -1516,6 +1519,7 @@
         .map(result => [Number(result.lat), Number(result.lon)])
         .filter(pair => pair.every(Number.isFinite));
       if (coords.length > 1) map.fitBounds(coords, {padding:[50,70], maxZoom:15});
+      appendSearchMapChoice(list, context);
     }
     const help = document.createElement('p');
     help.id = 'resultsPrecisionHelp';
@@ -1538,26 +1542,67 @@
       input.focus();
       input.select?.();
     });
-    const pin = document.createElement('button');
-    pin.type = 'button';
-    pin.className = 'secondary-action';
-    pin.textContent = 'Choose on map';
-    pin.addEventListener('click', () => beginResultMapPick(context));
     actions.appendChild(postcode);
-    actions.appendChild(pin);
+    actions.appendChild(searchMapButton(context));
     list.appendChild(actions);
+  }
+
+  function searchMapButton(context) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary-action';
+    button.textContent = 'Choose on map';
+    button.addEventListener('click', () => beginResultMapPick(context));
+    return button;
+  }
+
+  function appendSearchMapChoice(list, context) {
+    const actions = document.createElement('div');
+    actions.className = 'result-recovery-actions';
+    actions.appendChild(searchMapButton(context));
+    list.appendChild(actions);
+  }
+
+  function cancelPlannerSelectionWork() {
+    cancelNavigationStart();
+    state.editEndpoint = null;
+    const calculating = state.routing;
+    // Retire older calculations without discarding the current preview. The
+    // outstanding calculation still owns state.routing and its finally block.
+    state.routeRevision = (state.routeRevision || 0) + 1;
+    state.pendingRoute = false;
+    const cultural = state.culturalRoute;
+    if (cultural) cultural.joinRevision++;
+    el('startNavBtn').disabled = !state.route;
+    el('sendToPhoneBtn').disabled = !state.route;
+    if (cultural) {
+      const joining = cultural.phase === 'joining';
+      const following = cultural.phase === 'track';
+      setRouteStatus(joining ? 'Route to Cultural Route start / join · then ' + cultural.color + ' track'
+        : following ? cultural.color + ' Cultural Route · unverified track'
+        : 'Choose a starting point, or Start to use your location for the Cultural Route join.', 'warn');
+      el('retryRouteBtn').hidden = cultural.phase !== 'awaiting' || !state.start;
+    } else if (state.route) {
+      setRouteStatus(routeReadyStatus(), state.networkSource === 'bundled' ? 'good' : 'warn');
+      el('retryRouteBtn').hidden = true;
+    } else if (calculating) {
+      setRouteStatus('Choose a point, or retry the route when ready.');
+      el('retryRouteBtn').hidden = !state.start || !state.end;
+    }
   }
 
   function beginResultMapPick(context) {
     closeSearch();
+    cancelPlannerSelectionWork();
     if (context === 'start') cancelStartLocation();
     state.searchMapPickContext = {context, stage: state.stage};
     el('resultsTitle').textContent = context === 'start' ? 'Choose a starting point' : 'Choose a point on the map';
     const hint = document.createElement('div');
     hint.className = 'result-message';
-    hint.textContent = 'Tap the entrance or accessible point you want to use. Close this panel to cancel.';
+    hint.textContent = 'Drag or zoom the map, then tap or click the entrance or accessible point you want to use. Close this panel to cancel.';
     el('resultsList').replaceChildren(hint);
     el('resultsSheet').hidden = false;
+    setSheetCollapsed(el('resultsSheet'), false);
     el('routeSheet').hidden = true;
     el('closeResults').focus();
   }
@@ -1576,6 +1621,7 @@
 
   function openPlannerSearch(context) {
     if (state.stage !== 'planner') return;
+    cancelPlannerSelectionWork();
     state.searchMapPickContext = null;
     if (context === 'start') cancelStartLocation();
     searchRevision += 1;
@@ -1586,8 +1632,10 @@
     state.searchContext = context;
     el('routeSheet').hidden = true;
     el('resultsSheet').hidden = false;
+    setSheetCollapsed(el('resultsSheet'), false);
     el('resultsTitle').textContent = context === 'start' ? 'Choose a starting point' : 'Choose a destination';
-    el('resultsList').innerHTML = '<div class="result-message">Enter a place, address or postcode, then tap Search or use the keyboard’s search key.</div>';
+    el('resultsList').innerHTML = '<div class="result-message">Enter a place, address or postcode, or select “Choose on map” to drop a pin.</div>';
+    appendSearchMapChoice(el('resultsList'), context);
   }
 
   function closeSearch() {
@@ -1907,6 +1955,11 @@
   });
   el('closeResults').addEventListener('click', () => {
     closeSearch();
+    if (state.stage === 'planner') {
+      el('startSearch').blur();
+      el('endSearch').blur();
+      updatePlannerFields();
+    }
     if (state.pendingSaveKind) { finishSavedSearch(); renderSavedPlaces(); el('savedSheet').hidden = false; }
   });
   el('closePlace').addEventListener('click', () => {
@@ -3162,36 +3215,124 @@
     return url.href;
   }
 
+  function closePhoneShare() {
+    state.phoneShare = null;
+    state.phoneShareRevision = (state.phoneShareRevision || 0) + 1;
+    const dialog = el('phoneShareDialog');
+    if (dialog.open) dialog.close();
+  }
+
+  function phoneShareCurrent(payload) {
+    return state.phoneShare === payload && payload.revision === state.phoneShareRevision && el('phoneShareDialog').open;
+  }
+
+  async function copyPhoneRoute() {
+    const payload = state.phoneShare;
+    if (!payload || payload.kind !== 'link') return;
+    const button = el('phoneShareCopyBtn');
+    button.disabled = true;
+    el('phoneShareStatus').textContent = 'Copying route link…';
+    try {
+      if (typeof navigator.clipboard?.writeText !== 'function') throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(payload.url);
+      if (!phoneShareCurrent(payload)) return;
+      el('phoneShareStatus').textContent = 'Link copied. Paste it into a message or email to yourself, then open it on your phone.';
+    } catch (_) {
+      if (!phoneShareCurrent(payload)) return;
+      const field = el('phoneShareLink');
+      field.focus();
+      field.select();
+      el('phoneShareStatus').textContent = 'Automatic copy is unavailable. Copy the selected link using your browser or keyboard, then send it to your phone.';
+    } finally {
+      if (phoneShareCurrent(payload)) button.disabled = false;
+    }
+  }
+
+  async function sharePhoneRoute() {
+    const payload = state.phoneShare;
+    if (!payload?.data) return;
+    const button = el('phoneShareNativeBtn');
+    button.disabled = true;
+    el('phoneShareStatus').textContent = 'Opening your device’s sharing options…';
+    try {
+      await navigator.share(payload.data);
+      if (!phoneShareCurrent(payload)) return;
+      el('phoneShareStatus').textContent = payload.kind === 'link'
+        ? 'Link passed to your sharing app. Open it on your phone, then tap Start.'
+        : 'GPX file passed to your sharing app. Import it in Explore on your phone.';
+    } catch (error) {
+      if (!phoneShareCurrent(payload)) return;
+      const next = payload.kind === 'link' ? 'You can still copy the route link.' : 'You can still download the GPX file.';
+      el('phoneShareStatus').textContent = (error?.name === 'AbortError' ? 'Sharing cancelled. ' : 'Could not open sharing. ') + next;
+    } finally {
+      if (phoneShareCurrent(payload)) button.disabled = false;
+    }
+  }
+
+  function downloadPhoneGpx() {
+    const payload = state.phoneShare;
+    if (!payload || payload.kind !== 'gpx') return;
+    try {
+      downloadText(payload.filename, payload.fileText, payload.type);
+      el('phoneShareStatus').textContent = 'GPX download started. Send the file to your phone, then import it in Explore.';
+    } catch (_) {
+      el('phoneShareStatus').textContent = 'Could not start the GPX download. Try downloading again or use the sharing button if available.';
+    }
+  }
+
   async function sendRouteToPhone() {
     if (!state.route) return;
+    cancelNavigationStart();
+    cancelStartLocation();
+    closePhoneShare();
+    const payload = {revision: state.phoneShareRevision};
     if (state.route.imported || state.culturalRoute) {
-      const file = new File([routeToGpx(state.route, state.importedRouteName)], 'mk-redway-route.gpx', {type:'application/gpx+xml'});
-      if (navigator.canShare?.({files:[file]})) {
-        try { await navigator.share({files:[file], title:'Imported route'}); } catch (err) { if (err.name !== 'AbortError') toast('Could not share the GPX file'); }
-      } else {
-        downloadText(file.name, routeToGpx(state.route, state.importedRouteName), file.type);
-        toast('GPX exported — transfer this file to your phone and import it in Explore.', 6000);
+      Object.assign(payload, {kind: 'gpx', filename: 'mk-redway-route.gpx', type: 'application/gpx+xml',
+        fileText: routeToGpx(state.route, state.importedRouteName)});
+      try {
+        const data = {files: [new File([payload.fileText], payload.filename, {type: payload.type})], title: 'MK Redway GPX track'};
+        if (typeof navigator.share === 'function' && navigator.canShare?.(data)) payload.data = data;
+      } catch (_) {
+        // The download action remains available if native file sharing is unsupported.
       }
-      return;
+    } else {
+      payload.kind = 'link';
+      payload.url = routeShareUrl();
+      if (typeof navigator.share === 'function') payload.data = {title: 'MK Redway route', text: 'Open this route in MK Redway Navigator', url: payload.url};
     }
-    const url = routeShareUrl();
-    const data = {title:'MK Redway route', text:'Open this route in MK Redway Navigator', url};
-    try {
-      if (navigator.share) {
-        await navigator.share(data);
-        return;
-      }
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        toast('Route link copied — open it on your phone');
-        return;
-      }
-    } catch (err) {
-      if (err?.name === 'AbortError') return;
-      console.warn(err);
-    }
-    window.prompt('Copy this route link to your phone:', url);
+    state.phoneShare = payload;
+    const isLink = payload.kind === 'link';
+    el('phoneShareInstructions').textContent = isLink
+      ? 'Copy this link or share it in a message or email to yourself. Open it on your phone, then tap Start. The link includes your start, destination and route preferences.'
+      : state.culturalRoute
+        ? 'Share or download the original Cultural Route track, then import it in Explore on your phone. Choose how to join the track on your phone.'
+        : 'Share or download this GPX track, then import it in Explore on your phone.';
+    el('phoneShareLinkField').hidden = !isLink;
+    el('phoneShareLink').value = isLink ? payload.url : '';
+    el('phoneShareCopyBtn').hidden = !isLink;
+    el('phoneShareCopyBtn').disabled = false;
+    el('phoneShareDownloadBtn').hidden = isLink;
+    el('phoneShareNativeBtn').hidden = !payload.data;
+    el('phoneShareNativeBtn').disabled = false;
+    el('phoneShareNativeBtn').textContent = isLink ? 'Share link…' : 'Share GPX…';
+    el('phoneShareStatus').textContent = '';
+    el('phoneShareDialog').showModal();
   }
+
+  el('closePhoneShareBtn').addEventListener('click', closePhoneShare);
+  el('phoneShareCopyBtn').addEventListener('click', copyPhoneRoute);
+  el('phoneShareNativeBtn').addEventListener('click', sharePhoneRoute);
+  el('phoneShareDownloadBtn').addEventListener('click', downloadPhoneGpx);
+  el('phoneShareDialog').addEventListener('cancel', event => {
+    event.preventDefault();
+    closePhoneShare();
+  });
+  el('phoneShareDialog').addEventListener('close', () => {
+    if (!el('phoneShareDialog').open && state.phoneShare) {
+      state.phoneShare = null;
+      state.phoneShareRevision = (state.phoneShareRevision || 0) + 1;
+    }
+  });
 
   function restoreSharedRoute() {
     const params = new URLSearchParams(location.search);
@@ -4429,7 +4570,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.16';
+  el('app').dataset.appVersion = '0.14.17';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';

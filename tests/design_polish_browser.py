@@ -9,10 +9,12 @@ from advertising_fixture import ADSENSE_SCRIPT_PATTERN, ADSENSE_SCRIPT_URL, bloc
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import re
 from threading import Thread
+import xml.etree.ElementTree as ET
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -377,6 +379,122 @@ def review_arrival(browser, url):
         context.close()
 
 
+def review_planner_map_pick(browser, url, width, height):
+    """Choose a Cultural Route origin through the same map UI as any journey."""
+    from audit_browser import assert_source_geometry, exported_points
+
+    context, page, errors, searches = new_page(browser, url, width, height)
+    mobile = width < 900
+    source = ET.parse(ROOT / "cultural-routes/gpx-blue-main.gpx")
+    coords = [(float(point.get("lat")), float(point.get("lon")))
+              for point in source.findall(".//{*}trkpt")]
+    mercator = lambda lat: math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+    extent = {"west": min(lon for lat, lon in coords), "east": max(lon for lat, lon in coords),
+              "south": min(mercator(lat) for lat, lon in coords),
+              "north": max(mercator(lat) for lat, lon in coords)}
+
+    def map_position(lat, lon):
+        # Infer the screen projection from the real, fitted GPX path. This reads
+        # public SVG geometry, without reaching into application/Leaflet state.
+        page.locator(".cultural-route-line").evaluate("""path => new Promise((resolve, reject) => {
+            let previous='', stable=0; const started=performance.now();
+            const check=() => {
+                const b=path.getBoundingClientRect(), key=[b.x,b.y,b.width,b.height].join(',');
+                stable=key===previous ? stable+1 : 0; previous=key;
+                if (stable>=4) resolve();
+                else if (performance.now()-started>3000) reject(new Error('Map did not settle after fitting the Cultural Route'));
+                else requestAnimationFrame(check);
+            }; check();
+        })""")
+        point = page.locator(".cultural-route-line").evaluate("""(path, geo) => {
+            const b=path.getBBox(), p=new DOMPoint(
+                b.x+(geo.lon-geo.west)/(geo.east-geo.west)*b.width,
+                b.y+(geo.north-geo.y)/(geo.north-geo.south)*b.height
+            ).matrixTransform(path.getScreenCTM());
+            const target=document.elementFromPoint(p.x,p.y);
+            return {x:p.x,y:p.y,exposed:!!target?.closest('#map') && !target.closest('.bottom-sheet')};
+        }""", {**extent, "lat": lat, "lon": lon, "y": mercator(lat)})
+        assert point["exposed"] and 0 < point["x"] < width and 0 < point["y"] < height, point
+        return {"x": point["x"], "y": point["y"]}
+
+    def activate(locator):
+        locator.tap() if mobile else locator.click()
+
+    def choose_on_map(query=None):
+        activate(page.locator("#startSearch"))
+        if query:
+            page.locator("#startSearch").fill(query)
+            expect(page.locator("#resultsList .typeahead-item").first).to_be_visible()
+        action = page.locator("#resultsList").get_by_role("button", name="Choose on map", exact=True)
+        action.scroll_into_view_if_needed()
+        hit(page, "#resultsList .result-recovery-actions button:last-child")
+        activate(action)
+        expect(page.locator("#resultsTitle")).to_have_text("Choose a starting point")
+        expect(page.locator("#routeSheet")).to_be_hidden()
+        hit(page, "#closeResults")
+
+    def select_point(lat, lon):
+        point = map_position(lat, lon)
+        page.touchscreen.tap(point["x"], point["y"]) if mobile else page.mouse.click(point["x"], point["y"])
+        expect(page.locator("#resultsSheet")).to_be_hidden()
+        expect(page.locator("#startSearch")).to_have_value("Dropped pin")
+        expect(page.locator("#routeStatus")).to_have_text("Route to Cultural Route start / join · then Blue track")
+        expect(page.locator("#startNavBtn")).to_be_enabled()
+        expect(page.locator(".route-line")).to_have_count(1)
+        assert page.locator(".route-line").evaluate("el => getComputedStyle(el).stroke") == "rgb(169, 37, 29)"
+        assert page.locator(".cultural-route-line").evaluate("el => getComputedStyle(el).stroke") == "rgb(60, 120, 216)"
+        expect(page.locator("#culturalJoinLabel")).to_have_text("Red: start / join")
+        expect(page.locator("#culturalTrackLabel")).to_contain_text("Blue: official GPX track")
+        assert_source_geometry(exported_points(page), "blue", "main")
+        if page.locator("#routeMoreBtn").get_attribute("aria-expanded") == "true":
+            activate(page.locator("#routeMoreBtn"))
+
+    def preview():
+        return page.evaluate("""() => ({start:document.getElementById('startSearch').value,
+            end:document.getElementById('endSearch').value,
+            distance:document.getElementById('distanceStat').textContent,
+            status:document.getElementById('routeStatus').textContent,
+            join:document.querySelector('.route-line').getAttribute('d')})""")
+
+    try:
+        page.locator("#exploreRoutesBtn").click()
+        page.locator(".route-blue").get_by_role("button", name="Full route", exact=True).click()
+        expect(page.locator("#routeStatus")).to_contain_text("Choose a starting point")
+        expect(page.locator(".cultural-route-line")).to_have_count(1)
+        choose_on_map()
+        select_point(52.0467, -.7378)
+        before_cancel = preview()
+        choose_on_map("Campbell")
+        activate(page.locator("#closeResults"))
+        expect(page.locator("#routeSheet")).to_be_visible()
+        assert preview() == before_cancel, "Cancelling map selection changed the previous origin/route"
+        other = exposed_map_point(page)
+        page.touchscreen.tap(other["x"], other["y"]) if mobile else page.mouse.click(other["x"], other["y"])
+        assert preview() == before_cancel, "A map tap after cancellation changed the route"
+        choose_on_map("Campbell")
+        # A point selection centres the map closely on that origin. Use the
+        # map's native keyboard zoom so the complete public GPX extent and the
+        # second landmark are exposed again before projecting the next tap.
+        for _ in range(3):
+            previous = page.locator(".cultural-route-line").get_attribute("d")
+            page.locator("#map").press("-")
+            page.wait_for_function("before => document.querySelector('.cultural-route-line')?.getAttribute('d') !== before", arg=previous)
+        select_point(52.025, -.783)
+        assert not searches, searches
+        assert page.evaluate("window.designGeo.requests + window.designGeo.watches") == 0, "Choosing a start pin requested GPS"
+        assert not errors, errors
+        screenshot(page, f"{width}x{height}-cultural-start-pin")
+        print(f"PASS start pin {width}x{height}: initial/typeahead map choice, native selection/cancel, red join and unchanged Blue source, no GPS/geocoder", flush=True)
+        return {"viewport": {"width": width, "height": height}, "start": page.locator("#startSearch").input_value(),
+                "geocoder_requests": searches, "gps_requests": page.evaluate("window.designGeo"),
+                "page_errors": errors, "cancel_retained_preview": True, "source_geometry_preserved": True}
+    except Exception:
+        screenshot(page, f"{width}x{height}-cultural-start-pin-failure")
+        raise
+    finally:
+        context.close()
+
+
 def review_settings_ad(browser, url, width, height, theme):
     """A delayed, isolated provider must not process a hidden or repeated unit."""
     context = browser.new_context(viewport={"width": width, "height": height},
@@ -496,7 +614,7 @@ def main():
         server = ThreadingHTTPServer(("127.0.0.1", 0), partial(RangeHandler, directory=str(ROOT / "dist")))
         Thread(target=server.serve_forever, daemon=True).start()
         url = f"http://127.0.0.1:{server.server_port}/"
-    evidence, advertising = [], []
+    evidence, advertising, map_picks = [], [], []
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=os.environ.get("CHROMIUM_EXECUTABLE"))
@@ -506,6 +624,8 @@ def main():
                     evidence.append(review_viewport(browser, url, width, height, theme))
                 review_friendly_actions(browser, url)
                 review_arrival(browser, url)
+                for width, height in [(390, 844), (1280, 900)]:
+                    map_picks.append(review_planner_map_pick(browser, url, width, height))
                 for width, height, theme in [(320, 568, "light"), (844, 390, "dark"),
                                              (1280, 900, "high-contrast")]:
                     advertising.append(review_settings_ad(browser, url, width, height, theme))
@@ -515,6 +635,7 @@ def main():
         CAPTURES.mkdir(parents=True, exist_ok=True)
         (CAPTURES / "native-attribution-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
         (CAPTURES / "settings-ad-evidence.json").write_text(json.dumps(advertising, indent=2) + "\n")
+        (CAPTURES / "planner-map-pick-evidence.json").write_text(json.dumps(map_picks, indent=2) + "\n")
         if server:
             server.shutdown()
     print("PASS design/friendliness gate: " + url, flush=True)

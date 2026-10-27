@@ -4,10 +4,11 @@ from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+import json
 import os
 import re
 import xml.etree.ElementTree as ET
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlsplit
 from playwright.sync_api import sync_playwright, expect
 from browser_smoke import plan
 
@@ -960,6 +961,201 @@ def review(browser, url):
         print(f'PASS audit {width}x{height}: ten Cultural Route source geometries/local failure recovery, GPX validation/security/export/mode/off-track and local suggestions/shared route')
         ctx.close()
 
+def review_phone_sharing(browser, url):
+    """Use the real handoff controls; isolate only optional browser API failures."""
+    context = browser.new_context(viewport={'width': 1280, 'height': 900},
+                                  service_workers='block', accept_downloads=True)
+    block_adsense(context)
+    origin = urlsplit(url)
+    context.grant_permissions(['clipboard-read', 'clipboard-write'],
+                              origin=f'{origin.scheme}://{origin.netloc}')
+    context.add_init_script("""(() => {
+        window.phoneLocationRequests = 0;
+        for (const name of ['getCurrentPosition', 'watchPosition']) {
+            const original = navigator.geolocation[name].bind(navigator.geolocation);
+            navigator.geolocation[name] = (...args) => {
+                window.phoneLocationRequests++; return original(...args);
+            };
+        }
+        window.phoneNativeShares = [];
+        Object.defineProperty(navigator, 'share', {configurable:true, value:async data => {
+            window.phoneNativeShares.push({url:data.url, files:data.files?.length || 0});
+            throw new DOMException('Isolated native sharing failure', 'NotAllowedError');
+        }});
+        Object.defineProperty(navigator, 'canShare', {configurable:true, value:() => false});
+    })();""")
+    page = context.new_page()
+    page.set_default_timeout(30000)
+    errors, dialogs = [], []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.on('dialog', lambda dialog: (dialogs.append(dialog.type), dialog.dismiss()))
+    page.route('**/nominatim.openstreetmap.org/**', lambda route: route.abort())
+    mobile = None
+    evidence = {}
+
+    def dialog_hit(selector):
+        control = page.locator(selector)
+        expect(control).to_be_visible()
+        expect(control).to_be_enabled()
+        assert control.evaluate("""el => {
+            const r=el.getBoundingClientRect();
+            return r.width>=44 && r.height>=44 && r.left>=0 && r.top>=0 &&
+                r.right<=innerWidth && r.bottom<=innerHeight &&
+                el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));
+        }"""), ('Phone sharing control is not natively reachable', selector)
+
+    try:
+        page.goto(url, wait_until='networkidle')
+        if page.locator('#locationIntroDismiss').is_visible():
+            page.locator('#locationIntroDismiss').click()
+        plan(page, '52.0467,-0.7378', '52.025,-0.783')
+        expect(page.locator('#routeStatus')).to_have_text('Route ready')
+        for selector in ['#preferLitBtn', '#preferSuperBtn']:
+            page.locator(selector).click()
+            expect(page.locator(selector)).to_have_attribute('aria-checked', 'true')
+        page.locator('#walkBtn').click()
+        expect(page.locator('#routeStatus')).to_have_text('Route ready')
+        expect(page.locator('#sendToPhoneBtn')).to_be_enabled()
+        before_gps = page.evaluate('phoneLocationRequests')
+        page.locator('#sendToPhoneBtn').click()
+        expect(page.get_by_role('dialog', name='Open on your phone')).to_be_visible()
+        expect(page.locator('#phoneShareLink')).to_have_attribute('readonly', '')
+        assert page.evaluate('phoneNativeShares.length') == 0, 'Opening the dialog invoked native Share'
+        for selector in ['#closePhoneShareBtn', '#phoneShareCopyBtn']:
+            dialog_hit(selector)
+        copied = page.locator('#phoneShareLink').input_value()
+        parameters = parse_qs(urlsplit(copied).query)
+        assert parameters == {'from': ['52.046700,-0.737800'], 'to': ['52.025000,-0.783000'],
+                              'mode': ['walk'], 'pref': ['maximum'], 'lit': ['1'], 'super': ['1']}, parameters
+        page.locator('#phoneShareCopyBtn').click()
+        expect(page.locator('#phoneShareStatus')).to_contain_text('Link copied')
+        assert page.evaluate('navigator.clipboard.readText()') == copied, 'Native clipboard does not contain the displayed link'
+        # A denied or absent API must retain an actually selected manual link.
+        page.evaluate("""() => {
+            window.originalPhoneClipboard = navigator.clipboard;
+            Object.defineProperty(navigator,'clipboard',{configurable:true,
+                value:{writeText:async()=>{throw new DOMException('Isolated clipboard denial','NotAllowedError')}}});
+        }""")
+        page.locator('#phoneShareCopyBtn').click()
+        expect(page.locator('#phoneShareStatus')).to_contain_text('Automatic copy is unavailable')
+        expect(page.locator('#phoneShareLink')).to_be_focused()
+        assert page.locator('#phoneShareLink').evaluate('el => el.selectionStart===0 && el.selectionEnd===el.value.length')
+        page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined})")
+        page.locator('#phoneShareCopyBtn').click()
+        expect(page.locator('#phoneShareStatus')).to_contain_text('Copy the selected link')
+        page.locator('#phoneShareNativeBtn').click()
+        expect(page.locator('#phoneShareStatus')).to_contain_text('Could not open sharing')
+        expect(page.locator('#phoneShareDialog')).to_be_visible()
+        page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:window.originalPhoneClipboard})")
+        page.locator('#phoneShareCopyBtn').click()
+        expect(page.locator('#phoneShareStatus')).to_contain_text('Link copied')
+        assert page.evaluate('navigator.clipboard.readText()') == copied
+        # Chromium's native dialog visits browser chrome (reported as BODY) at
+        # the Tab boundary. Background app controls must remain unfocusable.
+        native_focus = []
+        for _ in range(6):
+            page.keyboard.press('Tab')
+            focus = page.locator('#phoneShareDialog').evaluate("""el => ({
+                open:el.open, contained:el.contains(document.activeElement),
+                tag:document.activeElement?.tagName,
+                active:document.activeElement?.outerHTML.slice(0,400)
+            })""")
+            assert focus['contained'] or focus['tag'] == 'BODY', focus
+            native_focus.append(focus)
+        blocked_focus = []
+        for selector in ['#sendToPhoneBtn', '#startSearch']:
+            attempt = page.locator(selector).evaluate("""el => {
+                const visible=el.getClientRects().length>0 && !el.disabled;
+                el.focus();
+                return {visible,blocked:document.activeElement!==el};
+            }""")
+            assert attempt['visible'] and attempt['blocked'], (selector, attempt)
+            blocked_focus.append({'selector': selector, **attempt})
+        (ROOT / 'test-results').mkdir(exist_ok=True)
+        page.screenshot(path=str(ROOT / 'test-results' / 'phone-sharing-link-desktop.png'))
+        page.set_viewport_size({'width': 320, 'height': 568})
+        dialog_hit('#closePhoneShareBtn')
+        dialog_hit('#phoneShareCopyBtn')
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        page.screenshot(path=str(ROOT / 'test-results' / 'phone-sharing-link-320.png'))
+        page.set_viewport_size({'width': 1280, 'height': 900})
+        page.keyboard.press('Escape')
+        expect(page.locator('#phoneShareDialog')).to_be_hidden()
+        expect(page.locator('#sendToPhoneBtn')).to_be_focused()
+        assert page.evaluate('phoneLocationRequests') == before_gps, 'Sharing requested location'
+
+        mobile = browser.new_context(viewport={'width': 390, 'height': 844}, service_workers='block')
+        block_adsense(mobile)
+        mobile.add_init_script("""(() => {
+            window.sharedPhoneGps = 0;
+            for (const name of ['getCurrentPosition','watchPosition']) {
+                const original=navigator.geolocation[name].bind(navigator.geolocation);
+                navigator.geolocation[name]=(...args)=>{window.sharedPhoneGps++;return original(...args)};
+            }
+        })();""")
+        phone = mobile.new_page()
+        phone.set_default_timeout(30000)
+        phone.on('pageerror', lambda error: errors.append(str(error)))
+        phone.route('**/nominatim.openstreetmap.org/**', lambda route: route.abort())
+        phone.goto(copied, wait_until='networkidle')
+        expect(phone.locator('#routeStatus')).to_have_text('Route ready')
+        expect(phone.locator('#startSearch')).to_have_value('Shared route start')
+        expect(phone.locator('#endSearch')).to_have_value('Shared route destination')
+        expect(phone.locator('#walkBtn')).to_have_class('mode-chip active')
+        for selector in ['#preferLitBtn', '#preferSuperBtn']:
+            expect(phone.locator(selector)).to_have_attribute('aria-checked', 'true')
+        assert phone.evaluate('sharedPhoneGps') == 0, 'Opening the transferred link requested GPS'
+        mobile.close(); mobile = None
+
+        upload(page, gpx(POINTS, 'Phone &lt;route&gt; &amp; river'))
+        expect(page.locator('#sendToPhoneBtn')).to_be_enabled()
+        page.locator('#sendToPhoneBtn').click()
+        expect(page.locator('#phoneShareLinkField')).to_be_hidden()
+        expect(page.locator('#phoneShareNativeBtn')).to_be_hidden()
+        dialog_hit('#phoneShareDownloadBtn')
+        with page.expect_download() as downloaded:
+            page.locator('#phoneShareDownloadBtn').click()
+        xml = Path(downloaded.value.path()).read_text()
+        document = ET.fromstring(xml)
+        points = [(float(p.get('lat')), float(p.get('lon'))) for p in document.findall('.//{*}trkpt')]
+        assert points == [(52.025, -.783), (52.026, -.7815), (52.027, -.780)], points
+        assert document.findtext('.//{*}trk/{*}name') == 'Phone <route> & river'
+        assert '&lt;route&gt; &amp; river' in xml
+        expect(page.locator('#phoneShareStatus')).to_contain_text('GPX download started')
+        page.locator('#closePhoneShareBtn').click()
+
+        # The original Cultural track, not its red connector, must be transferred.
+        page.locator('#plannerBack').click()
+        page.locator('#exploreRoutesBtn').click()
+        page.locator('.route-blue').get_by_role('button', name='Full route', exact=True).click()
+        page.locator('#startSearch').fill('52.0467,-0.7378')
+        page.locator('#startSearch').press('Enter')
+        page.get_by_role('button', name='Map coordinates', exact=False).click()
+        expect(page.locator('#routeStatus')).to_have_text('Route to Cultural Route start / join · then Blue track')
+        page.locator('#sendToPhoneBtn').click()
+        expect(page.locator('#phoneShareInstructions')).to_contain_text('original Cultural Route')
+        with page.expect_download() as downloaded:
+            page.locator('#phoneShareDownloadBtn').click()
+        document = ET.fromstring(Path(downloaded.value.path()).read_text())
+        cultural = [(float(p.get('lat')), float(p.get('lon'))) for p in document.findall('.//{*}trkpt')]
+        assert_source_geometry(cultural, 'blue', 'main')
+        page.screenshot(path=str(ROOT / 'test-results' / 'phone-sharing-cultural-gpx.png'))
+        assert not dialogs, ('Phone transfer relied on a browser prompt', dialogs)
+        assert not errors, errors
+        evidence = {'url': url, 'copied_link': copied, 'real_clipboard_verified': True,
+                    'shared_link_mobile_gps_requests': 0, 'sharing_gps_requests': 0,
+                    'native_share_failure': page.evaluate('phoneNativeShares'),
+                    'native_modal_focus': native_focus, 'blocked_background_focus': blocked_focus,
+                    'imported_gpx_points': len(points), 'cultural_source_points': len(cultural),
+                    'browser_dialogs': dialogs, 'page_errors': errors}
+        print('PASS Send to phone: actual button/dialog, native clipboard and manual/native failure recovery, mobile link restore without GPS, GPX/Cultural source transfer', flush=True)
+    finally:
+        (ROOT / 'test-results').mkdir(exist_ok=True)
+        (ROOT / 'test-results' / 'phone-sharing-evidence.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        if mobile: mobile.close()
+        context.close()
+
+
 def main():
     server=ThreadingHTTPServer(('127.0.0.1',0),partial(SimpleHTTPRequestHandler,directory=str(ROOT/'dist')))
     Thread(target=server.serve_forever,daemon=True).start()
@@ -970,6 +1166,7 @@ def main():
             review_action_contrast(browser, url)
             review_saved_place_matrix(browser, url)
             review_cultural_navigation(browser, url)
+            review_phone_sharing(browser, url)
             review(browser, url)
             browser.close()
     finally:server.shutdown()

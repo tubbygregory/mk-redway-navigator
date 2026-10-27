@@ -28,7 +28,7 @@ function harness() {
     state, MK, hav, el, searchRevision: 0, sheetGestureUntil: 0, performance: {now: () => 100},
     edgeClass: () => 'road', syncRoutePreferenceControls() {},
     searchResultLayer: {clearLayers() { markers.length = 0; }},
-    cancelStartLocation() {}, setRouteSheetCollapsed() {},
+    cancelStartLocation() {}, cancelNavigationStart() {}, setRouteSheetCollapsed() {}, setSheetCollapsed() {},
     formatDistance: distance => `${Math.round(distance)} m`,
     document: {createElement: node}, navigator: {onLine: true},
     URL, AbortController, setTimeout, clearTimeout, location: {href: 'https://example.test/navigator/'}, OFFLINE_CACHE: 'mk-redway-offline-v1',

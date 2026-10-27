@@ -1978,6 +1978,19 @@ html[data-theme="high-contrast"].ios-standalone #app::after {
 .results-help { padding: 8px 2px 12px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .result-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .result-recovery-actions button { flex: 1 1 120px; min-height: 44px; }
+.phone-share-dialog { width: min(480px, calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))); max-height: calc(var(--visual-height, 100dvh) - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 20px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); }
+.phone-share-dialog::backdrop { background: rgba(0,0,0,.48); }
+.phone-share-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; background: var(--surface-solid); }
+.phone-share-heading h2 { margin: 8px 0 0; font-size: 20px; line-height: 1.3; }
+.phone-share-heading button { flex: 0 0 44px; width: 44px; height: 44px; }
+.phone-share-dialog p { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.phone-share-link-field { margin-bottom: 14px; }
+.phone-share-link-field label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+.phone-share-link-field textarea { display: block; width: 100%; padding: 10px; resize: vertical; min-height: 88px; border: 1px solid var(--border); border-radius: 12px; background: var(--soft); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.phone-share-link-field textarea:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
+.phone-share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.phone-share-actions button { flex: 1 1 150px; min-height: 48px; }
+.phone-share-dialog .phone-share-status { min-height: 3em; margin: 12px 0 0; color: var(--text); }
 .location-recovery { margin-top: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
 .location-recovery p { margin: 0 0 10px; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .location-recovery button { min-height: 44px; }
