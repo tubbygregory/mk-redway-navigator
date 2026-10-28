@@ -393,19 +393,32 @@ def review_planner_map_pick(browser, url, width, height):
               "south": min(mercator(lat) for lat, lon in coords),
               "north": max(mercator(lat) for lat, lon in coords)}
 
-    def map_position(lat, lon):
-        # Infer the screen projection from the real, fitted GPX path. This reads
-        # public SVG geometry, without reaching into application/Leaflet state.
+    def settle_map():
+        # A ready route can still be zooming/reprojecting. Read SVG coordinates
+        # only after native map animation ends and both rendered paths settle.
         page.locator(".cultural-route-line").evaluate("""path => new Promise((resolve, reject) => {
             let previous='', stable=0; const started=performance.now();
             const check=() => {
-                const b=path.getBoundingClientRect(), key=[b.x,b.y,b.width,b.height].join(',');
-                stable=key===previous ? stable+1 : 0; previous=key;
+                const map=path.closest('#map');
+                const animating=!!map.querySelector('.leaflet-zoom-anim, .leaflet-pan-anim');
+                const paths=[...map.querySelectorAll('.route-line, .cultural-route-line')];
+                const key=JSON.stringify(paths.map(el => {
+                    const b=el.getBoundingClientRect(), m=el.getScreenCTM();
+                    return [el.getAttribute('d'), b.x, b.y, b.width, b.height,
+                        m?.a, m?.b, m?.c, m?.d, m?.e, m?.f];
+                }));
+                stable=!animating && key===previous ? stable+1 : 0; previous=key;
                 if (stable>=4) resolve();
-                else if (performance.now()-started>3000) reject(new Error('Map did not settle after fitting the Cultural Route'));
+                else if (performance.now()-started>3000) reject(new Error(
+                    `Cultural Route map render did not settle: animation=${animating}, stableFrames=${stable}, paths=${paths.length}`));
                 else requestAnimationFrame(check);
             }; check();
         })""")
+
+    def map_position(lat, lon):
+        # Infer the screen projection from the real, fitted GPX path. This reads
+        # public SVG geometry, without reaching into application/Leaflet state.
+        settle_map()
         point = page.locator(".cultural-route-line").evaluate("""(path, geo) => {
             const b=path.getBBox(), p=new DOMPoint(
                 b.x+(geo.lon-geo.west)/(geo.east-geo.west)*b.width,
@@ -450,6 +463,7 @@ def review_planner_map_pick(browser, url, width, height):
             activate(page.locator("#routeMoreBtn"))
 
     def preview():
+        settle_map()
         return page.evaluate("""() => ({start:document.getElementById('startSearch').value,
             end:document.getElementById('endSearch').value,
             distance:document.getElementById('distanceStat').textContent,
@@ -467,10 +481,12 @@ def review_planner_map_pick(browser, url, width, height):
         choose_on_map("Campbell")
         activate(page.locator("#closeResults"))
         expect(page.locator("#routeSheet")).to_be_visible()
-        assert preview() == before_cancel, "Cancelling map selection changed the previous origin/route"
+        after_cancel = preview()
+        assert after_cancel == before_cancel, ("Cancelling map selection changed the previous origin/route", before_cancel, after_cancel)
         other = exposed_map_point(page)
         page.touchscreen.tap(other["x"], other["y"]) if mobile else page.mouse.click(other["x"], other["y"])
-        assert preview() == before_cancel, "A map tap after cancellation changed the route"
+        after_tap = preview()
+        assert after_tap == before_cancel, ("A map tap after cancellation changed the route", before_cancel, after_tap)
         choose_on_map("Campbell")
         # A point selection centres the map closely on that origin. Use the
         # map's native keyboard zoom so the complete public GPX extent and the
