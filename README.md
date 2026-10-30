@@ -1,141 +1,108 @@
+<img src="icons/app-logo.svg" alt="MK Redway Navigator app icon" width="96" height="96" />
+
 # MK Redway Navigator
 
-Walking and cycling navigation for Milton Keynes, with a preference for the Redway network. An installable, independent web app currently in beta.
+Find your way around Milton Keynes on foot or by bike, with the Redway network at the heart of your journey.
 
-**[Open MK Redway Navigator — mkredway.co.uk](https://mkredway.co.uk)**
+Plan a trip, compare routes and follow directions on your phone. MK Redway Navigator runs in your browser, can be added to your Home Screen and needs no account.
 
-## What it does
+**[Open MK Redway Navigator → mkredway.co.uk](https://mkredway.co.uk)**
 
-Plan a journey around Milton Keynes, compare cycling routes and follow location-based instructions. No account is required.
+The app is an independent project, currently in **beta**. Feedback from people walking and cycling in MK helps make it more reliable for everyday journeys.
 
-## Key features
+## Plan your first journey
 
-- Cycling preferences: Maximum Redway, Balanced and Fastest; separate walking mode, plus optional preferences for mapped lighting and named Super Routes.
-- Route previews with distance, estimated time, complete route mix, road share, mapped underpasses/crossings/unlit distance and alternative-route labels on the map.
-- Live navigation, spoken guidance, automatic rerouting, H/V grid-road underpass wording and low-glare night mode.
-- Choose your map icon in Settings → Appearance: Red dot, Arrow, Cyclist or Concrete Cow. The choice stays on this device and works offline; icons use the app red with white outlines.
-- Home, Work and favourites saved on this device from search or a chosen map pin, with clear Saved feedback, quick shortcuts and local MK street, place and address suggestions.
-- Explore MK cards for the five Get Around MK Cultural Routes, with source-verified full loops and shortcut GPX tracks available inside the app and offline, plus official route-guide links. Shortcut files are segments, not complete shorter loops.
-- Cultural Route navigation includes a calculated red journey to the chosen track start/join; the unchanged source track keeps its designated colour. Its path types, access and conditions remain unverified GPX data.
-- GPX import/export and shareable planned-route links for moving a route from desktop to phone.
-- Downloadable Milton Keynes map and routing data managed from Settings.
-- Map key and current-location controls available while browsing.
-- Mobile portrait/landscape layouts, desktop planning controls, explicit appearance choices and Home Screen installation.
+1. **Find your destination.** Search for a place, address or postcode, then choose a result and check its position on the map.
+2. **Tap Directions.** Use your location as the start, or select the starting field to choose somewhere else.
+3. **Choose your route.** Switch between Cycle and Walk. For cycling, compare the route options, estimated time and how much of the journey uses Redways or roads.
+4. **On your phone, tap Start.** Allow location access for live navigation. Voice guidance and automatic rerouting are available along the way.
 
-## Routing philosophy
+Want to start at a particular entrance or meeting point? Select the starting field, choose **Choose on map**, then drag or zoom the map and tap your point. Close the picker to cancel. You can choose both endpoints manually and plan without using GPS.
 
-OpenStreetMap supplies connected topology and access restrictions. Council route classifications influence preferences; they do not establish legal access. Maximum Redway favours classified paths, Balanced trades preference against distance, and Fastest prioritises estimated travel time.
+Search covers the app's Milton Keynes map area, rather than every MK postcode or the whole council area. Some addresses and house numbers are missing from the map; a building or street match may be approximate. Check the pin and choose the entrance you actually need.
 
-Endpoints snap to usable path segments while retaining one-way restrictions. Gaps up to 150 metres are shown as unverified approaches and included in estimates; larger gaps block navigation. Choose the actual entrance when a destination pin is away from a path. Estimates cannot account for every closure, surface condition or crossing.
+## Pick the route that suits you
 
-## Choosing a starting pin and sending a route to a phone
+| Cycling preference | What it favours |
+| --- | --- |
+| **Maximum Redway** | More use of paths classified as Redway routes. |
+| **Balanced** | A balance between Redway preference and distance. |
+| **Fastest** | A more direct route, with less emphasis on staying on Redways. |
 
-Select the starting field, then **Choose on map**. Drag or zoom the map and tap/click the entrance or accessible point to use. Closing the picker cancels it and keeps the existing endpoints. This also works when planning how to join a Cultural Route: the joining leg is red and the official track keeps its designated colour. Pin selection requires neither a location prompt nor a geocoding request.
+You can also turn on **Prefer lit paths** or **Prefer Super Routes**. These are preferences based on available mapping, so a route may still include roads, unlit paths or stretches where lighting is unknown.
 
-On desktop, **Send to phone** opens a panel with a selectable route link and explicit **Copy link** and, where supported, **Share link** actions. Send the link to yourself through a messaging or email service, open it on the phone and tap Start. Copy/share failures and cancellation keep the panel available, including manual link copying. The link contains the start, destination, travel mode and preferences; the phone calculates the route using its available graph. No account, device pairing, shortener or transfer service is used.
+Route details help you compare distance, time, road use, crossings and underpasses. Mapping and estimates can be incomplete: check current access, closures and conditions, especially where an approach to an entrance is marked as unverified. If a pin is too far from a usable path, choose a closer entrance.
 
-Imported and Cultural Route tracks offer **Download GPX** and supported native file sharing. Transfer the file to the phone and import it in Explore. Cultural Route export preserves the original source track; choose the joining journey on the phone. These actions provide a transfer mechanism, not automatic delivery to another device.
+## Keep your regular places handy
 
-## Official MK route classification
+Open **Saved** to set Home, Work and favourite places. Find them with a search or use **Choose on map** to drop a pin. Saved places appear as shortcuts for your next journey.
 
-The build reads six explicitly selected Get Around MK KML/KMZ sources for Super Redway, Redway and Leisure Route geometry, then matches them onto OSM ways. Earlier extraction approaches risked collecting unrelated map traffic; the current extractor uses only the intended source files and validates their classes and feature counts.
+In **Settings**, you can change voice guidance, distance units and the theme. You can also choose your map icon: **Red dot, Arrow, Cyclist or Concrete Cow**.
 
-Council classifications take priority where matched. OSM tags, route relations and official corridor rules provide fallback classifications elsewhere. Validated cached data can be retained during source outages. About & Data and the build metadata identify this state.
+Places and settings stay in the browser where you saved them; they do not sync between devices.
 
-## Offline operation
+## Take MK offline
 
-Choose **Settings → Offline Milton Keynes → Download** before leaving signal. Saved destinations, map browsing and local routing work offline after the required files are cached. The app also bundles mapped MK places and addresses for local suggestions and offline search. Submitted online searches add results from Nominatim, within the same MK bounds; typing sends no geocoding requests.
+Before travelling without signal, open **Settings → Offline Milton Keynes → Download** while you have an internet connection. Wait until it says **Ready for offline journeys**.
 
-Address coverage follows OpenStreetMap and is incomplete. Exact mapped house numbers are kept distinct. Building/street matches are labelled as approximate when a requested house number is missing; their coordinates do not establish an entrance. Check the map and choose the actual entrance. The supported map area is not the entire council boundary or every postcode beginning with MK.
+With the files downloaded, you can browse the MK map, plan local routes, use saved places and search the mapped local places and addresses offline. Online search results, external route guides and advertising still need a connection.
 
-Browser storage can be evicted or cleared. iOS can suspend GPS and speech when the app is backgrounded or the screen is locked.
+Your device can clear browser storage, so check the offline status before heading out. Downloading the map is separate from adding the app to your Home Screen.
 
-## Architecture
+## Add it to your Home Screen
 
-- `index.html`, `styles.css`, `app.js`: interface, map and navigation lifecycle.
-- `navigation-icons.js`: local vector map-marker artwork and validated icon choices.
-- `routing.js`: shared routing engine used by the browser and regression tests.
-- `about.js`: independent data and privacy presentation.
-- `sw.js`: app-shell caching and offline PMTiles range responses.
-- `scripts/`: council extraction, OSM network generation, basemap extraction and validated site packaging.
-- `data/data-meta.json`: generated runtime provenance, format, hashes and freshness.
-- `data/places.json`: generated MK-only OpenStreetMap place/address index with source identity, coordinates and location precision; no raw extract is deployed.
-- `dist/`: generated browser-only deployment artifact.
+Open **Settings → Install app → Install** for your device's installation steps. On iPhone, use Safari's Share menu and choose **Add to Home Screen**. Supported Android browsers offer an **Install** or **Add to Home Screen** option.
 
-Leaflet, Leaflet Rotate and Protomaps Leaflet are version-pinned and self-hosted in the deployed artifact. The app shell makes no runtime request to unpkg.
+For navigation, keep the app visible and the screen awake. In particular, iOS may pause location updates or speech when you switch apps or lock the screen.
 
-The remaining map/navigation lifecycle stays together deliberately. Further extraction of search, storage and voice modules should be incremental and retain browser regression coverage.
+## Plan on a computer, follow on your phone
 
-## Advertising
+On desktop, **Send to phone** opens a panel with your route link:
 
-The app loads Google AdSense asynchronously for publisher `ca-pub-8404673257565926`. Advertising is an online dependency and is not part of the offline package. About & Data explains Google advertising, cookies or identifiers, page URLs and advertising choices. Shared-route URLs can contain journey coordinates.
+1. Choose **Copy link**, or **Share link** if your browser supports it.
+2. Send the link to yourself using a messaging or email app.
+3. Open it on your phone, check the route and tap **Start**.
 
-One responsive display unit (`7271687520`) appears after About & Data at the bottom of Settings, labelled “Advertisements”. It scrolls with the Settings content. `data-full-width-responsive="false"` [keeps it within the padded sheet](https://support.google.com/adsense/answer/9183460). The unit is requested once per page, only after the async bootstrap finishes and the slot is visible with a usable width. Hidden/collapsed Settings and offline/background states do not initiate it. The app does not request another ad when Settings reopens. No ad unit is placed on the route planning or navigation screen.
+If automatic copying is unavailable, the panel keeps the link available for manual copying. The link includes your start, destination and preferences; the phone calculates the route using its available map data, so the exact route can vary.
 
-The root [`ads.txt`](ads.txt) publishes Google's authorisation record for `pub-8404673257565926` and is included in the runtime Pages allowlist. Artifact/live PWA gates require a successful plain-text response and the matching publisher record. After deployment, use **Sites → mkredway.co.uk → Check for updates** in AdSense. [Google notes that recrawling can take a few days, or up to a month for low-traffic sites](https://support.google.com/adsense/answer/12171612); a live HTTP 200 does not establish that the account's status has refreshed.
+For imported or Cultural Route tracks, use **Download GPX** or supported **Share GPX** instead. Send the file to your phone and open **Explore → Import a GPX route** to follow it as an unverified track.
 
-The publisher must obtain site approval and configure advertising in AdSense. For personalised advertising to UK/EEA users, configure a [Google-certified consent management platform](https://support.google.com/adsense/answer/13554116), such as Google’s European regulations message under **Privacy & messaging**. The integration does not configure consent or guarantee ad delivery. No custom consent platform is added.
+Cultural Route exports contain the original track. To keep its designated colour and calculate a red joining journey, select that Cultural Route in **Explore** on your phone.
 
-Browser request interception blocks the exact configured AdSense bootstrap URL, recording it separately where tests reject unexpected external traffic. WebKit also blocks external providers through a proxy guard, including controlled reloads that bypass interception. Those strict gates also record and block the existing numeric OpenStreetMap raster-tile fallback URLs; other destinations and paths remain unexpected. This isolates provider-driven content while retaining routing, location-permission and offline assertions. The browser smoke gate requires the publisher script and verifies route planning when its request is blocked. Provider-controlled ad rendering and placement need review in AdSense; the isolated gates do not validate live advertising content.
+## Explore a different side of MK
 
-## Data sources and attribution
+Open **Explore** to find the five Cultural Routes published by **Get Around MK**, with links to their official guides. Choose a full route and a starting point to plan how to join it: your joining journey is **red**, while the Cultural Route keeps its own colour.
 
-Official classification: Milton Keynes City Council / Get Around MK. Routing: © OpenStreetMap contributors, supplied through Geofabrik. Basemap: Protomaps and its upstream data contributors.
+The supplied shortcut GPX files are segments, rather than complete shorter loops; use the official guide for the full shorter-ride instructions. GPX tracks preserve the supplied route, but their access, path types and conditions have not been verified by this app. You can also import your own GPX route through Explore.
 
-See [DATA-LICENCE.md](DATA-LICENCE.md) for source links and licensing boundaries. This is not an official Milton Keynes City Council service.
+## Help make it better
 
-The implemented design and friendliness review and remaining physical-device checks are recorded in [UX-REVIEW-2026-10-08-v01410.md](UX-REVIEW-2026-10-08-v01410.md). The earlier [v0.14.9 review](UX-REVIEW-2026-10-08-v0149.md) records the Saved and Cultural joining follow-up.
+Found a confusing turn, a missing search result or a button that is awkward to use? **[Report a problem or suggest an improvement on GitHub](https://github.com/tubbygregory/mk-redway-navigator/issues).** Real journeys around MK are especially helpful for finding things that simulated testing can miss.
 
-## Development / local testing
+If you can, include:
 
-Use Python 3.12, Node.js and Docker (for basemap extraction).
+- What you were trying to do and what happened.
+- Nearby public landmarks for the start and destination, plus your route preference.
+- Your device, browser, whether you were online or offline, and the version shown in **Settings → About & Data**.
+- A screenshot or screen recording, if it helps explain the problem.
 
-```sh
-python3 -m pip install -r requirements.txt
-python3 -m playwright install --with-deps chromium webkit
-python3 scripts/extract_council_routes.py
-python3 scripts/build_network.py
-python3 scripts/build_places.py
-bash scripts/build_offline_map.sh
-python3 scripts/build_site.py
-python3 -m unittest discover -s tests -p 'test_*.py'
-node --test tests/*.test.cjs
-python3 tests/browser_smoke.py
-python3 tests/pwa_smoke.py
-python3 tests/audit_browser.py
-python3 tests/design_polish_browser.py
-python3 tests/navigation_icons_browser.py
-python3 tests/webkit_browser.py
-git fetch --tags
-python3 tests/release_upgrade_browser.py
-python3 tests/offline_recovery_browser.py
-python3 tests/navigation_permission_browser.py
-python3 tests/accessibility_browser.py
-python3 -m http.server 8000 --directory dist
-```
+Please leave out precise Home or Work addresses and crop personal details or notifications from screenshots. The aim is to make everyday Redway journeys easier to plan and follow; ideas and feedback are welcome while the beta develops.
 
-The release-upgrade browser gate tests the newest numeric release tag older than `VERSION` and the oldest of the three newest prior tags, covering skipped releases; with less history it tests each available prior tag. Set `UPGRADE_FROM_REF` to test one specific older release. Each root/subpath case keeps two clients open, including real active navigation during the worker update. It reconstructs each release's tracked app shell and uses current validated geographic data and byte-matching vendor dependencies. It tests software/cache upgrades, rather than reconstructing historical geographic data. Fetch tags before running it.
+## Your data and privacy
 
-The offline-recovery browser gate uses real HTTP header/body stalls, truncation and tab closure, then stops its origin to prove successful retry, offline routing and PMTiles range responses. It uses the production 30-second inactivity deadline; progressing downloads may take longer. The permission-recovery browser gate starts real Chromium geolocation and revokes permission through its browser permission controls, then requires an explicit restart after permission is restored. These checks do not establish physical iPhone background or speech behaviour.
+- **Saved places and settings stay in this browser.** Routes are calculated on your device; there are no user accounts or application backend.
+- **Typing a search stays local.** Submitted online searches go to OpenStreetMap's Nominatim service. Map and route-data downloads contact their hosting providers.
+- **Shared links contain journey locations.** Take care when sharing a route that starts or ends somewhere private.
+- **The app uses Google AdSense**, with a labelled advertising area at the bottom of Settings. Advertising providers may use cookies or similar identifiers and receive information such as your IP address and page URL. Shared-route URLs can include coordinates. See [how Google uses information](https://policies.google.com/technologies/partner-sites) and [manage personalised ads](https://adssettings.google.com/).
 
-The WebKit suite uses the actual Playwright WebKit engine. Its local offline cases stop the test server after caching, because WebKit's network-emulation switch can fail cached navigation even for a minimal independent service-worker app. A reserved, non-listening proxy blocks external providers while allowing the runtime host directly, including service-worker-controlled reloads that can bypass Playwright request interception. The suite rejects external HTTP responses and records full page-error stacks. Production WebKit checks validate the UI and offline cache; the live Chromium suite separately requires offline reloads. These checks cannot establish physical iPhone GPS, audio or background behaviour.
+You can find more detail, including map-data dates and offline status, in **Settings → About & Data**.
 
-Data generation requires internet access and can take several minutes. Generated data, downloads and Python caches are not committed. Bundled map-library dependencies are downloaded during packaging. AdSense is loaded separately in the browser.
+## About the project
 
-## Deployment
+MK Redway Navigator is an independent, open-source project. It is **not an official Milton Keynes City Council service**.
 
-`.github/workflows/pages.yml` builds and validates data, packages an explicit runtime allowlist into `dist/`, runs routing/browser release gates, and publishes that directory to GitHub Pages. The existing release suites and actual-archive inspection remain required. Upgrade, WebKit, accessibility and offline/permission recovery jobs then test that same artifact in parallel; deployment waits for all of them. After deployment, the existing live review and new WebKit/accessibility checks must all pass before the immutable beta release is published.
+Routing, places and addresses use **© OpenStreetMap contributors**, supplied through Geofabrik. Official route classifications come from **Milton Keynes City Council / Get Around MK**. The basemap uses **Protomaps** and its data contributors. See [data sources and licensing](DATA-LICENCE.md) for the details.
 
-Use GitHub Actions as the Pages source. Runtime paths are relative so a project subpath and custom-domain root can use the same artifact. Source-only files and council diagnostics are excluded from Pages; diagnostics are separate Actions artifacts.
+Want to help with the code or run it locally? The **[developer guide](docs/DEVELOPMENT.md)** covers setup, testing, routing data, advertising configuration and deployment. You can also read the [changelog](CHANGELOG.md).
 
-## Known limitations
-
-- MK coverage is bounded; this is not a national route planner.
-- Mapping and council classifications can be incomplete or older than current conditions.
-- Online geocoding depends on an external service; local mapped places and addresses remain available offline.
-- Saved places stay in one browser; there is no account or cloud sync.
-- Browser emulation cannot establish real-world GPS, speech, battery or iOS background behaviour.
-
-## Licence
-
-Application code is [MIT licensed](LICENSE). Data and bundled third-party libraries retain their own licences; the MIT licence does not relicense them. See [data documentation](DATA-LICENCE.md) and [CHANGELOG.md](CHANGELOG.md).
+Application code is [MIT licensed](LICENSE). Map data and bundled third-party libraries retain their own licences.
