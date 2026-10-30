@@ -33,6 +33,10 @@ You can also turn on **Prefer lit paths** or **Prefer Super Routes**. These are 
 
 Route details help you compare distance, time, road use, crossings and underpasses. Mapping and estimates can be incomplete: check current access, closures and conditions, especially where an approach to an entrance is marked as unverified. If a pin is too far from a usable path, choose a closer entrance.
 
+<a href="docs/screenshots/route-options.png"><img src="docs/screenshots/route-options.png" alt="Mobile cycling planner showing Maximum Redway, Balanced and Fastest options, with journey estimates and Redway and road percentages." width="390" /></a>
+
+*Compare cycling options and see how much of your journey uses Redways or roads.*
+
 ## Keep your regular places handy
 
 Open **Saved** to set Home, Work and favourite places. Find them with a search or use **Choose on map** to drop a pin. Saved places appear as shortcuts for your next journey.
@@ -48,6 +52,10 @@ Before travelling without signal, open **Settings → Offline Milton Keynes → 
 With the files downloaded, you can browse the MK map, plan local routes, use saved places and search the mapped local places and addresses offline. Online search results, external route guides and advertising still need a connection.
 
 Your device can clear browser storage, so check the offline status before heading out. Downloading the map is separate from adding the app to your Home Screen.
+
+<a href="docs/screenshots/offline-ready.png"><img src="docs/screenshots/offline-ready.png" alt="Settings showing the Milton Keynes map and routing data downloaded and ready for offline journeys." width="390" /></a>
+
+*Check for “Ready for offline journeys” before travelling without signal.*
 
 ## Add it to your Home Screen
 
@@ -69,11 +77,21 @@ For imported or Cultural Route tracks, use **Download GPX** or supported **Share
 
 Cultural Route exports contain the original track. To keep its designated colour and calculate a red joining journey, select that Cultural Route in **Explore** on your phone.
 
+<a href="docs/screenshots/send-to-phone.png"><img src="docs/screenshots/send-to-phone.png" alt="Desktop Open on your phone panel showing a copied mkredway.co.uk route link, Copy link and Share link controls, and instructions for opening it on a phone." width="820" /></a>
+
+*Copy a planned route link into a message or email to yourself, then open it on your phone.*
+
 ## Explore a different side of MK
 
 Open **Explore** to find the five Cultural Routes published by **Get Around MK**, with links to their official guides. Choose a full route and a starting point to plan how to join it: your joining journey is **red**, while the Cultural Route keeps its own colour.
 
 The supplied shortcut GPX files are segments, rather than complete shorter loops; use the official guide for the full shorter-ride instructions. GPX tracks preserve the supplied route, but their access, path types and conditions have not been verified by this app. You can also import your own GPX route through Explore.
+
+<a href="docs/screenshots/cultural-route.png"><img src="docs/screenshots/cultural-route.png" alt="A red joining journey leading to the Blue Cultural Route, with separate red and blue map lines, a colour legend and an unverified track-conditions notice." width="820" /></a>
+
+*Follow the red joining journey, then the Cultural Route in its designated colour.*
+
+Screenshots show example journeys in v0.14.17. Select an image to view it full size. [Screenshot details and map credits](docs/screenshots/README.md).
 
 ## Help make it better
 
