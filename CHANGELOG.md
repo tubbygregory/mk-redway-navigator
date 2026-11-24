@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.19
+
+- Remove Google advertising from the navigation app and publish guides to planning Redway journeys and choosing a Cultural Route.
+
 ## 0.14.18
 
 - Set separate average cycling and walking speeds in Settings to personalise route times and navigation arrival estimates.

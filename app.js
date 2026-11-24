@@ -4598,7 +4598,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.18';
+  el('app').dataset.appVersion = '0.14.19';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
