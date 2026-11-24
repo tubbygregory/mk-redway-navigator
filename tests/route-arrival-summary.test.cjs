@@ -84,7 +84,7 @@ function harness({end = destination, navigating = true} = {}) {
   });
   vm.runInContext(code('  function cancelNavigationStart()', '  function cancelStartLocation('), context);
   for (const name of ['setStage', 'clearArrivalSummary', 'showArrivalSummary', 'finishArrivalSummary',
-    'renderApproachNote', 'renderCulturalLegend', 'installRoute', 'importedPlan', 'beginCulturalTrack', 'xy', 'nearestOnRoute',
+    'renderApproachNote', 'renderCulturalLegend', 'planMinutes', 'installRoute', 'importedPlan', 'beginCulturalTrack', 'xy', 'nearestOnRoute',
     'activeManeuver', 'updateNavigation', 'resetNavigationProgress', 'startNavigation', 'stopNavigation']) {
     vm.runInContext(functionCode(name), context);
   }

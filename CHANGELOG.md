@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.18
+
+- Set separate average cycling and walking speeds in Settings to personalise route times and navigation arrival estimates.
+
 ## 0.14.17
 
 - Offer “Choose on map” immediately when choosing a route start or destination, including Cultural Route joins, and keep it available with suggestions and results.

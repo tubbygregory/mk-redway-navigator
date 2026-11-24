@@ -46,6 +46,7 @@ function harness({stored = null, readFailure = false, writeFailure = false} = {}
         documentEvents.get(type).push(callback);
       }
     },
+    validTravelSpeed: R.validTravelSpeed,
     el: id => elements[id] ??= {textContent: ''},
     L: {
       divIcon: options => options,
@@ -143,7 +144,7 @@ test('malformed, blocked and unrecognised saved settings fail safely to the defa
 
 test('each choice restores, updates accessible selection and persists alongside other settings without asking for GPS', () => {
   for (const choice of navigationIcons.choices) {
-    const h = harness({stored: JSON.stringify({navigationIcon: choice.id, voiceEnabled: false, units: 'imperial', themeChoice: 'high-contrast', preferLit: true, preferSuper: true})});
+    const h = harness({stored: JSON.stringify({navigationIcon: choice.id, voiceEnabled: false, units: 'imperial', travelSpeeds: {cycle: 20, walk: 4.5}, themeChoice: 'high-contrast', preferLit: true, preferSuper: true})});
     h.context.loadSettings();
     h.context.syncNavigationIconControls();
     assert.equal(h.state.navigationIcon, choice.id);
@@ -153,7 +154,7 @@ test('each choice restores, updates accessible selection and persists alongside 
       assert.equal(button.preview.innerHTML, navigationIcons.svg(button.dataset.navigationIconChoice));
     }
     h.select(choice.id);
-    assert.deepEqual(h.calls.writes.at(-1), {voiceEnabled: false, units: 'imperial', themeChoice: 'high-contrast', preferLit: true, preferSuper: true, navigationIcon: choice.id});
+    assert.deepEqual(h.calls.writes.at(-1), {voiceEnabled: false, units: 'imperial', travelSpeeds: {cycle: 20, walk: 4.5}, themeChoice: 'high-contrast', preferLit: true, preferSuper: true, navigationIcon: choice.id});
     assert.match(h.elements.navigationIconStatus.textContent, /Saved on this device/);
     assert.equal(h.calls.location + h.calls.watches, 0);
   }

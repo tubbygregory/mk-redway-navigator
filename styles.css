@@ -966,6 +966,18 @@ html.ios-standalone .toast {
 .setting-copy { min-width: 0; }
 .setting-copy strong { display: block; font-size: 15px; line-height: 1.25; }
 .setting-copy span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.travel-speed-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+.travel-speed-fields label { display: grid; gap: 4px; font-size: 13px; }
+.travel-speed-fields input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  color: var(--text);
+  font-size: 16px;
+}
 .setting-switch {
   position: relative;
   width: 51px;

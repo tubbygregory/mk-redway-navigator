@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney } = window.MKRouting;
+  const { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, planRoute, routeErrorMessage, hasArrived, remainingJourney, estimateMinutes, validTravelSpeed } = window.MKRouting;
   const navigationIcons = window.MKNavigationIcons;
 
   const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -152,6 +152,7 @@
     navigationLocationDenied: false,
     voiceEnabled: true,
     units: 'metric',
+    travelSpeeds: {},
     themeChoice: 'system',
     navigationIcon: 'dot',
     preferLit: false,
@@ -396,6 +397,10 @@
       if (typeof raw.preferLit === 'boolean') state.preferLit = raw.preferLit;
       if (typeof raw.preferSuper === 'boolean') state.preferSuper = raw.preferSuper;
       state.navigationIcon = navigationIcons.normalise(raw.navigationIcon);
+      for (const mode of ['cycle', 'walk']) {
+        const speed = raw.travelSpeeds?.[mode];
+        if (validTravelSpeed(speed)) state.travelSpeeds[mode] = speed;
+      }
     } catch (_) {}
   }
 
@@ -404,6 +409,7 @@
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         voiceEnabled: state.voiceEnabled,
         units: state.units,
+        travelSpeeds: state.travelSpeeds,
         themeChoice: state.themeChoice,
         preferLit: state.preferLit,
         preferSuper: state.preferSuper,
@@ -453,6 +459,21 @@
   function syncUnitControls() {
     document.querySelectorAll('[data-units]').forEach(button => {
       button.classList.toggle('active', button.dataset.units === state.units);
+    });
+  }
+
+  function bindTravelSpeedInput(input, mode) {
+    input.value = state.travelSpeeds[mode] ?? '';
+    input.addEventListener('change', () => {
+      if (!input.validity.valid) {
+        input.value = state.travelSpeeds[mode] ?? '';
+        toast('Enter a speed of at least 0.1 km/h.');
+        return;
+      }
+      if (input.value === '') delete state.travelSpeeds[mode];
+      else state.travelSpeeds[mode] = input.valueAsNumber;
+      if (!persistSettings()) toast('Speed updated for this session.');
+      refreshDistanceDisplays();
     });
   }
 
@@ -2512,17 +2533,24 @@
     return `In ${(m / 1000).toFixed(1)} kilometres`;
   }
 
+  function planMinutes(plan) {
+    return estimateMinutes(plan.networkDist, plan.approachDist, state.mode, state.travelSpeeds);
+  }
+
   function refreshDistanceDisplays() {
     if (!state.route) return;
     const track = state.culturalRoute?.phase === 'joining' ? state.culturalRoute.trackPlan : null;
     el('distanceStat').textContent = formatDistance(state.route.dist + (track?.dist || 0));
     if (!state.navigating) {
+      const mins = planMinutes(state.route) + (track ? planMinutes(track) : 0);
+      el('timeStat').textContent = formatDuration(mins);
+      el('arrivalStat').textContent = `Arrive about ${arrivalTime(mins)}`;
       if (!state.culturalRoute) setRouteStatus(routeReadyStatus(), 'good');
       renderApproachNote(); renderAlternatives();
     } else {
       const current = state.userLatLng || state.start;
-      const journey = remainingJourney(state.route, state.navProgressMeters, current, state.start, state.end, state.mode);
-      if (track) { journey.distance += track.dist; journey.mins += track.mins; }
+      const journey = remainingJourney(state.route, state.navProgressMeters, current, state.start, state.end, state.mode, state.travelSpeeds);
+      if (track) { journey.distance += track.dist; journey.mins += planMinutes(track); }
       const remaining = journey.distance, mins = journey.mins;
       el('navEta').textContent = formatDuration(mins);
       el('navRemain').textContent = `${formatDistance(remaining)} · arrive ${arrivalTime(mins)}`;
@@ -2639,7 +2667,7 @@
         const point = coords[Math.floor(coords.length / 2)];
         const icon = L.divIcon({
           className: 'route-alt-time',
-          html: '<span>' + formatDuration(option.mins) + '</span>',
+          html: '<span>' + formatDuration(planMinutes(option.plan)) + '</span>',
           iconSize: [54, 24],
           iconAnchor: [27, 12]
         });
@@ -2707,7 +2735,7 @@
       const detail = document.createElement('span');
       detail.textContent = option.error
         ? 'No route'
-        : `${formatDuration(option.mins)} · ${formatDistance(option.dist)} · ${option.roadPercent}% road${prefs.length > 1 ? ' · same route' : ''}`;
+        : `${formatDuration(planMinutes(option.plan))} · ${formatDistance(option.dist)} · ${option.roadPercent}% road${prefs.length > 1 ? ' · same route' : ''}`;
       button.append(title, detail);
       button.disabled = Boolean(option.error) || state.routing;
       button.addEventListener('click', () => {
@@ -2758,13 +2786,14 @@
     state.route = plan;
     const cultural = state.culturalRoute;
     const followingTrack = cultural?.phase === 'track';
-    const total = cultural?.phase === 'joining' ? {dist: plan.dist + cultural.trackPlan.dist, mins: plan.mins + cultural.trackPlan.mins} : plan;
+    const track = cultural?.phase === 'joining' ? cultural.trackPlan : null;
+    const mins = planMinutes(plan) + (track ? planMinutes(track) : 0);
     const unverified = plan.imported || Boolean(cultural);
     drawRoute(plan.coords, fit);
     renderUnlitSegments(plan);
-    el('timeStat').textContent = formatDuration(total.mins);
-    el('arrivalStat').textContent = `Arrive about ${arrivalTime(total.mins)}`;
-    el('distanceStat').textContent = formatDistance(total.dist);
+    el('timeStat').textContent = formatDuration(mins);
+    el('arrivalStat').textContent = `Arrive about ${arrivalTime(mins)}`;
+    el('distanceStat').textContent = formatDistance(plan.dist + (track?.dist || 0));
     el('routeModeLabel').textContent = state.mode === 'walk' ? 'Walking' : 'Cycling';
     el('routeClassification').hidden = unverified;
     el('routeTrackStatus').hidden = !unverified;
@@ -2837,7 +2866,7 @@
         if (duplicate) {
           duplicate.prefs.push(choice);
         } else {
-          const option = {pref: choice, prefs: [choice], plan, dist: plan.dist, mins: plan.mins, roadPercent: plan.roadPercent};
+          const option = {pref: choice, prefs: [choice], plan, dist: plan.dist, roadPercent: plan.roadPercent};
           alternatives.push(option);
           bySignature.set(signature, option);
         }
@@ -3015,7 +3044,6 @@
       networkDist: distance,
       approachDist: 0,
       dist: distance,
-      mins: distance / (state.mode === 'cycle' ? 4.17 : 1.34) / 60,
       snaps: {start:0,end:0},
       imported: true,
       mixPercent: null,
@@ -3913,10 +3941,10 @@
 
     const total = state.route.networkDist;
     const remaining = Math.max(0, total - progress);
-    const journey = remainingJourney(state.route, progress, latlng, state.start, state.end, state.mode);
+    const journey = remainingJourney(state.route, progress, latlng, state.start, state.end, state.mode, state.travelSpeeds);
     if (state.culturalRoute?.phase === 'joining') {
       journey.distance += state.culturalRoute.trackPlan.dist;
-      journey.mins += state.culturalRoute.trackPlan.mins;
+      journey.mins += planMinutes(state.culturalRoute.trackPlan);
     }
     const mins = journey.mins;
     el('navEta').textContent = formatDuration(mins);
@@ -4096,7 +4124,7 @@
       if (!state.headingSupported) toast('Heading-up map unavailable; navigation will stay north-up', 3500);
       setTurnIcon('straight');
       const track = state.culturalRoute?.phase === 'joining' ? state.culturalRoute.trackPlan : null;
-      const initialMins = state.route.mins + (track?.mins || 0), initialDist = state.route.dist + (track?.dist || 0);
+      const initialMins = planMinutes(state.route) + (track ? planMinutes(track) : 0), initialDist = state.route.dist + (track?.dist || 0);
       el('navEta').textContent = formatDuration(initialMins);
       el('navRemain').textContent = `${formatDistance(initialDist)} · arrive ${arrivalTime(initialMins)}`;
       el('turnDistance').textContent = 'Start';
@@ -4570,7 +4598,7 @@
   });
 
   // Service worker + initial state ------------------------------------------
-  el('app').dataset.appVersion = '0.14.17';
+  el('app').dataset.appVersion = '0.14.18';
   if ('serviceWorker' in navigator) {
     const updateArea = document.createElement('div');
     updateArea.className = 'setting-block';
@@ -4624,6 +4652,8 @@
   }
 
   loadSettings();
+  bindTravelSpeedInput(el('cycleSpeed'), 'cycle');
+  bindTravelSpeedInput(el('walkSpeed'), 'walk');
   loadSavedPlaces();
   renderSavedPlaces();
   syncVoiceControls();

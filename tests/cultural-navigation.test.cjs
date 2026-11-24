@@ -86,6 +86,7 @@ function harness() {
     ['  function routeFromNearestPoint(', '  function closeExploreRoutes('],
     ['  function setMode(mode)', "  el('cycleBtn').addEventListener"],
     ['  function drawRoute(', '  function routeReadyStatus('],
+    ['  function planMinutes(', '  function refreshDistanceDisplays('],
     ['  function installRoute(', '  async function solveRouteOnNetwork('],
     ['  async function calculateRoute(', '  function xmlEscape('],
     ['  function xmlEscape(', '  function downloadText('],
@@ -149,12 +150,15 @@ test('Cultural preview needs no location prompt; known explicit start produces t
 });
 
 test('Start computes from accurate current GPS once and preserves joining plus track estimates', async () => {
-  const h = harness(); h.cultural();
+  const h = harness(); h.state.travelSpeeds = {cycle: 20, walk: 4}; h.cultural();
   const pending = h.context.startNavigation(); await h.context.startNavigation();
   assert.equal(h.positions.length, 1); h.fix(); await pending;
   assert.equal(h.calls.graph, 1); assert.equal(h.calls.watch, 1);
   assert.equal(h.state.navigating, true); assert.equal(h.state.culturalRoute.phase, 'joining');
-  assert.equal(h.el('navEta').textContent, String(h.state.route.mins + h.state.culturalRoute.trackPlan.mins));
+  const {route, culturalRoute} = h.state;
+  const expected = R.estimateMinutes(route.networkDist, route.approachDist, 'cycle', h.state.travelSpeeds)
+    + R.estimateMinutes(culturalRoute.trackPlan.networkDist, 0, 'cycle', h.state.travelSpeeds);
+  assert.equal(h.el('navEta').textContent, String(expected));
   assert.equal(h.state.start.lat, origin.lat); assert.equal(h.state.start.lng, origin.lng);
 });
 
