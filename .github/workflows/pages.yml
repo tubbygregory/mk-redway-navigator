@@ -99,6 +99,10 @@ jobs:
         timeout-minutes: 15
         run: bash scripts/build_offline_map.sh
 
+      - name: Restore missing map inputs from the published site
+        timeout-minutes: 3
+        run: python3 scripts/restore_published_map.py
+
       - name: Generate branded PWA and browser icons
         run: |
           python3 -m pip install --disable-pip-version-check cairosvg==2.8.2 Pillow==11.3.0
