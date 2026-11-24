@@ -67,6 +67,13 @@ test('approach gaps count in totals and distant endpoints are rejected',()=>{
  assert.ok(plan.mins>plan.networkDist/4.17/60+1);
  assert.throws(()=>R.planRoute(p,g,{lat:52.003,lng:-.778},{lat:52,lng:-.772}),/over 150 metres/);
 });
+test('custom cycling and walking speeds apply to the matching legs of an estimate', () => {
+ const speeds = {cycle: 18, walk: 6};
+ assert.equal(R.estimateMinutes(1800, 100, 'cycle', speeds), 7);
+ assert.equal(R.estimateMinutes(1800, 100, 'walk', speeds), 19);
+ assert.equal(R.estimateMinutes(1800, 100, 'cycle', {cycle: 0, walk: -1}),
+   R.estimateMinutes(1800, 100, 'cycle'));
+});
 test('arrival requires an accurate fix at the actual destination',()=>{
  const destination={lat:52.001,lng:-.772};
  assert.equal(R.hasArrived({coords:{latitude:52,longitude:-.772,accuracy:5}},destination,0),false);

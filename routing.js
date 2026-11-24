@@ -516,6 +516,16 @@
     return best.filter(x => x.d <= (best[0]?.d ?? 0) + 50);
   }
 
+  function validTravelSpeed(speed) {
+    return Number.isFinite(speed) && speed >= 0.1;
+  }
+
+  function estimateMinutes(networkDist, approachDist, mode, speeds) {
+    const walking = validTravelSpeed(speeds?.walk) ? speeds.walk / 3.6 : 1.34;
+    const cycling = validTravelSpeed(speeds?.cycle) ? speeds.cycle / 3.6 : 4.17;
+    return (networkDist / (mode === 'cycle' ? cycling : walking) + approachDist / walking) / 60;
+  }
+
   function planRoute(parsed, baseGraph, start, end, mode = 'cycle', endLabel = 'your destination') {
     const starts = endpointCandidates(parsed, baseGraph, start), ends = endpointCandidates(parsed, baseGraph, end);
     if (!starts.length || !ends.length) {
@@ -560,7 +570,7 @@
     const mixPercent=wholePercentMix(mix, networkDist);
     const insights=routeInsights(result.edges);
     return { parsed:network, graph, result, coords, cumulative, mix, mixPercent, insights, networkDist, approachDist,
-      dist:networkDist+approachDist, mins:networkDist/(mode==='cycle'?4.17:1.34)/60+approachDist/1.34/60,
+      dist:networkDist+approachDist, mins:estimateMinutes(networkDist, approachDist, mode),
       snaps:{start:result.startSnap,end:result.endSnap},
       roadPercent:mixPercent.road,
       redwayPercent:mixPercent.superredway+mixPercent.redway,
@@ -581,14 +591,14 @@
     return remainingOnRoute < 30 && hav({lat:position.coords.latitude,lon:position.coords.longitude},{lat:destination.lat,lon:destination.lng}) < 22;
   }
 
-  function remainingJourney(route, progress, position, start, end, mode) {
+  function remainingJourney(route, progress, position, start, end, mode, speeds) {
     const mapped=Math.max(0,route.networkDist-progress);
     const point={lat:position.lat,lon:position.lng};
     const endDistance=hav(point,{lat:end.lat,lon:end.lng});
     const startApproach=progress<5 && route.coords.length?hav(point,{lat:route.coords[0][0],lon:route.coords[0][1]}):0;
     const endApproach=mapped<22?endDistance:route.snaps.end;
-    return {distance:mapped+startApproach+endApproach,mins:mapped/(mode==='cycle'?4.17:1.34)/60+(startApproach+endApproach)/1.34/60};
+    return {distance:mapped+startApproach+endApproach,mins:estimateMinutes(mapped, startApproach + endApproach, mode, speeds)};
   }
 
-  return { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, wholePercentMix, routeInsights, planRoute, routeErrorMessage, hasArrived, remainingJourney };
+  return { parseBundledNetwork, hav, isRedway, allowed, edgeClass, multiplier, edgeDisplayName, buildGraph, nearestCandidates, aStarMulti, nearestNode, aStar, bearing, angleDiff, cardinal, buildCumulative, targetPhrase, buildManeuvers, initialInstruction, wholePercentMix, routeInsights, planRoute, routeErrorMessage, hasArrived, remainingJourney, estimateMinutes, validTravelSpeed };
 });

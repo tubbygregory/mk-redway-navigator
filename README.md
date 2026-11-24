@@ -41,7 +41,7 @@ Route details help you compare distance, time, road use, crossings and underpass
 
 Open **Saved** to set Home, Work and favourite places. Find them with a search or use **Choose on map** to drop a pin. Saved places appear as shortcuts for your next journey.
 
-In **Settings**, you can change voice guidance, distance units and the theme. You can also choose your map icon: **Red dot, Arrow, Cyclist or Concrete Cow**.
+In **Settings → Journey**, set your average cycling or walking speed in km/h to personalise route and arrival estimates. You can also change voice guidance, distance units and the theme in Settings. You can also choose your map icon: **Red dot, Arrow, Cyclist or Concrete Cow**.
 
 Places and settings stay in the browser where you saved them; they do not sync between devices.
 

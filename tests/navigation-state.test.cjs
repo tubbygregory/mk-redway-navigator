@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
+const {estimateMinutes} = require('../routing.js');
 const app = fs.readFileSync('app.js', 'utf8');
 
 function code(from, to) {
@@ -93,7 +94,7 @@ function navigation({distanceFromStart = 0, imported = false} = {}) {
   }
   const pendingLocations = [];
   const context = vm.createContext({
-    state, navigator: {geolocation: {
+    state, estimateMinutes, navigator: {geolocation: {
       watchPosition(success, error) { calls.watchers.push({success, error}); return ++calls.watch; },
       clearWatch(id) { calls.cleared.push(id); }
     }},
@@ -151,6 +152,7 @@ function navigation({distanceFromStart = 0, imported = false} = {}) {
     importedPlan: coords => ({...plan, coords, mins: 10})
   });
   vm.runInContext(code('  function setRouteStatus(', '  function fmtCoord('), context);
+  vm.runInContext(code('  function planMinutes(', '  function refreshDistanceDisplays('), context);
   vm.runInContext(code('  function installRoute(', '  async function solveRouteOnNetwork('), context);
   vm.runInContext(code('  function setMode(mode)', "  el('cycleBtn').addEventListener"), context);
   vm.runInContext(code('  function resetNavigationProgress()', "  el('startNavBtn').addEventListener"), context);
