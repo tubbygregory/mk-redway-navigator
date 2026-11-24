@@ -49,7 +49,7 @@ Places and settings stay in the browser where you saved them; they do not sync b
 
 Before travelling without signal, open **Settings → Offline Milton Keynes → Download** while you have an internet connection. Wait until it says **Ready for offline journeys**.
 
-With the files downloaded, you can browse the MK map, plan local routes, use saved places and search the mapped local places and addresses offline. Online search results, external route guides and advertising still need a connection.
+With the files downloaded, you can browse the MK map, plan local routes, use saved places and search the mapped local places and addresses offline. Online search results, external route guides still need a connection.
 
 Your device can clear browser storage, so check the offline status before heading out. Downloading the map is separate from adding the app to your Home Screen.
 
@@ -93,6 +93,8 @@ The supplied shortcut GPX files are segments, rather than complete shorter loops
 
 Screenshots show example journeys in v0.14.17. Select an image to view it full size. [Screenshot details and map credits](docs/screenshots/README.md).
 
+Read the [Redway journey guide](https://mkredway.co.uk/redway-guide.html) and [Cultural Routes guide](https://mkredway.co.uk/cultural-route-guide.html) for entrance tips and a comparison of the five loops.
+
 ## Help make it better
 
 Found a confusing turn, a missing search result or a button that is awkward to use? **[Report a problem or suggest an improvement on GitHub](https://github.com/tubbygregory/mk-redway-navigator/issues).** Real journeys around MK are especially helpful for finding things that simulated testing can miss.
@@ -111,7 +113,6 @@ Please leave out precise Home or Work addresses and crop personal details or not
 - **Saved places and settings stay in this browser.** Routes are calculated on your device; there are no user accounts or application backend.
 - **Typing a search stays local.** Submitted online searches go to OpenStreetMap's Nominatim service. Map and route-data downloads contact their hosting providers.
 - **Shared links contain journey locations.** Take care when sharing a route that starts or ends somewhere private.
-- **The app uses Google AdSense**, with a labelled advertising area at the bottom of Settings. Advertising providers may use cookies or similar identifiers and receive information such as your IP address and page URL. Shared-route URLs can include coordinates. See [how Google uses information](https://policies.google.com/technologies/partner-sites) and [manage personalised ads](https://adssettings.google.com/).
 
 You can find more detail, including map-data dates and offline status, in **Settings → About & Data**.
 
@@ -121,6 +122,6 @@ MK Redway Navigator is an independent, open-source project. It is **not an offic
 
 Routing, places and addresses use **© OpenStreetMap contributors**, supplied through Geofabrik. Official route classifications come from **Milton Keynes City Council / Get Around MK**. The basemap uses **Protomaps** and its data contributors. See [data sources and licensing](DATA-LICENCE.md) for the details.
 
-Want to help with the code or run it locally? The **[developer guide](docs/DEVELOPMENT.md)** covers setup, testing, routing data, advertising configuration and deployment. You can also read the [changelog](CHANGELOG.md).
+Want to help with the code or run it locally? The **[developer guide](docs/DEVELOPMENT.md)** covers setup, testing, routing data and deployment. You can also read the [changelog](CHANGELOG.md).
 
 Application code is [MIT licensed](LICENSE). Map data and bundled third-party libraries retain their own licences.

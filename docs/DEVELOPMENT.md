@@ -32,17 +32,9 @@ Leaflet, Leaflet Rotate and Protomaps Leaflet are version-pinned and self-hosted
 
 The remaining map/navigation lifecycle stays together deliberately. Further extraction of search, storage and voice modules should be incremental and retain browser regression coverage.
 
-## Advertising
+## Public guides
 
-The app loads Google AdSense asynchronously for publisher `ca-pub-8404673257565926`. Advertising is an online dependency and is not part of the offline package. About & Data explains Google advertising, cookies or identifiers, page URLs and advertising choices. Shared-route URLs can contain journey coordinates.
-
-One responsive display unit (`7271687520`) appears after About & Data at the bottom of Settings, labelled “Advertisements”. It scrolls with the Settings content. `data-full-width-responsive="false"` [keeps it within the padded sheet](https://support.google.com/adsense/answer/9183460). The unit is requested once per page, only after the async bootstrap finishes and the slot is visible with a usable width. Hidden/collapsed Settings and offline/background states do not initiate it. The app does not request another ad when Settings reopens. No ad unit is placed on the route planning or navigation screen.
-
-The root [`ads.txt`](../ads.txt) publishes Google's authorisation record for `pub-8404673257565926` and is included in the runtime Pages allowlist. Artifact/live PWA gates require a successful plain-text response and the matching publisher record. After deployment, use **Sites → mkredway.co.uk → Check for updates** in AdSense. [Google notes that recrawling can take a few days, or up to a month for low-traffic sites](https://support.google.com/adsense/answer/12171612); a live HTTP 200 does not establish that the account's status has refreshed.
-
-The publisher must obtain site approval and configure advertising in AdSense. For personalised advertising to UK/EEA users, configure a [Google-certified consent management platform](https://support.google.com/adsense/answer/13554116), such as Google’s European regulations message under **Privacy & messaging**. The integration does not configure consent or guarantee ad delivery. No custom consent platform is added.
-
-Browser request interception blocks the exact configured AdSense bootstrap URL, recording it separately where tests reject unexpected external traffic. WebKit also blocks external providers through a proxy guard, including controlled reloads that bypass interception. Those strict gates also record and block the existing numeric OpenStreetMap raster-tile fallback URLs; other destinations and paths remain unexpected. This isolates provider-driven content while retaining routing, location-permission and offline assertions. The browser smoke gate requires the publisher script and verifies route planning when its request is blocked. Provider-controlled ad rendering and placement need review in AdSense; the isolated gates do not validate live advertising content.
+The site packages two static HTML guides and their shared stylesheet. Keep key content in HTML so visitors can read it without running the map scripts. The app and guides serve no ads. The root ads.txt remains a publisher authorisation record. Tests may still block the historical AdSense bootstrap when exercising older builds.
 
 ## Data sources and attribution
 
@@ -86,7 +78,7 @@ The offline-recovery browser gate uses real HTTP header/body stalls, truncation 
 
 The WebKit suite uses the actual Playwright WebKit engine. Its local offline cases stop the test server after caching, because WebKit's network-emulation switch can fail cached navigation even for a minimal independent service-worker app. A reserved, non-listening proxy blocks external providers while allowing the runtime host directly, including service-worker-controlled reloads that can bypass Playwright request interception. The suite rejects external HTTP responses and records full page-error stacks. Production WebKit checks validate the UI and offline cache; the live Chromium suite separately requires offline reloads. These checks cannot establish physical iPhone GPS, audio or background behaviour.
 
-Data generation requires internet access and can take several minutes. Generated data, downloads and Python caches are not committed. Bundled map-library dependencies are downloaded during packaging. AdSense is loaded separately in the browser.
+Data generation requires internet access and can take several minutes. Generated data, downloads and Python caches are not committed. Bundled map-library dependencies are downloaded during packaging.
 
 ## Deployment
 

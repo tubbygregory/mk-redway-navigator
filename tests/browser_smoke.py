@@ -3,7 +3,7 @@
 No geocoding or live Overpass is needed: coordinate search is a normal offline UI
 feature. A client/schema mismatch must fail this gate before Pages publication.
 """
-from advertising_fixture import ADSENSE_SCRIPT_URL, block_adsense
+from advertising_fixture import block_adsense
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -39,10 +39,6 @@ def main():
                 page.on('request', lambda req: fallbacks.append(req.url) if '/api/interpreter' in req.url else None)
                 page.route('**/api/interpreter', lambda route: route.abort())
                 page.goto(f'http://127.0.0.1:{server.server_port}/', wait_until='networkidle')
-                advertising = page.locator('head > script[src="' + ADSENSE_SCRIPT_URL + '"]')
-                expect(advertising).to_have_count(1)
-                assert advertising.evaluate("el => el.async && el.crossOrigin === 'anonymous'"), "AdSense must load asynchronously with anonymous CORS"
-                assert expected_advertising_requests == [ADSENSE_SCRIPT_URL], expected_advertising_requests
                 expect(page.locator('#visibleSettingsBtn')).to_be_visible()
                 expect(page.locator('html')).to_have_attribute('data-routing-source', 'bundled')
                 page.locator('#map').click(position={'x': width // 2, 'y': height // 2})
@@ -87,7 +83,7 @@ def main():
                 expect(page.get_by_role('button', name='Choose destination entrance', exact=True)).to_be_visible()
                 assert not errors, errors
                 assert not fallbacks, fallbacks
-                print(f'PASS browser {width}x{height}: failed AdSense does not block bundled v6, route choices, walking or blocked endpoint recovery')
+                print(f'PASS browser {width}x{height}: bundled v6, route choices, walking or blocked endpoint recovery')
                 page.get_by_role('button', name='Clear route', exact=True).click()
                 page.locator('#visibleSettingsBtn').click()
                 cycling_speed = page.get_by_role('spinbutton', name='Cycling speed (km/h)')
@@ -114,6 +110,16 @@ def main():
                 expect(page.locator('#aboutVersion')).to_contain_text((ROOT.parent / 'VERSION').read_text().strip())
                 expect(page.locator('#aboutNetwork')).not_to_have_text('Checking…')
                 expect(page.locator('#aboutData')).to_contain_text('independent project')
+                expect(page.locator('.adsbygoogle, [data-ad-client]')).to_have_count(0)
+                expect(page.get_by_role('link', name='Planning a Redway journey')).to_be_visible()
+                page.get_by_role('link', name='Planning a Redway journey').click()
+                expect(page.get_by_role('heading', name='Planning a Redway journey')).to_be_visible()
+                page.get_by_role('link', name='Cultural Routes', exact=True).click()
+                expect(page.get_by_role('heading', name='Milton Keynes Cultural Routes')).to_be_visible()
+                expect(page.get_by_role('heading', name='Iron Route')).to_be_visible()
+                page.get_by_role('link', name='Open the map', exact=True).click()
+                expect(page.locator('#visibleSettingsBtn')).to_be_visible()
+                assert not expected_advertising_requests, expected_advertising_requests
                 context.close()
             browser.close()
     finally:

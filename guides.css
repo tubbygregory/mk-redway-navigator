@@ -1,0 +1,23 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  background: light-dark(#f6f5ef, #151b19);
+  color: light-dark(#18221e, #ebf1eb);
+}
+body { margin: 0; line-height: 1.65; }
+.guide { max-width: 46rem; margin: auto; padding: 1.25rem 1.25rem 3rem; }
+nav { display: flex; flex-wrap: wrap; gap: .35rem 1.25rem; }
+nav a { display: inline-flex; align-items: center; min-height: 44px; }
+a { color: light-dark(#07594a, #99e6cd); text-underline-offset: .2em; }
+a:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+header, section, footer { margin-top: 2rem; }
+h1, h2, h3 { line-height: 1.2; text-wrap: balance; }
+h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); margin: .5rem 0 1rem; }
+h2 { font-size: 1.55rem; margin: 0 0 .6rem; }
+h3 { font-size: 1.15rem; margin: 1.25rem 0 .4rem; }
+p { margin: .6rem 0 1rem; }
+li { margin-bottom: .55rem; }
+.lede { font-size: 1.2rem; }
+.route, .example { padding: 1rem 1.2rem; background: light-dark(#fff, #222c28); border-radius: .85rem; }
+.route p:last-child, .example p:last-child { margin-bottom: 0; }
+footer { border-top: 1px solid light-dark(#bdc8c0, #526258); padding-top: 1rem; }
